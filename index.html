@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#1e88e5" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Finanze" />
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+  <link rel="stylesheet" href="./css/styles.css" />
+  <title>Finanze Personali</title>
+</head>
+<body>
+  <header class="app-header">
+    <h1 id="view-title">Dashboard</h1>
+    <button id="quick-add" class="icon-btn" aria-label="Aggiungi">+</button>
+  </header>
+  <main id="app-root" class="app-main"></main>
+
+  <!--
+    REFACTORING v1.3: la bottom-nav ha 5 slot fissi (incluso il FAB centrale "+"),
+    layout pensato per iPhone XR come da documento di progetto. Per dare spazio al
+    nuovo hub "Patrimonio" (definito nel progetto come "nuovo cuore dell'app v1.3")
+    senza eccedere i 5 slot, "Statistiche" è stata spostata da accesso diretto in
+    nav ad accesso secondario da Impostazioni — stesso trattamento che avevano già
+    Budget, Ricorrenti e Import/Export in v1.2.
+  -->
+  <nav class="bottom-nav" role="navigation">
+    <a href="#/dashboard" data-route="dashboard">🏠<span>Home</span></a>
+    <a href="#/storico" data-route="storico">📒<span>Storico</span></a>
+    <a href="#/nuovo" data-route="nuovo" class="fab">+</a>
+    <a href="#/patrimonio" data-route="patrimonio">💰<span>Patrimonio</span></a>
+    <a href="#/impostazioni" data-route="impostazioni">⚙️<span>Setup</span></a>
+  </nav>
+
+  <div id="toast" class="toast" aria-live="polite"></div>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>
