@@ -20,7 +20,7 @@ export const renderImpostazioni = async (root) => {
   root.innerHTML = `
     <div class="section-lbl"><span>Backup e ripristino</span></div>
     <div class="card">
-      <p class="meta" style="margin-bottom:14px">I tuoi dati sono salvati solo su questo dispositivo. Esporta un backup Excel per sicurezza o per trasferirli.</p>
+      <p class="meta" style="margin-bottom:14px">I tuoi dati sono salvati solo su questo dispositivo. L'app fa un <b>backup automatico interno</b> a ogni avvio (ti protegge da errori dell'app), ma per essere davvero al sicuro esporta ogni tanto un backup Excel: è l'unico che sopravvive se iOS libera spazio.</p>
       <button class="btn btn-primary" id="export" style="margin-bottom:10px">⬇️ Esporta backup Excel</button>
       <button class="btn btn-secondary" id="import-btn">⬆️ Importa da backup (recovery)</button>
       <input type="file" id="import-file" accept=".xlsx,.xls" style="display:none">
@@ -43,7 +43,7 @@ export const renderImpostazioni = async (root) => {
     <div class="card">
       <div style="display:flex;justify-content:space-between;padding:5px 0"><span class="meta">Movimenti</span><span class="num">${nMov}</span></div>
       <div style="display:flex;justify-content:space-between;padding:5px 0"><span class="meta">Tag</span><span class="num">${nTag}</span></div>
-      <div style="display:flex;justify-content:space-between;padding:5px 0"><span class="meta">Versione</span><span>2.0</span></div>
+      <div style="display:flex;justify-content:space-between;padding:5px 0"><span class="meta">Versione</span><span>2.2</span></div>
     </div>
 
     <div style="margin-top:20px"><button class="btn btn-danger" id="reset">Azzera tutti i dati</button></div>

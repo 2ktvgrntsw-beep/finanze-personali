@@ -35,4 +35,4 @@ Dopo aver caricato una nuova versione su GitHub, incrementa `CACHE_VERSION` in
 - `data/storico.js` — storico precaricato
 - `css/styles.css` — tema
 
-Versione schema dati: 2.0
+Versione: 2.2 · Schema dati: 2.0 (compatibile con backup 2.0/2.1)

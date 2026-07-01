@@ -35,15 +35,65 @@ export const deleteMovimento = async (id) => {
   await refreshAll();
 };
 
-// Applica un tag in blocco a più movimenti (bulk tag retroattivo)
-export const applicaTagBulk = async (ids, tagNome) => {
+// Applica una modifica ai movimenti passati che corrispondono a una ricorrenza
+// (riconosciuti per descrizione + importo, o sottocategoria + importo per le rate).
+// Usato dalla modifica ricorrente con ambito "anche le passate".
+export const applicaModificaAmbito = async (ricorrenza, modifiche, ambito) => {
+  if (ambito !== 'tutte') return 0;
+  const desc = (ricorrenza.desc || ricorrenza.nome || '').toLowerCase();
+  const sub = ricorrenza.sub || '';
+  const impVecchio = ricorrenza.imp;
+
+  const daAggiornare = state.movimenti.filter(m => {
+    const matchDesc = desc && (m.desc || '').toLowerCase() === desc;
+    const matchSub = sub && m.sub === sub && Math.abs(m.imp - impVecchio) < 0.02;
+    return matchDesc || matchSub;
+  }).map(m => ({ ...m, ...modifiche, annomese: m.annomese }));
+
+  if (daAggiornare.length) { await dbBulkPut('movimenti', daAggiornare); await refreshAll(); }
+  return daAggiornare.length;
+};
+
+// Modifica massiva: applica un set di modifiche a una lista di id di movimenti.
+// Usata dalla selezione multipla nella ricerca. Ogni campo in `modifiche` sovrascrive.
+export const modificaMassiva = async (ids, modifiche) => {
   const set = new Set(ids);
-  const daAggiornare = state.movimenti
-    .filter(m => set.has(m.id))
-    .map(m => ({ ...m, tag: Array.from(new Set([...(m.tag || []), tagNome])) }));
+  const daAggiornare = state.movimenti.filter(m => set.has(m.id)).map(m => {
+    const nuovo = { ...m };
+    for (const [k, v] of Object.entries(modifiche)) {
+      if (v !== undefined && v !== null && v !== '') nuovo[k] = v;
+    }
+    nuovo.annomese = annomese(nuovo.data);
+    return nuovo;
+  });
+  if (daAggiornare.length) { await dbBulkPut('movimenti', daAggiornare); await refreshAll(); }
+  return daAggiornare.length;
+};
+
+// Modifica massiva multi-campo: applica a tutti gli id selezionati i campi indicati.
+// patch può contenere: tipo, macro, cat, sub, conto, contoDest, desc, e tagAdd (tag da aggiungere).
+export const modificaBulk = async (ids, patch) => {
+  const set = new Set(ids);
+  const daAggiornare = state.movimenti.filter(m => set.has(m.id)).map(m => {
+    const nuovo = { ...m };
+    if (patch.tipo !== undefined) nuovo.tipo = patch.tipo;
+    if (patch.macro !== undefined) { nuovo.macro = patch.macro; nuovo.cat = patch.cat || ''; nuovo.sub = patch.sub || ''; }
+    if (patch.conto !== undefined) nuovo.conto = patch.conto;
+    if (patch.contoDest !== undefined) nuovo.contoDest = patch.contoDest;
+    if (patch.desc !== undefined && patch.desc !== '') nuovo.desc = patch.desc;
+    if (patch.tagAdd) nuovo.tag = Array.from(new Set([...(m.tag || []), patch.tagAdd]));
+    return nuovo;
+  });
   await dbBulkPut('movimenti', daAggiornare);
   await refreshAll();
   return daAggiornare.length;
+};
+
+// Applica un tag in blocco a una lista di movimenti (wrapper di modificaBulk).
+// Usato dalla ricerca (selezione multipla) e dalle impostazioni (bulk tag retroattivo).
+export const applicaTagBulk = async (ids, tagNome) => {
+  if (!tagNome) return 0;
+  return modificaBulk(ids, { tagAdd: tagNome });
 };
 
 // --- Filtri di base ---

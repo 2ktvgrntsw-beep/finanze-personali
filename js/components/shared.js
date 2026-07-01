@@ -63,9 +63,19 @@ export const apriSelettoreCategoria = (onSelect) => {
 
     body.querySelectorAll('.cat-cell').forEach(cell => cell.addEventListener('click', () => {
       const tipo = cell.dataset.tipo, val = cell.dataset.val;
-      if (tipo === 'macro') { sel = { macro: val, cat: '', sub: '' }; }
-      else if (tipo === 'cat') { sel = { ...sel, cat: val, sub: '' }; }
-      else { sel = { ...sel, sub: sel.sub === val ? '' : val }; }
+      if (tipo === 'macro') {
+        sel = { macro: val, cat: '', sub: '' };
+        // se la macro non ha categorie, la scelta è già completa: chiudo
+        if (categorieDi(val).length === 0) { onSelect(sel); chiudi(); return; }
+      } else if (tipo === 'cat') {
+        sel = { ...sel, cat: val, sub: '' };
+        // se la categoria non ha sottocategorie, chiudo (niente livello inutile)
+        if (sottocategorieDi(sel.macro, val).length === 0) { onSelect(sel); chiudi(); return; }
+      } else {
+        // scelta della sottocategoria = scelta completa: chiudo subito
+        sel = { ...sel, sub: val };
+        onSelect(sel); chiudi(); return;
+      }
       render(body, chiudi);
     }));
 
@@ -91,4 +101,51 @@ export const calcolaDelta = (valore, riferimento, invertiColore = false) => {
     testo: `${su ? '+' : ''}${pct}% vs media`,
     classe: peggio ? 'worse' : 'better',
   };
+};
+
+// --- Selettore data NATIVO iOS ---
+// Usa <input type="date"> del sistema: ruote fluide, giorni corretti per ogni mese,
+// scorrimento in entrambi i versi. Molto meglio di una ruota custom.
+// Ritorna la data scelta (ISO) via callback onChange.
+export const apriDataNativa = (dataAttuale, onChange) => {
+  // crea un input date invisibile e lo attiva: iOS mostra il suo picker nativo
+  const inp = document.createElement('input');
+  inp.type = 'date';
+  inp.value = dataAttuale || new Date().toISOString().slice(0, 10);
+  inp.style.position = 'fixed';
+  inp.style.opacity = '0';
+  inp.style.left = '-9999px';
+  document.body.appendChild(inp);
+  inp.addEventListener('change', () => { if (inp.value) onChange(inp.value); inp.remove(); });
+  inp.addEventListener('blur', () => setTimeout(() => inp.remove(), 300));
+  // showPicker() è il modo moderno; fallback su focus/click
+  try { inp.showPicker(); } catch (e) { inp.focus(); inp.click(); }
+};
+
+// Riga data che apre il picker nativo al tocco (helper per i form)
+export const rigaDataNativa = (labelData, dataISO, containerEl, onChange) => {
+  containerEl.addEventListener('click', () => apriDataNativa(dataISO, onChange));
+};
+
+// --- Tastierino numerico riutilizzabile ---
+// Monta un tastierino nel container e chiama onChange(stringaImporto) a ogni tasto.
+// onDone() quando si preme OK. Da usare in tutte le maschere con importi.
+export const montaTastierino = (container, valoreIniziale, onChange, onDone) => {
+  let str = valoreIniziale || '0';
+  const tasti = ['7', '8', '9', '4', '5', '6', '1', '2', '3', ',', '0', '00'];
+  container.innerHTML = `<div class="numpad">
+    ${tasti.map(t => `<button type="button" data-k="${t}">${t}</button>`).join('')
+      .replace('<button type="button" data-k="9">9</button>', '<button type="button" data-k="9">9</button><button type="button" class="sub" data-k="C">C</button>')
+      .replace('<button type="button" data-k="6">6</button>', '<button type="button" data-k="6">6</button><button type="button" class="sub" data-k="back">⌫</button>')
+      .replace('<button type="button" data-k="3">3</button>', '<button type="button" data-k="3">3</button><button type="button" class="ok" data-k="ok" style="grid-row:span 2">OK</button>')}
+  </div>`;
+  container.querySelectorAll('.numpad button').forEach(b => b.addEventListener('click', () => {
+    const k = b.dataset.k;
+    if (k === 'C') str = '0';
+    else if (k === 'back') str = str.length > 1 ? str.slice(0, -1) : '0';
+    else if (k === 'ok') { container.innerHTML = ''; if (onDone) onDone(str); return; }
+    else if (k === ',') { if (!str.includes(',')) str += ','; }
+    else { str = str === '0' ? k : str + k; }
+    onChange(str);
+  }));
 };

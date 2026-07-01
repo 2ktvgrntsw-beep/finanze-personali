@@ -20,6 +20,7 @@ export const saveConto = async (c) => {
     tipo: c.tipo || 'liquidita',
     saldo_iniziale: round2(c.saldo_iniziale || 0),
     data_saldo: c.data_saldo,
+    possessoData: c.possessoData || null,   // data di ingresso nel patrimonio (per asset)
     note: c.note || '',
     attivo: c.attivo !== false,
   };

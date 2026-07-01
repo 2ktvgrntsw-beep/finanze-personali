@@ -3,7 +3,7 @@
 import { state } from '../core/store.js';
 import { fmtEUR, escapeHtml, fmtData, todayISO } from '../core/utils.js';
 import { statoPrestito, saveFinanziamento, deleteFinanziamento } from '../services/prestitiService.js';
-import { apriSheet } from './shared.js';
+import { apriSheet, apriDataNativa, montaTastierino, apriSelettoreCategoria } from './shared.js';
 import { toast } from '../core/utils.js';
 
 export const renderFinanziamenti = async (root) => {
@@ -32,29 +32,49 @@ export const renderFinanziamenti = async (root) => {
 };
 
 const _edit = (root, id) => {
-  const f = id ? state.finanziamenti.find(x => x.id === id) : { nome: '', importo_iniziale: 0, tasso: 0, durata_mesi: 0, rata: 0, data_inizio: todayISO(), quota_utente: 100 };
-  const fld = (label, fid, val, type = 'number', step = '0.01') => `<label class="meta">${label}</label><input type="${type}" ${type === 'number' ? `step="${step}"` : ''} id="${fid}" value="${escapeHtml(String(val))}" style="width:100%;padding:12px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);color:var(--txt);font-size:15px;margin:6px 0 10px">`;
+  const f = id ? state.finanziamenti.find(x => x.id === id) : { nome: '', importo_iniziale: 0, tasso: 0, durata_mesi: 0, rata: 0, data_inizio: todayISO(), quota_utente: 100, macro: 'Casa', cat: '', sub: '', conto: '' };
+  const conti = state.conti.filter(c => c.attivo !== false).map(c => c.nome);
+  const tmp = { data_inizio: f.data_inizio, macro: f.macro || 'Casa', cat: f.cat || '', sub: f.sub || '' };
+  const vals = { importo: String(f.importo_iniziale).replace('.', ','), tasso: String(f.tasso).replace('.', ','), rata: String(f.rata).replace('.', ','), durata: String(f.durata_mesi), quota: String(f.quota_utente) };
+  const txtInput = (label, fid, val) => `<label class="meta">${label}</label><input type="text" inputmode="decimal" id="${fid}" value="${escapeHtml(val)}" class="sheet-input" readonly>`;
+
   apriSheet(id ? escapeHtml(f.nome) : 'Nuovo finanziamento', `
-    ${fld('Nome', 'f-nome', f.nome, 'text')}
-    ${fld('Importo iniziale (€)', 'f-imp', f.importo_iniziale)}
-    ${fld('Tasso annuo (%)', 'f-tasso', f.tasso)}
-    ${fld('Durata (mesi)', 'f-durata', f.durata_mesi, 'number', '1')}
-    ${fld('Rata (€)', 'f-rata', f.rata)}
-    ${fld('Data inizio', 'f-data', f.data_inizio, 'date')}
-    ${fld('Tua quota (%)', 'f-quota', f.quota_utente, 'number', '1')}
+    <label class="meta">Nome</label><input id="f-nome" value="${escapeHtml(f.nome)}" class="sheet-input">
+    ${txtInput('Importo iniziale (€)', 'f-imp', vals.importo)}<div id="fp-imp"></div>
+    ${txtInput('Tasso annuo (%)', 'f-tasso', vals.tasso)}<div id="fp-tasso"></div>
+    ${txtInput('Durata (mesi)', 'f-durata', vals.durata)}<div id="fp-durata"></div>
+    ${txtInput('Rata (€)', 'f-rata', vals.rata)}<div id="fp-rata"></div>
+    <label class="meta">Data inizio</label><button type="button" id="f-data-btn" class="sheet-input" style="text-align:left">${_fmtDFin(tmp.data_inizio)}</button>
+    ${txtInput('Tua quota (%)', 'f-quota', vals.quota)}<div id="fp-quota"></div>
+    <div class="divider" style="margin:14px 0"></div>
+    <label class="meta">Conto da cui esce la rata</label>
+    <select id="f-conto" class="sheet-input">${conti.map(c => `<option ${c === f.conto ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}</select>
+    <label class="meta">Classificazione delle rate generate</label>
+    <button type="button" id="f-cat-btn" class="sheet-input" style="text-align:left">${[tmp.macro, tmp.cat, tmp.sub].filter(Boolean).join(' › ') || 'Scegli'}</button>
+    <p class="meta" style="font-size:11px;margin:4px 0 12px;opacity:.8">Le rate future compariranno tra le spese con questa classificazione, dalla prossima scadenza in avanti.</p>
     <div class="btn-row">
       ${id ? '<button class="btn btn-danger" id="f-del">Elimina</button>' : ''}
       <button class="btn btn-primary" id="f-ok">Salva</button>
     </div>
   `, (body, chiudi) => {
+    const attach = (inputId, npId, key) => {
+      const inp = body.querySelector('#' + inputId);
+      inp.addEventListener('click', () => montaTastierino(body.querySelector('#' + npId), vals[key], (s) => { vals[key] = s; inp.value = s; }, () => {}));
+    };
+    attach('f-imp', 'fp-imp', 'importo'); attach('f-tasso', 'fp-tasso', 'tasso');
+    attach('f-durata', 'fp-durata', 'durata'); attach('f-rata', 'fp-rata', 'rata'); attach('f-quota', 'fp-quota', 'quota');
+    body.querySelector('#f-data-btn').addEventListener('click', () => apriDataNativa(tmp.data_inizio, (nd) => { tmp.data_inizio = nd; body.querySelector('#f-data-btn').textContent = _fmtDFin(nd); }));
+    body.querySelector('#f-cat-btn').addEventListener('click', () => apriSelettoreCategoria(sel => { tmp.macro = sel.macro; tmp.cat = sel.cat; tmp.sub = sel.sub; body.querySelector('#f-cat-btn').textContent = [sel.macro, sel.cat, sel.sub].filter(Boolean).join(' › '); }));
+
     body.querySelector('#f-ok').addEventListener('click', async () => {
       const nome = body.querySelector('#f-nome').value.trim();
       if (!nome) { toast('Inserisci un nome'); return; }
       await saveFinanziamento({
-        id: f.id, nome, importo_iniziale: parseFloat(body.querySelector('#f-imp').value) || 0,
-        tasso: parseFloat(body.querySelector('#f-tasso').value) || 0, durata_mesi: parseInt(body.querySelector('#f-durata').value) || 0,
-        rata: parseFloat(body.querySelector('#f-rata').value) || 0, data_inizio: body.querySelector('#f-data').value,
-        quota_utente: parseFloat(body.querySelector('#f-quota').value) || 100,
+        id: f.id, nome, importo_iniziale: parseFloat(vals.importo.replace(',', '.')) || 0,
+        tasso: parseFloat(vals.tasso.replace(',', '.')) || 0, durata_mesi: parseInt(vals.durata) || 0,
+        rata: parseFloat(vals.rata.replace(',', '.')) || 0, data_inizio: tmp.data_inizio,
+        quota_utente: parseFloat(vals.quota) || 100, conto: body.querySelector('#f-conto').value,
+        macro: tmp.macro, cat: tmp.cat, sub: tmp.sub,
       });
       chiudi(); toast('Salvato'); renderFinanziamenti(root);
     });
@@ -62,3 +82,5 @@ const _edit = (root, id) => {
     if (del) del.addEventListener('click', async () => { if (confirm('Eliminare?')) { await deleteFinanziamento(f.id); chiudi(); toast('Eliminato'); renderFinanziamenti(root); } });
   });
 };
+
+const _fmtDFin = (iso) => { if (!iso) return ''; const [a, m, g] = iso.split('-'); return `${g}/${m}/${a}`; };

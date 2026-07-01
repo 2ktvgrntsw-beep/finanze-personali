@@ -3,7 +3,7 @@
 import { state } from '../core/store.js';
 import { fmtEUR, escapeHtml, todayISO } from '../core/utils.js';
 import { saldoStimato, saveConto, deleteConto, TIPI_CONTO, LABEL_TIPO } from '../services/contiService.js';
-import { apriSheet } from './shared.js';
+import { apriSheet, apriDataNativa, montaTastierino } from './shared.js';
 import { toast } from '../core/utils.js';
 
 export const renderConti = async (root, params = {}) => {
@@ -36,29 +36,49 @@ export const renderConti = async (root, params = {}) => {
 
 const _editConto = (root, id) => {
   const c = id ? state.conti.find(x => x.id === id) : { nome: '', tipo: 'liquidita', saldo_iniziale: 0, data_saldo: todayISO() };
+  const tmp = { data_saldo: c.data_saldo || todayISO(), possessoData: c.possessoData || '' };
   apriSheet(id ? escapeHtml(c.nome) : 'Nuovo conto', `
     <label class="meta">Nome</label>
-    <input id="c-nome" value="${escapeHtml(c.nome)}" style="width:100%;padding:13px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);color:var(--txt);font-size:16px;margin:8px 0 12px">
+    <input id="c-nome" value="${escapeHtml(c.nome)}" class="sheet-input">
     <label class="meta">Tipo</label>
-    <select id="c-tipo" style="width:100%;padding:13px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);color:var(--txt);font-size:16px;margin:8px 0 12px">
+    <select id="c-tipo" class="sheet-input">
       ${TIPI_CONTO.map(t => `<option value="${t}" ${c.tipo === t ? 'selected' : ''}>${LABEL_TIPO[t]}</option>`).join('')}
     </select>
     <label class="meta">Saldo / Valore (€)</label>
-    <input type="number" step="0.01" id="c-saldo" value="${c.saldo_iniziale}" style="width:100%;padding:13px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);color:var(--txt);font-size:16px;margin:8px 0 12px">
+    <input type="text" inputmode="decimal" id="c-saldo" value="${String(c.saldo_iniziale).replace('.', ',')}" class="sheet-input" readonly>
+    <div id="c-numpad"></div>
     <label class="meta">Data del saldo</label>
-    <input type="date" id="c-data" value="${c.data_saldo}" style="width:100%;padding:13px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);color:var(--txt);font-size:15px;margin:8px 0 12px">
+    <button type="button" id="c-data-btn" class="sheet-input" style="text-align:left;cursor:pointer">${_fmtD(tmp.data_saldo)}</button>
+    <div id="c-possesso-wrap" style="${c.tipo === 'asset' ? '' : 'display:none'}">
+      <label class="meta">Posseduto dal (per il grafico patrimonio)</label>
+      <button type="button" id="c-possesso-btn" class="sheet-input" style="text-align:left;cursor:pointer">${tmp.possessoData ? _fmtD(tmp.possessoData) : 'Non impostato'}</button>
+    </div>
     <div class="btn-row">
       ${id ? '<button class="btn btn-danger" id="c-del">Elimina</button>' : ''}
       <button class="btn btn-primary" id="c-ok">Salva</button>
     </div>
   `, (body, chiudi) => {
+    let saldoStr = String(c.saldo_iniziale).replace('.', ',');
+    // tastierino per il saldo
+    body.querySelector('#c-saldo').addEventListener('click', () => {
+      montaTastierino(body.querySelector('#c-numpad'), saldoStr, (s) => { saldoStr = s; body.querySelector('#c-saldo').value = s; }, () => {});
+    });
+    // data nativa
+    body.querySelector('#c-data-btn').addEventListener('click', () => apriDataNativa(tmp.data_saldo, (nd) => { tmp.data_saldo = nd; body.querySelector('#c-data-btn').textContent = _fmtD(nd); }));
+    const possBtn = body.querySelector('#c-possesso-btn');
+    if (possBtn) possBtn.addEventListener('click', () => apriDataNativa(tmp.possessoData || todayISO(), (nd) => { tmp.possessoData = nd; possBtn.textContent = _fmtD(nd); }));
+    // mostra/nascondi possesso in base al tipo
+    body.querySelector('#c-tipo').addEventListener('change', (e) => {
+      body.querySelector('#c-possesso-wrap').style.display = e.target.value === 'asset' ? '' : 'none';
+    });
+
     body.querySelector('#c-ok').addEventListener('click', async () => {
       const nome = body.querySelector('#c-nome').value.trim();
       if (!nome) { toast('Inserisci un nome'); return; }
       await saveConto({
         id: c.id, nome, tipo: body.querySelector('#c-tipo').value,
-        saldo_iniziale: parseFloat(body.querySelector('#c-saldo').value) || 0,
-        data_saldo: body.querySelector('#c-data').value,
+        saldo_iniziale: parseFloat(saldoStr.replace(',', '.')) || 0,
+        data_saldo: tmp.data_saldo, possessoData: tmp.possessoData || null,
       });
       chiudi(); toast('Salvato'); renderConti(root);
     });
@@ -66,3 +86,5 @@ const _editConto = (root, id) => {
     if (del) del.addEventListener('click', async () => { if (confirm('Eliminare il conto? I movimenti restano.')) { await deleteConto(c.id); chiudi(); toast('Eliminato'); renderConti(root); } });
   });
 };
+
+const _fmtD = (iso) => { if (!iso) return ''; const [a, m, g] = iso.split('-'); return `${g}/${m}/${a}`; };

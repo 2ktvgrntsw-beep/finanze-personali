@@ -1,9 +1,9 @@
-// inserimento.js — Nuova operazione (spesa/entrata/trasferimento) e modifica.
-// Compatto: righe basse, tipo Spesa/Entrata/Trasferimento in basso, data a ruota inline,
-// suggerimenti a tendina che completano descrizione + classificazione.
+// inserimento.js — Nuova operazione e modifica.
+// Righe compatte, data NATIVA iOS, tastierino che si chiude cambiando campo,
+// trasferimento con descrizione, suggerimenti a tendina che completano desc+categoria.
 
 import { state } from '../core/store.js';
-import { fmtEUR, todayISO, fmtDataEstesa, escapeHtml, round2, nomeMese } from '../core/utils.js';
+import { fmtEUR, todayISO, fmtDataEstesa, escapeHtml, round2 } from '../core/utils.js';
 import { iconaMacro } from '../core/icons.js';
 import { navigate } from '../core/router.js';
 import { saveMovimento, deleteMovimento } from '../services/movimentiService.js';
@@ -17,8 +17,7 @@ let d = null;
 const nuovaBozza = () => ({
   id: null, tipo: 'spesa', imp: 0, impStr: '0',
   macro: '', cat: '', sub: '', conto: '', contoDest: '',
-  desc: '', tag: [], data: todayISO(),
-  ripeti: null,
+  desc: '', tag: [], data: todayISO(), ripeti: null,
 });
 
 export const renderInserimento = async (root, params = {}) => {
@@ -39,6 +38,7 @@ const _render = (root) => {
   const catLabel = d.macro ? [d.macro, d.cat, d.sub].filter(Boolean).join(' › ') : 'Seleziona categoria';
   const impColor = d.tipo === 'entrata' ? 'var(--up)' : d.tipo === 'trasferimento' ? 'var(--transfer)' : 'var(--down)';
 
+  // righe conto/categoria a seconda del tipo (il trasferimento MANTIENE la descrizione)
   const contoRow = isTrasf ? `
     <div class="frow"><div class="fic">💳</div><div class="fval" id="pick-conto">${d.conto ? escapeHtml(d.conto) : '<span class="fph">Da conto</span>'}</div></div>
     <div class="frow"><div class="fic">➡️</div><div class="fval" id="pick-conto-dest">${d.contoDest ? escapeHtml(d.contoDest) : '<span class="fph">A conto</span>'}</div></div>
@@ -56,10 +56,9 @@ const _render = (root) => {
         <div class="sugg-dropdown" id="sugg-dd"></div>
       </div>
       <div class="frow"><div class="fic">💰</div><div class="fval famount" id="pick-imp" style="color:${impColor}">${escapeHtml(d.impStr)} €</div></div>
-      <div class="frow" id="row-data"><div class="fic">📅</div><div class="fval" id="pick-data">${fmtDataEstesa(d.data)}</div></div>
-      <div id="data-wheel"></div>
+      <div class="frow"><div class="fic">📅</div><input type="date" class="ffld fdate" id="fld-data" value="${d.data}"></div>
       <div class="frow"><div class="fic">🔁</div><div class="fval ${d.ripeti ? '' : 'fph'}" id="pick-ripeti">${d.ripeti ? _labelRipeti(d.ripeti) : 'Ripeti'}</div>${d.ripeti ? '<div class="fclear" id="clear-ripeti">✕</div>' : ''}</div>
-      ${!isTrasf ? `<div class="frow"><div class="fic">#️⃣</div><div class="fval ${d.tag.length ? '' : 'fph'}" id="pick-tag">${d.tag.length ? d.tag.map(escapeHtml).join(', ') : 'Tag (opzionale)'}</div></div>` : ''}
+      <div class="frow"><div class="fic">#️⃣</div><div class="fval ${d.tag.length ? '' : 'fph'}" id="pick-tag">${d.tag.length ? d.tag.map(escapeHtml).join(', ') : 'Tag (opzionale)'}</div></div>
     </div>
 
     <div class="type-switch-bottom">
@@ -76,10 +75,15 @@ const _render = (root) => {
     <div id="numpad-mount"></div>
   `;
 
-  // descrizione + tendina suggerimenti
+  // descrizione + tendina
   const fldDesc = root.querySelector('#fld-desc');
   fldDesc.addEventListener('input', () => { d.desc = fldDesc.value; _mostraTendina(root); });
-  fldDesc.addEventListener('focus', () => _mostraTendina(root));
+  fldDesc.addEventListener('focus', () => { _chiudiTastierino(root); _mostraTendina(root); });
+
+  // data nativa
+  const fldData = root.querySelector('#fld-data');
+  fldData.addEventListener('change', () => { d.data = fldData.value || d.data; });
+  fldData.addEventListener('focus', () => _chiudiTastierino(root));
 
   // tipo
   root.querySelectorAll('.type-switch-bottom button').forEach(b => b.addEventListener('click', () => {
@@ -89,30 +93,26 @@ const _render = (root) => {
   }));
 
   // conto
-  root.querySelector('#pick-conto').addEventListener('click', () => _pickConto(root, 'conto'));
+  root.querySelector('#pick-conto').addEventListener('click', () => { _chiudiTastierino(root); _pickConto(root, 'conto'); });
   const pcd = root.querySelector('#pick-conto-dest');
-  if (pcd) pcd.addEventListener('click', () => _pickConto(root, 'contoDest'));
+  if (pcd) pcd.addEventListener('click', () => { _chiudiTastierino(root); _pickConto(root, 'contoDest'); });
 
   // categoria
   const pc = root.querySelector('#pick-cat');
-  if (pc) pc.addEventListener('click', () => apriSelettoreCategoria(sel => { d.macro = sel.macro; d.cat = sel.cat; d.sub = sel.sub; _render(root); }));
+  if (pc) pc.addEventListener('click', () => { _chiudiTastierino(root); apriSelettoreCategoria(sel => { d.macro = sel.macro; d.cat = sel.cat; d.sub = sel.sub; _render(root); }); });
   const cc = root.querySelector('#clear-cat');
   if (cc) cc.addEventListener('click', () => { d.macro = ''; d.cat = ''; d.sub = ''; _render(root); });
 
-  // importo
-  root.querySelector('#pick-imp').addEventListener('click', () => _apriTastierino(root));
-
-  // data (ruota inline)
-  root.querySelector('#pick-data').addEventListener('click', () => _toggleDataWheel(root));
+  // importo (tastierino)
+  root.querySelector('#pick-imp').addEventListener('click', () => { fldDesc.blur(); _apriTastierino(root); });
 
   // ripeti
-  root.querySelector('#pick-ripeti').addEventListener('click', () => _pickRipeti(root));
+  root.querySelector('#pick-ripeti').addEventListener('click', () => { _chiudiTastierino(root); _pickRipeti(root); });
   const cr = root.querySelector('#clear-ripeti');
   if (cr) cr.addEventListener('click', () => { d.ripeti = null; _render(root); });
 
   // tag
-  const pt = root.querySelector('#pick-tag');
-  if (pt) pt.addEventListener('click', () => _pickTag(root));
+  root.querySelector('#pick-tag').addEventListener('click', () => { _chiudiTastierino(root); _pickTag(root); });
 
   // salva / elimina
   root.querySelector('#salva').addEventListener('click', () => _salva());
@@ -128,7 +128,6 @@ const _labelRipeti = (r) => {
   return base + fine;
 };
 
-// Tendina suggerimenti: completa DESCRIZIONE + classificazione (conto/categoria)
 const _mostraTendina = (root) => {
   const dd = root.querySelector('#sugg-dd');
   if (!dd) return;
@@ -141,13 +140,9 @@ const _mostraTendina = (root) => {
     return `<div class="sugg-item" data-sugg="${i}"><b>${escapeHtml(s.desc)}</b><span>${escapeHtml(label)}</span></div>`;
   }).join('');
   dd.querySelectorAll('[data-sugg]').forEach(el => el.addEventListener('click', () => {
-    const s = sugg[parseInt(el.dataset.sugg)];
-    const c = s.classificazione;
-    // completa la descrizione col testo del suggerimento
-    d.desc = s.desc;
-    d.macro = c.macro || d.macro; d.cat = c.cat || ''; d.sub = c.sub || '';
-    d.tipo = c.tipo || d.tipo;
-    if (c.conto) d.conto = c.conto;
+    const s = sugg[parseInt(el.dataset.sugg)]; const c = s.classificazione;
+    d.desc = s.desc; d.macro = c.macro || d.macro; d.cat = c.cat || ''; d.sub = c.sub || '';
+    d.tipo = c.tipo || d.tipo; if (c.conto) d.conto = c.conto;
     _render(root);
   }));
 };
@@ -160,58 +155,7 @@ const _pickConto = (root, campo) => {
   });
 };
 
-// Ruota data inline (giorno / mese / anno) che si espande sotto la riga
-const _toggleDataWheel = (root) => {
-  const mount = root.querySelector('#data-wheel');
-  if (mount.innerHTML) { mount.innerHTML = ''; return; }
-
-  const [ay, am, ad] = d.data.split('-').map(Number);
-  const oggi = new Date();
-  const anni = [];
-  for (let y = oggi.getFullYear() - 10; y <= oggi.getFullYear() + 1; y++) anni.push(y);
-  const mesi = Array.from({ length: 12 }, (_, i) => i + 1);
-  const giorni = Array.from({ length: 31 }, (_, i) => i + 1);
-
-  const col = (items, sel, id, fmt) => `
-    <div class="wheel-col" id="${id}">
-      ${items.map(v => `<div class="wheel-opt ${v === sel ? 'sel' : ''}" data-v="${v}">${fmt ? fmt(v) : v}</div>`).join('')}
-    </div>`;
-
-  mount.innerHTML = `
-    <div class="date-wheel">
-      ${col(giorni, ad, 'wg')}
-      ${col(mesi, am, 'wm', v => nomeMese(v - 1))}
-      ${col(anni, ay, 'wy')}
-    </div>`;
-
-  const sel = { g: ad, m: am, y: ay };
-  const applica = () => {
-    // valida giorno max del mese
-    const maxG = new Date(sel.y, sel.m, 0).getDate();
-    if (sel.g > maxG) sel.g = maxG;
-    d.data = `${sel.y}-${String(sel.m).padStart(2, '0')}-${String(sel.g).padStart(2, '0')}`;
-    const pd = root.querySelector('#pick-data');
-    if (pd) pd.textContent = fmtDataEstesa(d.data);
-  };
-
-  const bind = (colId, key) => {
-    mount.querySelectorAll(`#${colId} .wheel-opt`).forEach(o => o.addEventListener('click', () => {
-      sel[key] = parseInt(o.dataset.v);
-      mount.querySelectorAll(`#${colId} .wheel-opt`).forEach(x => x.classList.remove('sel'));
-      o.classList.add('sel');
-      o.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      applica();
-    }));
-    // centra l'opzione selezionata all'apertura
-    const selEl = mount.querySelector(`#${colId} .wheel-opt.sel`);
-    if (selEl) selEl.scrollIntoView({ block: 'center' });
-  };
-  bind('wg', 'g'); bind('wm', 'm'); bind('wy', 'y');
-};
-
-// Ricorrenza: frequenza + inizio + fine (data o conteggio), entrambe disponibili
 const _pickRipeti = (root) => {
-  const oggi = todayISO();
   const cur = d.ripeti || { frequenza: 'mensile', dataInizio: d.data, fineTipo: 'mai' };
   apriSheet('Rendi ricorrente', `
     <label class="meta">Frequenza</label>
@@ -232,21 +176,17 @@ const _pickRipeti = (root) => {
     <div id="r-fine-extra"></div>
     <button class="btn btn-primary" id="r-ok" style="margin-top:8px">Conferma</button>
   `, (body, chiudi) => {
-    const fineTipo = body.querySelector('#r-fine-tipo');
-    const extra = body.querySelector('#r-fine-extra');
-    const renderExtra = () => {
-      if (fineTipo.value === 'data') extra.innerHTML = `<label class="meta">Fino al</label><input type="date" id="r-fine-data" value="${cur.fineData || ''}" class="sheet-input">`;
-      else if (fineTipo.value === 'conteggio') extra.innerHTML = `<label class="meta">Numero di volte</label><input type="number" id="r-fine-conteggio" value="${cur.fineConteggio || 12}" min="1" class="sheet-input">`;
+    const ftEl = body.querySelector('#r-fine-tipo'), extra = body.querySelector('#r-fine-extra');
+    const rExtra = () => {
+      if (ftEl.value === 'data') extra.innerHTML = `<label class="meta">Fino al</label><input type="date" id="r-fine-data" value="${cur.fineData || ''}" class="sheet-input">`;
+      else if (ftEl.value === 'conteggio') extra.innerHTML = `<label class="meta">Numero di volte</label><input type="number" id="r-fine-conteggio" value="${cur.fineConteggio || 12}" min="1" class="sheet-input">`;
       else extra.innerHTML = '';
     };
-    fineTipo.addEventListener('change', renderExtra); renderExtra();
-
+    ftEl.addEventListener('change', rExtra); rExtra();
     body.querySelector('#r-ok').addEventListener('click', () => {
-      const ft = fineTipo.value;
+      const ft = ftEl.value;
       d.ripeti = {
-        frequenza: body.querySelector('#r-freq').value,
-        dataInizio: body.querySelector('#r-inizio').value,
-        fineTipo: ft,
+        frequenza: body.querySelector('#r-freq').value, dataInizio: body.querySelector('#r-inizio').value, fineTipo: ft,
         fineData: ft === 'data' ? (body.querySelector('#r-fine-data')?.value || null) : null,
         fineConteggio: ft === 'conteggio' ? (parseInt(body.querySelector('#r-fine-conteggio')?.value) || null) : null,
       };
@@ -265,18 +205,15 @@ const _pickTag = (root) => {
       </div>
       <button class="btn btn-primary" id="tag-ok" style="margin-top:16px">Fatto</button>`;
     const inp = body.querySelector('#tag-inp');
-    inp.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && inp.value.trim()) { d.tag = Array.from(new Set([...d.tag, inp.value.trim()])); inp.value = ''; render(body, chiudi); }
-    });
-    body.querySelectorAll('[data-tag]').forEach(el => el.addEventListener('click', () => {
-      const t = el.dataset.tag;
-      d.tag = d.tag.includes(t) ? d.tag.filter(x => x !== t) : [...d.tag, t];
-      render(body, chiudi);
-    }));
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && inp.value.trim()) { d.tag = Array.from(new Set([...d.tag, inp.value.trim()])); inp.value = ''; render(body, chiudi); } });
+    body.querySelectorAll('[data-tag]').forEach(el => el.addEventListener('click', () => { const t = el.dataset.tag; d.tag = d.tag.includes(t) ? d.tag.filter(x => x !== t) : [...d.tag, t]; render(body, chiudi); }));
     body.querySelector('#tag-ok').addEventListener('click', () => { chiudi(); _render(root); });
   };
   apriSheet('Tag', '', render);
 };
+
+// Tastierino: si CHIUDE quando si tocca un altro campo (via _chiudiTastierino)
+const _chiudiTastierino = (root) => { const m = root.querySelector('#numpad-mount'); if (m) m.innerHTML = ''; };
 
 const _apriTastierino = (root) => {
   const mount = root.querySelector('#numpad-mount');
@@ -287,12 +224,7 @@ const _apriTastierino = (root) => {
       .replace('<button data-k="6">6</button>', '<button data-k="6">6</button><button class="sub" data-k="back">⌫</button>')
       .replace('<button data-k="3">3</button>', '<button data-k="3">3</button><button class="ok" data-k="ok" style="grid-row:span 2">OK</button>')}
   </div>`;
-
-  const upd = () => {
-    d.imp = round2(parseFloat(d.impStr.replace(',', '.')) || 0);
-    const el = root.querySelector('#pick-imp');
-    if (el) el.textContent = `${d.impStr} €`;
-  };
+  const upd = () => { d.imp = round2(parseFloat(d.impStr.replace(',', '.')) || 0); const el = root.querySelector('#pick-imp'); if (el) el.textContent = `${d.impStr} €`; };
   mount.querySelectorAll('.numpad button').forEach(b => b.addEventListener('click', () => {
     const k = b.dataset.k;
     if (k === 'C') d.impStr = '0';
@@ -310,14 +242,15 @@ const _salva = async () => {
   if (d.tipo !== 'trasferimento' && !d.macro) { toast('Scegli una categoria'); return; }
 
   const wasTrasf = d.tipo === 'trasferimento';
+  const eraModifica = !!d.id;
   await saveMovimento({
     id: d.id, tipo: d.tipo, imp: d.imp, data: d.data,
-    macro: d.macro, cat: d.cat, sub: d.sub,
-    conto: d.conto, contoDest: d.contoDest,
+    macro: d.macro, cat: d.cat, sub: d.sub, conto: d.conto, contoDest: d.contoDest,
     desc: d.desc, tag: d.tag,
   });
 
-  if (d.ripeti && !d.id) {
+  // crea la ricorrenza se richiesta — ANCHE in modifica (bug precedente: solo su nuovo)
+  if (d.ripeti) {
     await saveRicorrente({
       nome: d.desc || d.macro, tipo: d.tipo, frequenza: d.ripeti.frequenza,
       imp: d.imp, macro: d.macro, cat: d.cat, sub: d.sub,
@@ -327,7 +260,7 @@ const _salva = async () => {
     });
     toast('Salvato e reso ricorrente');
   } else {
-    toast(d.id ? 'Modifiche salvate' : 'Salvato');
+    toast(eraModifica ? 'Modifiche salvate' : 'Salvato');
   }
 
   d = null;

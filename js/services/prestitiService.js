@@ -88,16 +88,78 @@ export const debitoTotaleResiduo = () => {
 
 // --- Salvataggi ---
 export const saveMutuo = async (m) => {
-  await dbAdd('mutuo', { id: 'mutuo-principale', ...m });
+  const obj = { id: 'mutuo-principale', ...m };
+  await dbAdd('mutuo', obj);
   await refreshAll();
+  await sincronizzaRicorrenzaPrestito(obj, 'mutuo');
+  return obj;
 };
 export const saveFinanziamento = async (f) => {
   const obj = { id: f.id || 'fin-' + uid(), ...f, attivo: f.attivo !== false };
   await dbAdd('finanziamenti', obj);
   await refreshAll();
+  await sincronizzaRicorrenzaPrestito(obj, 'finanziamento');
   return obj;
 };
-export const deleteFinanziamento = async (id) => { await dbDelete('finanziamenti', id); await refreshAll(); };
+export const deleteFinanziamento = async (id) => {
+  await dbDelete('finanziamenti', id);
+  // rimuovi anche la ricorrenza collegata
+  const { dbAll: _all, dbDelete: _del } = await import('../core/db.js');
+  const ric = await _all('ricorrenti');
+  for (const r of ric) if (r.origineMutuo === id) await _del('ricorrenti', r.id);
+  await refreshAll();
+};
+
+// Crea/aggiorna la ricorrenza della rata di un prestito.
+// REGOLA D'ORO: genera movimenti solo dal presente in avanti. Il passato è già coperto
+// dai movimenti reali nello storico (riconosciuti tramite sottocategoria, es. "Rata Mutuo").
+export const sincronizzaRicorrenzaPrestito = async (prestito, tipo) => {
+  const { dbAll: _all, dbAdd: _add, dbDelete: _del } = await import('../core/db.js');
+  const rif = tipo === 'mutuo' ? 'mutuo-principale' : prestito.id;
+
+  // trova una eventuale ricorrenza già collegata
+  const tutte = await _all('ricorrenti');
+  const esistente = tutte.find(r => r.origineMutuo === rif);
+
+  // calcola la prossima rata NON ancora presente nello storico
+  const piano = calcolaPiano(prestito, tipo === 'mutuo' ? (await _all('eventiMutuo')) : []);
+  const oggiISO = new Date().toISOString().slice(0, 10);
+  // prima rata futura (da oggi in poi)
+  const prossimaRata = piano.find(r => r.data >= oggiISO);
+  if (!prossimaRata) {
+    // prestito concluso: rimuovi la ricorrenza se c'era
+    if (esistente) await _del('ricorrenti', esistente.id);
+    await refreshAll();
+    return;
+  }
+
+  const rec = {
+    id: esistente ? esistente.id : uid(),
+    nome: prestito.descMovimento || prestito.nome,
+    tipo: 'spesa',
+    frequenza: 'mensile',
+    giorno: prestito.giorno_addebito || null,
+    imp: round2(prestito.rata),   // rata INTERA come spesa (denaro che esce davvero dal conto)
+    macro: prestito.macro || 'Casa',
+    cat: prestito.cat || '',
+    sub: prestito.sub || (tipo === 'mutuo' ? 'Rata Mutuo' : ''),
+    conto: prestito.conto || '',
+    contoDest: '',
+    tag: [],
+    desc: prestito.descMovimento || '',
+    modalita: 'fisso', soglia: null, isRegola: false,
+    attiva: true,
+    dataInizio: prossimaRata.data,
+    prossima: prossimaRata.data,
+    fineTipo: 'data',
+    fineData: piano[piano.length - 1].data,   // termina con l'ultima rata
+    fineConteggio: null,
+    generati: 0,
+    origineMutuo: rif,   // collega la ricorrenza al prestito
+  };
+  await _add('ricorrenti', rec);
+  await refreshAll();
+};
 
 export const saveEventoMutuo = async (ev) => {
   await dbAdd('eventiMutuo', { id: ev.id || uid(), ...ev });
@@ -105,3 +167,16 @@ export const saveEventoMutuo = async (ev) => {
 };
 export const deleteEventoMutuo = async (id) => { await dbDelete('eventiMutuo', id); await refreshAll(); };
 export const eventiMutuo = () => state.eventiMutuo.filter(e => e.riferimento === 'mutuo-principale' || !e.riferimento);
+
+// Sincronizza le ricorrenze delle rate di TUTTI i prestiti (mutuo + finanziamenti).
+// Chiamata all'avvio dell'app. Usa sincronizzaRicorrenzaPrestito, che rispetta la
+// regola d'oro (solo dal presente in avanti, niente doppioni col passato).
+export const sincronizzaPrestiti = async () => {
+  if (state.mutuo && state.mutuo.importo_iniziale && state.mutuo.generaRicorrenza !== false) {
+    await sincronizzaRicorrenzaPrestito(state.mutuo, 'mutuo');
+  }
+  for (const f of state.finanziamenti) {
+    if (f.attivo === false || !f.importo_iniziale || f.generaRicorrenza === false) continue;
+    await sincronizzaRicorrenzaPrestito(f, 'finanziamento');
+  }
+};

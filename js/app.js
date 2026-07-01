@@ -7,6 +7,8 @@ import { registerRoute, initRouter, navigate, renderCurrent, currentRoute } from
 import { NAV_SVG } from './core/icons.js';
 import { ensureContoDefault } from './services/contiService.js';
 import { generaScaduti } from './services/ricorrentiService.js';
+import { sincronizzaPrestiti } from './services/prestitiService.js';
+import { salvaBackupAuto, rilevaPerdita, ripristinaBackupAuto } from './services/backupService.js';
 import { toast } from './core/utils.js';
 
 // Componenti (schermate)
@@ -91,12 +93,28 @@ const boot = async () => {
     await openDB();
     await seedStoricoSeNecessario();   // carica lo storico al primo avvio
     await refreshAll();
+
+    // RILEVAMENTO PERDITA DATI: se i dati principali sono vuoti ma esiste un backup
+    // interno con dati, offro il ripristino (copre bug/corruzioni; NON lo sfratto iOS totale).
+    const perdita = await rilevaPerdita();
+    if (perdita) {
+      const quando = new Date(perdita.data).toLocaleDateString('it-IT');
+      if (confirm(`Sembra che i dati siano andati persi, ma ho trovato un backup automatico del ${quando} con ${perdita.contatori.movimenti} movimenti. Vuoi ripristinarlo?`)) {
+        await ripristinaBackupAuto();
+        toast('Dati ripristinati dal backup automatico');
+      }
+    }
+
     await ensureContoDefault();
-    await generaScaduti();             // genera movimenti da ricorrenze scadute
+    await sincronizzaPrestiti();        // crea/aggiorna le ricorrenze di mutuo e finanziamenti
+    await generaScaduti();             // genera movimenti da ricorrenze scadute (solo dal presente)
 
     costruisciChrome();
     registraRotte();
     initRouter();
+
+    // BACKUP AUTOMATICO INTERNO: salva una copia di sicurezza a ogni avvio (non blocca l'avvio)
+    salvaBackupAuto().catch(e => console.warn('Backup automatico non riuscito:', e));
 
     // registra il service worker (PWA offline)
     if ('serviceWorker' in navigator) {

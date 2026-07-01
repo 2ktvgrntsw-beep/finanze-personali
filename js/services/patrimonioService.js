@@ -62,8 +62,7 @@ export const deltaNettoMese = () => {
 export const serieStoricoPatrimonio = () => {
   const nettoOggi = patrimonioNetto();
 
-  // flusso netto (entrate - spese; i trasferimenti sono interni e non cambiano il netto)
-  // per mese, dai movimenti
+  // flusso netto mensile (entrate - spese; i trasferimenti sono interni)
   const flussoMese = {};
   for (const m of state.movimenti) {
     const am = m.annomese || m.data.slice(0, 7);
@@ -73,25 +72,31 @@ export const serieStoricoPatrimonio = () => {
   const mesi = Object.keys(flussoMese).sort();
   if (!mesi.length) return { punti: [], primoReale: null };
 
-  // ricostruzione a ritroso: parto da oggi e sottraggo i flussi mese per mese
   const meseCorrente = new Date().toISOString().slice(0, 7);
+  const tuttiMesi = Array.from(new Set([...mesi, meseCorrente])).sort();
+
+  // Asset con data di possesso: il loro valore va SOTTRATTO dalla stima nei mesi
+  // precedenti al possesso (in quei mesi non facevano parte del patrimonio).
+  const assetDatati = state.conti.filter(c => c.tipo === 'asset' && c.possessoData);
+
   const stima = {};
   let valore = nettoOggi;
-  // assicura che il mese corrente sia incluso
-  const tuttiMesi = Array.from(new Set([...mesi, meseCorrente])).sort();
   for (let i = tuttiMesi.length - 1; i >= 0; i--) {
     const am = tuttiMesi[i];
-    stima[am] = round2(valore);
-    // togliendo il flusso di questo mese ottengo il valore di fine mese precedente
+    // se un asset non era ancora posseduto in questo mese, il suo valore non c'era
+    let correzioneAsset = 0;
+    for (const a of assetDatati) {
+      const meseAcq = a.possessoData.slice(0, 7);
+      if (am < meseAcq) correzioneAsset += (a.saldo_iniziale || 0);
+    }
+    stima[am] = round2(valore - correzioneAsset);
     valore = valore - (flussoMese[am] || 0);
   }
 
-  // snapshot reali
   const realeByMese = {};
   for (const s of state.snapshot) realeByMese[s.annomese] = s.netto;
   const primoReale = Object.keys(realeByMese).sort()[0] || null;
 
-  // costruisci i punti: usa il reale dove esiste, altrimenti la stima
   const punti = tuttiMesi.map(am => ({
     annomese: am,
     valore: realeByMese[am] !== undefined ? realeByMese[am] : stima[am],

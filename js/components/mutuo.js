@@ -3,7 +3,7 @@
 import { state } from '../core/store.js';
 import { fmtEUR, escapeHtml, fmtData } from '../core/utils.js';
 import { statoPrestito, saveMutuo, saveEventoMutuo, eventiMutuo, deleteEventoMutuo } from '../services/prestitiService.js';
-import { apriSheet } from './shared.js';
+import { apriSheet, apriDataNativa, montaTastierino, apriSelettoreCategoria } from './shared.js';
 import { toast } from '../core/utils.js';
 
 export const renderMutuo = async (root) => {
@@ -64,44 +64,72 @@ export const renderMutuo = async (root) => {
 };
 
 const _edit = (root) => {
-  const m = state.mutuo || { nome: 'Mutuo', importo_iniziale: 0, tasso: 0, durata_mesi: 0, rata: 0, data_inizio: '2020-01-01', quota_utente: 100, banca: '', giorno_addebito: 1 };
-  const f = (label, id, val, type = 'number', step = '0.01') => `<label class="meta">${label}</label><input type="${type}" ${type === 'number' ? `step="${step}"` : ''} id="${id}" value="${escapeHtml(String(val))}" style="width:100%;padding:12px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);color:var(--txt);font-size:15px;margin:6px 0 10px">`;
+  const m = state.mutuo || { nome: 'Mutuo', importo_iniziale: 0, tasso: 0, durata_mesi: 0, rata: 0, data_inizio: '2020-01-01', quota_utente: 100, banca: '', giorno_addebito: 1, sub: 'Rata Mutuo', macro: 'Casa', conto: '' };
+  const conti = state.conti.filter(c => c.attivo !== false).map(c => c.nome);
+  const tmp = { data_inizio: m.data_inizio, macro: m.macro || 'Casa', cat: m.cat || '', sub: m.sub || 'Rata Mutuo' };
+  const vals = { importo: String(m.importo_iniziale).replace('.', ','), tasso: String(m.tasso).replace('.', ','), rata: String(m.rata).replace('.', ','), durata: String(m.durata_mesi), quota: String(m.quota_utente) };
+  const txtInput = (label, id, val) => `<label class="meta">${label}</label><input type="text" inputmode="decimal" id="${id}" value="${escapeHtml(val)}" class="sheet-input" readonly>`;
+
   apriSheet('Modifica mutuo', `
-    ${f('Nome', 'm-nome', m.nome, 'text')}
-    ${f('Importo iniziale (€)', 'm-imp', m.importo_iniziale)}
-    ${f('Tasso annuo (%)', 'm-tasso', m.tasso)}
-    ${f('Durata (mesi)', 'm-durata', m.durata_mesi, 'number', '1')}
-    ${f('Rata (€)', 'm-rata', m.rata)}
-    ${f('Data inizio', 'm-data', m.data_inizio, 'date')}
-    ${f('Tua quota (%)', 'm-quota', m.quota_utente, 'number', '1')}
-    ${f('Banca', 'm-banca', m.banca || '', 'text')}
+    <label class="meta">Nome</label><input id="m-nome" value="${escapeHtml(m.nome)}" class="sheet-input">
+    ${txtInput('Importo iniziale (€)', 'm-imp', vals.importo)}<div id="np-imp"></div>
+    ${txtInput('Tasso annuo (%)', 'm-tasso', vals.tasso)}<div id="np-tasso"></div>
+    ${txtInput('Durata (mesi)', 'm-durata', vals.durata)}<div id="np-durata"></div>
+    ${txtInput('Rata (€)', 'm-rata', vals.rata)}<div id="np-rata"></div>
+    <label class="meta">Data inizio</label><button type="button" id="m-data-btn" class="sheet-input" style="text-align:left">${_fmtDMutuo(tmp.data_inizio)}</button>
+    ${txtInput('Tua quota (%)', 'm-quota', vals.quota)}<div id="np-quota"></div>
+    <label class="meta">Banca</label><input id="m-banca" value="${escapeHtml(m.banca || '')}" class="sheet-input">
+    <div class="divider" style="margin:14px 0"></div>
+    <label class="meta">Conto da cui esce la rata</label>
+    <select id="m-conto" class="sheet-input">${conti.map(c => `<option ${c === m.conto ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}</select>
+    <label class="meta">Classificazione delle rate generate</label>
+    <button type="button" id="m-cat-btn" class="sheet-input" style="text-align:left">${[tmp.macro, tmp.cat, tmp.sub].filter(Boolean).join(' › ') || 'Scegli'}</button>
+    <p class="meta" style="font-size:11px;margin:4px 0 12px;opacity:.8">Le rate future compariranno tra le spese con questa classificazione, dalla prossima scadenza in avanti (le rate passate restano quelle già nello storico).</p>
     <button class="btn btn-primary" id="m-ok" style="margin-top:8px">Salva</button>
   `, (body, chiudi) => {
+    const attach = (inputId, npId, key) => {
+      const inp = body.querySelector('#' + inputId);
+      inp.addEventListener('click', () => montaTastierino(body.querySelector('#' + npId), vals[key], (s) => { vals[key] = s; inp.value = s; }, () => {}));
+    };
+    attach('m-imp', 'np-imp', 'importo'); attach('m-tasso', 'np-tasso', 'tasso');
+    attach('m-durata', 'np-durata', 'durata'); attach('m-rata', 'np-rata', 'rata'); attach('m-quota', 'np-quota', 'quota');
+
+    body.querySelector('#m-data-btn').addEventListener('click', () => apriDataNativa(tmp.data_inizio, (nd) => { tmp.data_inizio = nd; body.querySelector('#m-data-btn').textContent = _fmtDMutuo(nd); }));
+    body.querySelector('#m-cat-btn').addEventListener('click', () => apriSelettoreCategoria(sel => { tmp.macro = sel.macro; tmp.cat = sel.cat; tmp.sub = sel.sub; body.querySelector('#m-cat-btn').textContent = [sel.macro, sel.cat, sel.sub].filter(Boolean).join(' › '); }));
+
     body.querySelector('#m-ok').addEventListener('click', async () => {
       await saveMutuo({
-        nome: body.querySelector('#m-nome').value, importo_iniziale: parseFloat(body.querySelector('#m-imp').value) || 0,
-        tasso: parseFloat(body.querySelector('#m-tasso').value) || 0, durata_mesi: parseInt(body.querySelector('#m-durata').value) || 0,
-        rata: parseFloat(body.querySelector('#m-rata').value) || 0, data_inizio: body.querySelector('#m-data').value,
-        quota_utente: parseFloat(body.querySelector('#m-quota').value) || 100, banca: body.querySelector('#m-banca').value,
-        giorno_addebito: m.giorno_addebito || 1, conto: m.conto || '', macro: m.macro || 'Casa',
+        nome: body.querySelector('#m-nome').value, importo_iniziale: parseFloat(vals.importo.replace(',', '.')) || 0,
+        tasso: parseFloat(vals.tasso.replace(',', '.')) || 0, durata_mesi: parseInt(vals.durata) || 0,
+        rata: parseFloat(vals.rata.replace(',', '.')) || 0, data_inizio: tmp.data_inizio,
+        quota_utente: parseFloat(vals.quota) || 100, banca: body.querySelector('#m-banca').value,
+        giorno_addebito: m.giorno_addebito || 1, conto: body.querySelector('#m-conto').value,
+        macro: tmp.macro, cat: tmp.cat, sub: tmp.sub, descMovimento: m.descMovimento || '',
       });
       chiudi(); toast('Salvato'); renderMutuo(root);
     });
   });
 };
 
+const _fmtDMutuo = (iso) => { if (!iso) return ''; const [a, mm, g] = iso.split('-'); return `${g}/${mm}/${a}`; };
+
 const _addEvento = (root) => {
+  const tmp = { data: new Date().toISOString().slice(0, 10) };
+  let impStr = '0';
   apriSheet('Estinzione parziale', `
     <label class="meta">Importo estinto (€)</label>
-    <input type="number" step="0.01" id="e-imp" value="0" style="width:100%;padding:13px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);color:var(--txt);font-size:16px;margin:8px 0 12px">
+    <input type="text" inputmode="decimal" id="e-imp" value="0" class="sheet-input" readonly>
+    <div id="e-numpad"></div>
     <label class="meta">Data</label>
-    <input type="date" id="e-data" value="${new Date().toISOString().slice(0, 10)}" style="width:100%;padding:13px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);color:var(--txt);font-size:15px;margin:8px 0 12px">
-    <button class="btn btn-primary" id="e-ok">Registra</button>
+    <button type="button" id="e-data-btn" class="sheet-input" style="text-align:left">${_fmtDMutuo(tmp.data)}</button>
+    <button class="btn btn-primary" id="e-ok" style="margin-top:8px">Registra</button>
   `, (body, chiudi) => {
+    body.querySelector('#e-imp').addEventListener('click', () => montaTastierino(body.querySelector('#e-numpad'), impStr, (s) => { impStr = s; body.querySelector('#e-imp').value = s; }, () => {}));
+    body.querySelector('#e-data-btn').addEventListener('click', () => apriDataNativa(tmp.data, (nd) => { tmp.data = nd; body.querySelector('#e-data-btn').textContent = _fmtDMutuo(nd); }));
     body.querySelector('#e-ok').addEventListener('click', async () => {
-      const imp = parseFloat(body.querySelector('#e-imp').value) || 0;
+      const imp = parseFloat(impStr.replace(',', '.')) || 0;
       if (imp <= 0) { toast('Inserisci un importo'); return; }
-      await saveEventoMutuo({ tipo: 'estinzione_parziale', importo: imp, data: body.querySelector('#e-data').value, riferimento: 'mutuo-principale' });
+      await saveEventoMutuo({ tipo: 'estinzione_parziale', importo: imp, data: tmp.data, riferimento: 'mutuo-principale' });
       chiudi(); toast('Registrato'); renderMutuo(root);
     });
   });

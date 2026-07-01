@@ -123,3 +123,24 @@ export const impegnatoMensile = () => {
 
 export const ricorrentiAttive = () => state.ricorrenti.filter(r => r.attiva !== false)
   .sort((a, b) => b.imp - a.imp);
+
+// Aggiorna i movimenti PASSATI generati da una ricorrenza (opzione "anche le passate").
+// Li riconosce per corrispondenza di classificazione (macro/cat/sub/tipo) e descrizione.
+export const aggiornaMovimentiDaRicorrenza = async (ricorrenza, patch) => {
+  const { dbBulkPut } = await import('../core/db.js');
+  const daAggiornare = state.movimenti.filter(m =>
+    m.tipo === ricorrenza.tipo &&
+    m.macro === ricorrenza.macro &&
+    m.cat === (ricorrenza.cat || '') &&
+    m.sub === (ricorrenza.sub || '') &&
+    (ricorrenza.desc ? m.desc === ricorrenza.desc : true)
+  ).map(m => ({
+    ...m,
+    imp: patch.imp !== undefined ? round2(patch.imp) : m.imp,
+    desc: patch.desc !== undefined ? patch.desc : m.desc,
+  }));
+  if (daAggiornare.length) await dbBulkPut('movimenti', daAggiornare);
+  await refreshAll();
+  return daAggiornare.length;
+};
+
