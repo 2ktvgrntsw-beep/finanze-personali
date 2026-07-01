@@ -1,9 +1,9 @@
 // inserimento.js — Nuova operazione (spesa/entrata/trasferimento) e modifica.
-// Form compatto a icone con tastierino numerico, suggerimenti dalla descrizione,
-// selettore categoria a griglia e ricorrenza inline.
+// Compatto: righe basse, tipo Spesa/Entrata/Trasferimento in basso, data a ruota inline,
+// suggerimenti a tendina che completano descrizione + classificazione.
 
 import { state } from '../core/store.js';
-import { fmtEUR, todayISO, fmtDataEstesa, escapeHtml, round2 } from '../core/utils.js';
+import { fmtEUR, todayISO, fmtDataEstesa, escapeHtml, round2, nomeMese } from '../core/utils.js';
 import { iconaMacro } from '../core/icons.js';
 import { navigate } from '../core/router.js';
 import { saveMovimento, deleteMovimento } from '../services/movimentiService.js';
@@ -12,28 +12,24 @@ import { suggerisciPerTesto, suggerisciTag } from '../services/suggerimentiServi
 import { apriSelettoreCategoria, apriSheet } from './shared.js';
 import { toast } from '../core/utils.js';
 
-// bozza dell'operazione in corso
 let d = null;
 
 const nuovaBozza = () => ({
   id: null, tipo: 'spesa', imp: 0, impStr: '0',
   macro: '', cat: '', sub: '', conto: '', contoDest: '',
   desc: '', tag: [], data: todayISO(),
-  ripeti: null,   // {frequenza, giorno} se ricorrente
+  ripeti: null,
 });
 
 export const renderInserimento = async (root, params = {}) => {
-  // modalità modifica?
   if (params.id) {
     const m = state.movimenti.find(x => x.id === params.id);
     d = m ? { ...nuovaBozza(), ...m, impStr: String(m.imp).replace('.', ','), id: m.id } : nuovaBozza();
-  } else if (!d || !params.keep) {
+  } else {
     d = nuovaBozza();
-    // conto di default: il primo conto liquidità
     const liq = state.conti.find(c => c.tipo === 'liquidita');
     if (liq) d.conto = liq.nome;
   }
-
   document.getElementById('view-title').textContent = params.id ? 'Modifica' : 'Nuova operazione';
   _render(root);
 };
@@ -44,32 +40,35 @@ const _render = (root) => {
   const impColor = d.tipo === 'entrata' ? 'var(--up)' : d.tipo === 'trasferimento' ? 'var(--transfer)' : 'var(--down)';
 
   const contoRow = isTrasf ? `
-    <div class="form-row"><div class="ic">💳</div><div class="val" id="pick-conto">${d.conto ? escapeHtml(d.conto) : '<span class="ph">Da conto</span>'}</div></div>
-    <div class="form-row"><div class="ic">➡️</div><div class="val" id="pick-conto-dest">${d.contoDest ? escapeHtml(d.contoDest) : '<span class="ph">A conto</span>'}</div></div>
+    <div class="frow"><div class="fic">💳</div><div class="fval" id="pick-conto">${d.conto ? escapeHtml(d.conto) : '<span class="fph">Da conto</span>'}</div></div>
+    <div class="frow"><div class="fic">➡️</div><div class="fval" id="pick-conto-dest">${d.contoDest ? escapeHtml(d.contoDest) : '<span class="fph">A conto</span>'}</div></div>
   ` : `
-    <div class="form-row"><div class="ic">💳</div><div class="val" id="pick-conto">${d.conto ? escapeHtml(d.conto) : '<span class="ph">Conto</span>'}</div></div>
-    <div class="form-row"><div class="ic act">🏷️</div><div class="val" id="pick-cat">${d.macro ? escapeHtml(catLabel) : '<span class="ph">Seleziona categoria</span>'}</div>${d.macro ? '<div class="clear" id="clear-cat">✕</div>' : ''}</div>
+    <div class="frow"><div class="fic">💳</div><div class="fval" id="pick-conto">${d.conto ? escapeHtml(d.conto) : '<span class="fph">Conto</span>'}</div></div>
+    <div class="frow"><div class="fic act">🏷️</div><div class="fval" id="pick-cat">${d.macro ? escapeHtml(catLabel) : '<span class="fph">Seleziona categoria</span>'}</div>${d.macro ? '<div class="fclear" id="clear-cat">✕</div>' : ''}</div>
   `;
 
   root.innerHTML = `
-    <div class="type-switch">
+    <div class="ins-compact">
+      ${contoRow}
+      <div class="frow">
+        <div class="fic">💬</div>
+        <input class="ffld" id="fld-desc" placeholder="Descrizione" value="${escapeHtml(d.desc)}" autocomplete="off">
+        <div class="sugg-dropdown" id="sugg-dd"></div>
+      </div>
+      <div class="frow"><div class="fic">💰</div><div class="fval famount" id="pick-imp" style="color:${impColor}">${escapeHtml(d.impStr)} €</div></div>
+      <div class="frow" id="row-data"><div class="fic">📅</div><div class="fval" id="pick-data">${fmtDataEstesa(d.data)}</div></div>
+      <div id="data-wheel"></div>
+      <div class="frow"><div class="fic">🔁</div><div class="fval ${d.ripeti ? '' : 'fph'}" id="pick-ripeti">${d.ripeti ? _labelRipeti(d.ripeti) : 'Ripeti'}</div>${d.ripeti ? '<div class="fclear" id="clear-ripeti">✕</div>' : ''}</div>
+      ${!isTrasf ? `<div class="frow"><div class="fic">#️⃣</div><div class="fval ${d.tag.length ? '' : 'fph'}" id="pick-tag">${d.tag.length ? d.tag.map(escapeHtml).join(', ') : 'Tag (opzionale)'}</div></div>` : ''}
+    </div>
+
+    <div class="type-switch-bottom">
       <button data-t="spesa" class="${d.tipo === 'spesa' ? 'on' : ''}">Spesa</button>
       <button data-t="entrata" class="${d.tipo === 'entrata' ? 'on en' : ''}">Entrata</button>
       <button data-t="trasferimento" class="${d.tipo === 'trasferimento' ? 'on tr' : ''}">Trasferimento</button>
     </div>
 
-    <div class="form-rows">
-      ${contoRow}
-      <div class="form-row"><div class="ic">💬</div><input class="fld" id="fld-desc" placeholder="Descrizione" value="${escapeHtml(d.desc)}" autocomplete="off"></div>
-      <div class="form-row"><div class="ic">🐷</div><div class="val amount num" id="pick-imp" style="color:${impColor}">${escapeHtml(d.impStr)} €</div></div>
-      <div class="form-row"><div class="ic">📅</div><div class="val" id="pick-data">${fmtDataEstesa(d.data)}</div></div>
-      <div class="form-row"><div class="ic">🔁</div><div class="val ${d.ripeti ? '' : 'ph'}" id="pick-ripeti">${d.ripeti ? _labelRipeti(d.ripeti) : 'Ripeti — rendi ricorrente'}</div>${d.ripeti ? '<div class="clear" id="clear-ripeti">✕</div>' : ''}</div>
-      ${!isTrasf ? `<div class="form-row"><div class="ic">#️⃣</div><div class="val ${d.tag.length ? '' : 'ph'}" id="pick-tag">${d.tag.length ? d.tag.map(escapeHtml).join(', ') : 'Tag (opzionale)'}</div></div>` : ''}
-    </div>
-
-    <div id="suggerimenti"></div>
-
-    <div style="margin-top:16px" class="btn-row">
+    <div class="ins-actions">
       ${d.id ? '<button class="btn btn-danger" id="del-mov">Elimina</button>' : ''}
       <button class="btn btn-primary" id="salva">${d.id ? 'Salva modifiche' : 'Salva'}</button>
     </div>
@@ -77,67 +76,78 @@ const _render = (root) => {
     <div id="numpad-mount"></div>
   `;
 
-  // --- descrizione + suggerimenti ---
+  // descrizione + tendina suggerimenti
   const fldDesc = root.querySelector('#fld-desc');
-  fldDesc.addEventListener('input', () => { d.desc = fldDesc.value; _mostraSuggerimenti(root); });
+  fldDesc.addEventListener('input', () => { d.desc = fldDesc.value; _mostraTendina(root); });
+  fldDesc.addEventListener('focus', () => _mostraTendina(root));
 
-  // --- tipo ---
-  root.querySelectorAll('.type-switch button').forEach(b => b.addEventListener('click', () => {
+  // tipo
+  root.querySelectorAll('.type-switch-bottom button').forEach(b => b.addEventListener('click', () => {
     d.tipo = b.dataset.t;
     if (d.tipo === 'trasferimento') { d.macro = 'Investimenti'; d.cat = ''; d.sub = ''; }
     _render(root);
   }));
 
-  // --- conto ---
+  // conto
   root.querySelector('#pick-conto').addEventListener('click', () => _pickConto(root, 'conto'));
   const pcd = root.querySelector('#pick-conto-dest');
   if (pcd) pcd.addEventListener('click', () => _pickConto(root, 'contoDest'));
 
-  // --- categoria ---
+  // categoria
   const pc = root.querySelector('#pick-cat');
   if (pc) pc.addEventListener('click', () => apriSelettoreCategoria(sel => { d.macro = sel.macro; d.cat = sel.cat; d.sub = sel.sub; _render(root); }));
   const cc = root.querySelector('#clear-cat');
   if (cc) cc.addEventListener('click', () => { d.macro = ''; d.cat = ''; d.sub = ''; _render(root); });
 
-  // --- importo (tastierino) ---
+  // importo
   root.querySelector('#pick-imp').addEventListener('click', () => _apriTastierino(root));
 
-  // --- data ---
-  root.querySelector('#pick-data').addEventListener('click', () => _pickData(root));
+  // data (ruota inline)
+  root.querySelector('#pick-data').addEventListener('click', () => _toggleDataWheel(root));
 
-  // --- ripeti ---
+  // ripeti
   root.querySelector('#pick-ripeti').addEventListener('click', () => _pickRipeti(root));
   const cr = root.querySelector('#clear-ripeti');
   if (cr) cr.addEventListener('click', () => { d.ripeti = null; _render(root); });
 
-  // --- tag ---
+  // tag
   const pt = root.querySelector('#pick-tag');
   if (pt) pt.addEventListener('click', () => _pickTag(root));
 
-  // --- salva / elimina ---
+  // salva / elimina
   root.querySelector('#salva').addEventListener('click', () => _salva());
   const dm = root.querySelector('#del-mov');
   if (dm) dm.addEventListener('click', async () => { if (confirm('Eliminare?')) { await deleteMovimento(d.id); toast('Eliminato'); navigate('movimenti'); } });
 };
 
-const _labelRipeti = (r) => ({ giornaliera: 'Ogni giorno', settimanale: 'Ogni settimana', mensile: 'Ogni mese', annuale: 'Ogni anno' }[r.frequenza] || 'Ricorrente');
+const _labelRipeti = (r) => {
+  const base = { giornaliera: 'Ogni giorno', settimanale: 'Ogni settimana', mensile: 'Ogni mese', annuale: 'Ogni anno' }[r.frequenza] || 'Ricorrente';
+  let fine = '';
+  if (r.fineTipo === 'data' && r.fineData) fine = ` · fino al ${r.fineData.split('-').reverse().join('/')}`;
+  else if (r.fineTipo === 'conteggio' && r.fineConteggio) fine = ` · ${r.fineConteggio} volte`;
+  return base + fine;
+};
 
-const _mostraSuggerimenti = (root) => {
-  const box = root.querySelector('#suggerimenti');
-  const sugg = suggerisciPerTesto(d.desc, 4);
-  if (!sugg.length) { box.innerHTML = ''; return; }
-  box.innerHTML = `<div class="section-lbl" style="padding-bottom:6px"><span>Suggerimenti</span></div>` +
-    sugg.map((s, i) => {
-      const c = s.classificazione;
-      const label = [c.macro, c.cat, c.sub].filter(Boolean).join(' › ');
-      return `<div class="mov" data-sugg="${i}"><div class="ic">${iconaMacro(c.macro)}</div><div class="body"><div class="d1">${escapeHtml(s.desc)}</div><div class="d2">${escapeHtml(label)}${c.conto ? ' · ' + escapeHtml(c.conto) : ''}</div></div><div class="chev" style="color:var(--accent)">＋</div></div>`;
-    }).join('');
-  box.querySelectorAll('[data-sugg]').forEach(el => el.addEventListener('click', () => {
+// Tendina suggerimenti: completa DESCRIZIONE + classificazione (conto/categoria)
+const _mostraTendina = (root) => {
+  const dd = root.querySelector('#sugg-dd');
+  if (!dd) return;
+  const sugg = suggerisciPerTesto(d.desc, 5);
+  if (!sugg.length || d.desc.trim().length < 2) { dd.innerHTML = ''; dd.style.display = 'none'; return; }
+  dd.style.display = 'block';
+  dd.innerHTML = sugg.map((s, i) => {
+    const c = s.classificazione;
+    const label = [c.macro, c.cat].filter(Boolean).join(':') || c.tipo;
+    return `<div class="sugg-item" data-sugg="${i}"><b>${escapeHtml(s.desc)}</b><span>${escapeHtml(label)}</span></div>`;
+  }).join('');
+  dd.querySelectorAll('[data-sugg]').forEach(el => el.addEventListener('click', () => {
     const s = sugg[parseInt(el.dataset.sugg)];
     const c = s.classificazione;
-    d.macro = c.macro; d.cat = c.cat; d.sub = c.sub; d.tipo = c.tipo || d.tipo;
+    // completa la descrizione col testo del suggerimento
+    d.desc = s.desc;
+    d.macro = c.macro || d.macro; d.cat = c.cat || ''; d.sub = c.sub || '';
+    d.tipo = c.tipo || d.tipo;
     if (c.conto) d.conto = c.conto;
-    if (!d.desc) d.desc = s.desc;
     _render(root);
   }));
 };
@@ -150,16 +160,98 @@ const _pickConto = (root, campo) => {
   });
 };
 
-const _pickData = (root) => {
-  apriSheet('Data', `<input type="date" id="d-inp" value="${d.data}" style="width:100%;padding:14px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);color:var(--txt);font-size:16px"><button class="btn btn-primary" id="d-ok" style="margin-top:16px">OK</button>`, (body, chiudi) => {
-    body.querySelector('#d-ok').addEventListener('click', () => { d.data = body.querySelector('#d-inp').value || d.data; chiudi(); _render(root); });
-  });
+// Ruota data inline (giorno / mese / anno) che si espande sotto la riga
+const _toggleDataWheel = (root) => {
+  const mount = root.querySelector('#data-wheel');
+  if (mount.innerHTML) { mount.innerHTML = ''; return; }
+
+  const [ay, am, ad] = d.data.split('-').map(Number);
+  const oggi = new Date();
+  const anni = [];
+  for (let y = oggi.getFullYear() - 10; y <= oggi.getFullYear() + 1; y++) anni.push(y);
+  const mesi = Array.from({ length: 12 }, (_, i) => i + 1);
+  const giorni = Array.from({ length: 31 }, (_, i) => i + 1);
+
+  const col = (items, sel, id, fmt) => `
+    <div class="wheel-col" id="${id}">
+      ${items.map(v => `<div class="wheel-opt ${v === sel ? 'sel' : ''}" data-v="${v}">${fmt ? fmt(v) : v}</div>`).join('')}
+    </div>`;
+
+  mount.innerHTML = `
+    <div class="date-wheel">
+      ${col(giorni, ad, 'wg')}
+      ${col(mesi, am, 'wm', v => nomeMese(v - 1))}
+      ${col(anni, ay, 'wy')}
+    </div>`;
+
+  const sel = { g: ad, m: am, y: ay };
+  const applica = () => {
+    // valida giorno max del mese
+    const maxG = new Date(sel.y, sel.m, 0).getDate();
+    if (sel.g > maxG) sel.g = maxG;
+    d.data = `${sel.y}-${String(sel.m).padStart(2, '0')}-${String(sel.g).padStart(2, '0')}`;
+    const pd = root.querySelector('#pick-data');
+    if (pd) pd.textContent = fmtDataEstesa(d.data);
+  };
+
+  const bind = (colId, key) => {
+    mount.querySelectorAll(`#${colId} .wheel-opt`).forEach(o => o.addEventListener('click', () => {
+      sel[key] = parseInt(o.dataset.v);
+      mount.querySelectorAll(`#${colId} .wheel-opt`).forEach(x => x.classList.remove('sel'));
+      o.classList.add('sel');
+      o.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      applica();
+    }));
+    // centra l'opzione selezionata all'apertura
+    const selEl = mount.querySelector(`#${colId} .wheel-opt.sel`);
+    if (selEl) selEl.scrollIntoView({ block: 'center' });
+  };
+  bind('wg', 'g'); bind('wm', 'm'); bind('wy', 'y');
 };
 
+// Ricorrenza: frequenza + inizio + fine (data o conteggio), entrambe disponibili
 const _pickRipeti = (root) => {
-  const opzioni = [['giornaliera', 'Ogni giorno'], ['settimanale', 'Ogni settimana'], ['mensile', 'Ogni mese'], ['annuale', 'Ogni anno']];
-  apriSheet('Rendi ricorrente', opzioni.map(([v, l]) => `<div class="mov" data-r="${v}"><div class="ic">🔁</div><div class="body"><div class="d1">${l}</div></div></div>`).join(''), (body, chiudi) => {
-    body.querySelectorAll('[data-r]').forEach(el => el.addEventListener('click', () => { d.ripeti = { frequenza: el.dataset.r }; chiudi(); _render(root); }));
+  const oggi = todayISO();
+  const cur = d.ripeti || { frequenza: 'mensile', dataInizio: d.data, fineTipo: 'mai' };
+  apriSheet('Rendi ricorrente', `
+    <label class="meta">Frequenza</label>
+    <select id="r-freq" class="sheet-input">
+      <option value="giornaliera" ${cur.frequenza === 'giornaliera' ? 'selected' : ''}>Ogni giorno</option>
+      <option value="settimanale" ${cur.frequenza === 'settimanale' ? 'selected' : ''}>Ogni settimana</option>
+      <option value="mensile" ${cur.frequenza === 'mensile' ? 'selected' : ''}>Ogni mese</option>
+      <option value="annuale" ${cur.frequenza === 'annuale' ? 'selected' : ''}>Ogni anno</option>
+    </select>
+    <label class="meta">Inizia il</label>
+    <input type="date" id="r-inizio" value="${cur.dataInizio || d.data}" class="sheet-input">
+    <label class="meta">Termina</label>
+    <select id="r-fine-tipo" class="sheet-input">
+      <option value="mai" ${cur.fineTipo === 'mai' ? 'selected' : ''}>Mai</option>
+      <option value="data" ${cur.fineTipo === 'data' ? 'selected' : ''}>A una data</option>
+      <option value="conteggio" ${cur.fineTipo === 'conteggio' ? 'selected' : ''}>Dopo N volte</option>
+    </select>
+    <div id="r-fine-extra"></div>
+    <button class="btn btn-primary" id="r-ok" style="margin-top:8px">Conferma</button>
+  `, (body, chiudi) => {
+    const fineTipo = body.querySelector('#r-fine-tipo');
+    const extra = body.querySelector('#r-fine-extra');
+    const renderExtra = () => {
+      if (fineTipo.value === 'data') extra.innerHTML = `<label class="meta">Fino al</label><input type="date" id="r-fine-data" value="${cur.fineData || ''}" class="sheet-input">`;
+      else if (fineTipo.value === 'conteggio') extra.innerHTML = `<label class="meta">Numero di volte</label><input type="number" id="r-fine-conteggio" value="${cur.fineConteggio || 12}" min="1" class="sheet-input">`;
+      else extra.innerHTML = '';
+    };
+    fineTipo.addEventListener('change', renderExtra); renderExtra();
+
+    body.querySelector('#r-ok').addEventListener('click', () => {
+      const ft = fineTipo.value;
+      d.ripeti = {
+        frequenza: body.querySelector('#r-freq').value,
+        dataInizio: body.querySelector('#r-inizio').value,
+        fineTipo: ft,
+        fineData: ft === 'data' ? (body.querySelector('#r-fine-data')?.value || null) : null,
+        fineConteggio: ft === 'conteggio' ? (parseInt(body.querySelector('#r-fine-conteggio')?.value) || null) : null,
+      };
+      chiudi(); _render(root);
+    });
   });
 };
 
@@ -167,7 +259,7 @@ const _pickTag = (root) => {
   const render = (body, chiudi) => {
     const esistenti = suggerisciTag('', 20);
     body.innerHTML = `
-      <input id="tag-inp" placeholder="Nuovo tag o cerca..." style="width:100%;padding:13px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);color:var(--txt);font-size:16px;margin-bottom:12px" autocomplete="off">
+      <input id="tag-inp" placeholder="Nuovo tag o cerca..." class="sheet-input" autocomplete="off">
       <div class="chip-row" style="flex-wrap:wrap" id="tag-chips">
         ${esistenti.map(t => `<div class="chip ${d.tag.includes(t) ? 'on' : ''}" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</div>`).join('')}
       </div>
@@ -186,7 +278,6 @@ const _pickTag = (root) => {
   apriSheet('Tag', '', render);
 };
 
-// --- Tastierino numerico ---
 const _apriTastierino = (root) => {
   const mount = root.querySelector('#numpad-mount');
   const tasti = ['7', '8', '9', '4', '5', '6', '1', '2', '3', ',', '0', '00'];
@@ -202,7 +293,6 @@ const _apriTastierino = (root) => {
     const el = root.querySelector('#pick-imp');
     if (el) el.textContent = `${d.impStr} €`;
   };
-
   mount.querySelectorAll('.numpad button').forEach(b => b.addEventListener('click', () => {
     const k = b.dataset.k;
     if (k === 'C') d.impStr = '0';
@@ -219,20 +309,21 @@ const _salva = async () => {
   if (d.tipo === 'trasferimento' && (!d.conto || !d.contoDest)) { toast('Scegli i conti'); return; }
   if (d.tipo !== 'trasferimento' && !d.macro) { toast('Scegli una categoria'); return; }
 
-  const mov = await saveMovimento({
+  const wasTrasf = d.tipo === 'trasferimento';
+  await saveMovimento({
     id: d.id, tipo: d.tipo, imp: d.imp, data: d.data,
     macro: d.macro, cat: d.cat, sub: d.sub,
     conto: d.conto, contoDest: d.contoDest,
     desc: d.desc, tag: d.tag,
   });
 
-  // se marcato come ricorrente, crea anche la ricorrenza
   if (d.ripeti && !d.id) {
     await saveRicorrente({
       nome: d.desc || d.macro, tipo: d.tipo, frequenza: d.ripeti.frequenza,
       imp: d.imp, macro: d.macro, cat: d.cat, sub: d.sub,
       conto: d.conto, contoDest: d.contoDest, tag: d.tag, desc: d.desc,
-      prossima: d.data,
+      dataInizio: d.ripeti.dataInizio, prossima: d.ripeti.dataInizio,
+      fineTipo: d.ripeti.fineTipo, fineData: d.ripeti.fineData, fineConteggio: d.ripeti.fineConteggio,
     });
     toast('Salvato e reso ricorrente');
   } else {
@@ -240,5 +331,5 @@ const _salva = async () => {
   }
 
   d = null;
-  navigate(d && d.tipo === 'trasferimento' ? 'movimenti' : 'spese');
+  navigate(wasTrasf ? 'movimenti' : 'spese');
 };

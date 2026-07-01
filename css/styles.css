@@ -289,3 +289,50 @@ input[type=date]{color-scheme:dark}
 @keyframes fade{from{opacity:0}to{opacity:1}}
 @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
 @media (prefers-reduced-motion:reduce){*{animation:none !important;transition:none !important}}
+
+/* ============================================================================
+   Inserimento compatto (v2.1) — righe basse, tendina, ruota data, toggle basso
+   ============================================================================ */
+.ins-compact{margin-top:8px;border-radius:var(--r-md);overflow:hidden;border:1px solid var(--line);background:var(--surface)}
+.frow{display:flex;align-items:center;border-bottom:1px solid var(--line);min-height:46px;position:relative}
+.frow:last-child{border-bottom:0}
+.frow .fic{width:48px;align-self:stretch;display:flex;align-items:center;justify-content:center;font-size:16px;color:var(--txt-2);flex:none;border-right:1px solid var(--line)}
+.frow .fic.act{background:var(--accent);color:#fff}
+.frow .ffld{flex:1;padding:0 14px;font-size:15px;border:0;background:transparent;color:var(--txt);font-family:var(--font);outline:none;height:46px}
+.frow .fval{flex:1;padding:0 14px;font-size:15px;display:flex;align-items:center;height:46px;cursor:pointer}
+.frow .fval.famount{font-weight:800;font-size:19px}
+.frow .fph{color:var(--txt-3)}
+.frow .fclear{color:var(--down);font-size:16px;padding:0 14px;cursor:pointer}
+
+/* tendina suggerimenti sotto la descrizione */
+.sugg-dropdown{position:absolute;top:100%;left:48px;right:0;background:var(--surface-2);border:1px solid var(--line);border-top:0;border-radius:0 0 12px 12px;z-index:60;display:none;max-height:220px;overflow-y:auto;box-shadow:0 12px 24px rgba(0,0,0,.4)}
+.sugg-item{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 14px;cursor:pointer;border-bottom:1px solid var(--line)}
+.sugg-item:last-child{border-bottom:0}
+.sugg-item:active{background:var(--surface-3)}
+.sugg-item b{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sugg-item span{font-size:12px;color:var(--txt-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:none;max-width:55%}
+
+/* ruota data inline */
+.date-wheel{display:flex;gap:8px;padding:10px 14px;background:var(--surface-2);border-bottom:1px solid var(--line);max-height:180px}
+.wheel-col{flex:1;overflow-y:auto;max-height:160px;scroll-snap-type:y mandatory;text-align:center;border-radius:10px;background:var(--bg)}
+.wheel-col::-webkit-scrollbar{display:none}
+.wheel-opt{padding:9px 4px;font-size:15px;color:var(--txt-3);cursor:pointer;scroll-snap-align:center}
+.wheel-opt.sel{color:var(--accent);font-weight:800;font-size:16px}
+
+/* toggle tipo in basso */
+.type-switch-bottom{display:flex;gap:0;margin-top:14px;background:var(--surface-2);border-radius:12px;padding:4px}
+.type-switch-bottom button{flex:1;border:0;background:transparent;color:var(--txt-2);font-size:14px;font-weight:650;padding:11px 8px;border-radius:9px;font-family:var(--font);cursor:pointer;transition:background .15s,color .15s}
+.type-switch-bottom button.on{background:var(--accent);color:#fff}
+.type-switch-bottom button.on.en{background:var(--up)}
+.type-switch-bottom button.on.tr{background:var(--transfer)}
+
+.ins-actions{display:flex;gap:10px;margin-top:14px}
+.ins-actions .btn{flex:1}
+
+/* input generico nei bottom sheet */
+.sheet-input{width:100%;padding:12px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);color:var(--txt);font-size:15px;margin:6px 0 12px;font-family:var(--font)}
+select.sheet-input{color-scheme:dark}
+
+/* barra avanzamento mutuo */
+.progress-big{height:12px;background:var(--surface-3);border-radius:100px;overflow:hidden;margin:14px 0 6px}
+.progress-big>span{display:block;height:100%;border-radius:100px;background:linear-gradient(90deg,var(--accent),var(--accent-2));transition:width .5s ease}

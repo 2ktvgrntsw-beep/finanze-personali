@@ -27,6 +27,7 @@ export const renderMovimenti = async (root, params = {}) => {
   if (cat) movs = movs.filter(m => m.cat === cat);
   if (sub) movs = movs.filter(m => m.sub === sub);
   if (tipo) movs = movs.filter(m => m.tipo === tipo);
+  if (params.contoDest) movs = movs.filter(m => m.contoDest === params.contoDest);
 
   movs = movs.slice().sort((a, b) => b.data.localeCompare(a.data));
 

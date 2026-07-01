@@ -13,6 +13,7 @@ export const FREQUENZE = ['giornaliera', 'settimanale', 'mensile', 'annuale'];
 
 // --- CRUD ricorrenti ---
 export const saveRicorrente = async (r) => {
+  const dataInizio = r.dataInizio || r.prossima || todayISO();
   const obj = {
     id: r.id || uid(),
     nome: r.nome || r.desc || 'Ricorrenza',
@@ -29,8 +30,14 @@ export const saveRicorrente = async (r) => {
     soglia: r.soglia || null,
     isRegola: r.isRegola === true,     // true = regola automatica (accantonamento)
     attiva: r.attiva !== false,
+    // inizio / fine
+    dataInizio,
+    fineTipo: r.fineTipo || 'mai',     // 'mai' | 'data' | 'conteggio'
+    fineData: r.fineData || null,      // se fineTipo === 'data'
+    fineConteggio: r.fineConteggio || null,  // se fineTipo === 'conteggio' (numero di occorrenze)
+    generati: r.generati || 0,         // quante occorrenze già generate (per il conteggio)
     ultimaGenerazione: r.ultimaGenerazione || null,
-    prossima: r.prossima || todayISO(),
+    prossima: r.prossima || dataInizio,
   };
   await dbAdd('ricorrenti', obj);
   await refreshAll();
@@ -50,20 +57,27 @@ const prossimaData = (dataISO, frequenza) => {
 };
 
 // Genera i movimenti per tutte le ricorrenze scadute fino a oggi.
+// Rispetta la data di fine (per data o per numero di occorrenze). I movimenti vengono
+// creati SOLO quando la scadenza è effettivamente arrivata (<= oggi), mai in anticipo.
 export const generaScaduti = async () => {
   const oggi = todayISO();
   let generati = 0;
 
   for (const r of state.ricorrenti) {
     if (r.attiva === false) continue;
-    let cursore = r.prossima || r.ultimaGenerazione || oggi;
-    // Genera finché la prossima scadenza è <= oggi (con un limite di sicurezza)
+    let cursore = r.prossima || r.ultimaGenerazione || r.dataInizio || oggi;
+    let contatore = r.generati || 0;
     let guard = 0;
+
     while (cursore <= oggi && guard < 1000) {
       guard++;
-      let importo = r.imp;
+      // controllo fine per DATA
+      if (r.fineTipo === 'data' && r.fineData && cursore > r.fineData) break;
+      // controllo fine per CONTEGGIO
+      if (r.fineTipo === 'conteggio' && r.fineConteggio && contatore >= r.fineConteggio) break;
 
-      // Regola a soglia: l'importo è quanto serve per riportare il conto destinazione alla soglia
+      let importo = r.imp;
+      // Regola a soglia: importo = quanto serve per riportare il conto alla soglia
       if (r.modalita === 'soglia' && r.soglia && r.contoDest) {
         const dest = state.conti.find(c => c.nome === r.contoDest);
         if (dest) {
@@ -80,11 +94,12 @@ export const generaScaduti = async () => {
           desc: r.desc || r.nome, note: 'Generato da ricorrenza', origine: 'ricorrenza',
         });
         generati++;
+        contatore++;
       }
       cursore = prossimaData(cursore, r.frequenza);
     }
-    // aggiorna la prossima scadenza della ricorrenza
-    await dbAdd('ricorrenti', { ...r, prossima: cursore, ultimaGenerazione: oggi });
+    // aggiorna la prossima scadenza e il contatore della ricorrenza
+    await dbAdd('ricorrenti', { ...r, prossima: cursore, generati: contatore, ultimaGenerazione: oggi });
   }
 
   if (generati > 0) await refreshAll();

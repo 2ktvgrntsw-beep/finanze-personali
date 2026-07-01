@@ -18,7 +18,8 @@ export const renderMutuo = async (root) => {
     <div class="net-card">
       <div class="lbl">Debito residuo${m.quota_utente < 100 ? ` (tua quota ${m.quota_utente}%)` : ''}</div>
       <div class="big num">${fmtEUR(s.residuo * (m.quota_utente || 100) / 100)}</div>
-      <div class="delta" style="color:var(--up)">${s.pctCompletamento}% restituito</div>
+      <div class="progress-big"><span style="width:${s.pctCompletamento}%"></span></div>
+      <div class="delta" style="color:var(--up)">${s.pctCompletamento}% restituito · ${fmtEUR(s.restituito * (m.quota_utente || 100) / 100)} di ${fmtEUR(m.importo_iniziale * (m.quota_utente || 100) / 100)}</div>
       <div class="sub">
         <div><span class="lbl2">Rata</span><b class="num">${fmtEUR(s.quotaUtente)}</b></div>
         <div><span class="lbl2">Rate</span><b class="num">${s.ratePagate}/${s.rateTotali}</b></div>
@@ -38,19 +39,28 @@ export const renderMutuo = async (root) => {
     <div class="section-lbl"><span>Eventi</span><span style="color:var(--accent);font-size:11px;cursor:pointer" id="add-ev">➕ Estinzione parziale</span></div>
     ${eventi.length ? eventi.map(e => `<div class="recrow" data-ev="${e.id}"><div class="ic" style="background:var(--up-bg)">💸</div><div class="body"><div class="d1">${e.tipo === 'estinzione_parziale' ? 'Estinzione parziale' : e.tipo}</div><div class="d2">${fmtData(e.data)}</div></div><div class="amt num">−${fmtEUR(e.importo)}</div></div>`).join('') : '<div class="meta" style="padding:4px">Nessun evento straordinario</div>'}
 
-    <div class="section-lbl"><span>Piano di ammortamento</span></div>
-    <div class="card" style="max-height:360px;overflow-y:auto">
-      ${s.piano.filter((_, i) => i < 360).map(r => `
-        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);opacity:${r.pagata ? '.5' : '1'}">
-          <span class="meta">${r.n}. ${fmtData(r.data)}</span>
-          <span style="font-size:12px" class="num">C ${fmtEUR(r.quotaCapitale)} · I ${fmtEUR(r.quotaInteressi)}</span>
-        </div>`).join('')}
-    </div>
+    <div class="section-lbl"><span>Piano di ammortamento</span><span style="color:var(--accent);font-size:11px;cursor:pointer" id="toggle-piano">Mostra piano</span></div>
+    <div id="piano-mount"></div>
   `;
 
   root.querySelector('#edit').addEventListener('click', () => _edit(root));
   root.querySelector('#add-ev').addEventListener('click', () => _addEvento(root));
   root.querySelectorAll('[data-ev]').forEach(el => el.addEventListener('click', async () => { if (confirm('Eliminare evento?')) { await deleteEventoMutuo(el.dataset.ev); toast('Eliminato'); renderMutuo(root); } }));
+
+  // piano nascosto, si apre al click
+  const togglePiano = root.querySelector('#toggle-piano');
+  const pianoMount = root.querySelector('#piano-mount');
+  togglePiano.addEventListener('click', () => {
+    if (pianoMount.innerHTML) { pianoMount.innerHTML = ''; togglePiano.textContent = 'Mostra piano'; return; }
+    togglePiano.textContent = 'Nascondi piano';
+    pianoMount.innerHTML = `<div class="card" style="max-height:360px;overflow-y:auto">
+      ${s.piano.filter((_, i) => i < 360).map(r => `
+        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);opacity:${r.pagata ? '.5' : '1'}">
+          <span class="meta">${r.n}. ${fmtData(r.data)}</span>
+          <span style="font-size:12px" class="num">C ${fmtEUR(r.quotaCapitale)} · I ${fmtEUR(r.quotaInteressi)}</span>
+        </div>`).join('')}
+    </div>`;
+  });
 };
 
 const _edit = (root) => {

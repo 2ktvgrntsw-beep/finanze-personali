@@ -9,7 +9,7 @@ import { navigate } from '../core/router.js';
 import { saldoStimato, saveConto, LABEL_TIPO } from '../services/contiService.js';
 import {
   composizioneAttivita, totaleAttivita, totalePassivita, patrimonioNetto,
-  deltaNettoMese, salvaSnapshotMese, snapshotMeseMancante,
+  deltaNettoMese, salvaSnapshotMese, snapshotMeseMancante, serieStoricoPatrimonio,
 } from '../services/patrimonioService.js';
 import { statoPrestito } from '../services/prestitiService.js';
 import { apriSheet } from './shared.js';
@@ -60,6 +60,8 @@ export const renderPatrimonio = async (root) => {
       <div class="conti-strip">
         ${contiAttivi.map(c => `<div class="conti-card" data-conto="${c.id}"><div class="cn">${escapeHtml(c.nome)}</div><div class="cv num">${fmtEUR0(saldoStimato(c))}</div></div>`).join('')}
       </div>` : ''}
+
+    ${_graficoLineaHTML()}
 
     <div class="section-lbl"><span>Composizione</span>${snapshotMeseMancante() ? '<span style="color:var(--accent);font-size:11px;cursor:pointer" id="snap">📸 Salva rilevazione</span>' : ''}</div>
     ${comp.map(c => `
@@ -125,3 +127,52 @@ const _modificaConto = (root, contoId) => {
     });
   });
 };
+
+// Grafico a linea dell'andamento del patrimonio: stima (tratteggiata) + reale (piena).
+function _graficoLineaHTML() {
+  const { punti, primoReale } = serieStoricoPatrimonio();
+  if (punti.length < 2) return '';
+
+  // campiona max ~24 punti per leggibilità (uno ogni tot mesi se troppi)
+  let p = punti;
+  if (p.length > 24) { const step = Math.ceil(p.length / 24); p = p.filter((_, i) => i % step === 0 || i === punti.length - 1); }
+
+  const W = 320, H = 90, pad = 4;
+  const vals = p.map(x => x.valore);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const range = max - min || 1;
+  const x = (i) => pad + (i / (p.length - 1)) * (W - 2 * pad);
+  const y = (v) => H - pad - ((v - min) / range) * (H - 2 * pad);
+
+  // spezzo in segmento stima (fino al primo reale) e segmento reale
+  let dStima = '', dReale = '';
+  p.forEach((pt, i) => {
+    const cmd = `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(pt.valore).toFixed(1)}`;
+    if (pt.stima) dStima += cmd + ' ';
+    else dReale += (dReale ? 'L' : 'M') + `${x(i).toFixed(1)},${y(pt.valore).toFixed(1)} `;
+  });
+  // collega la stima al primo reale per continuità
+  const idxPrimoReale = p.findIndex(pt => !pt.stima);
+  if (idxPrimoReale > 0) dStima += `L${x(idxPrimoReale).toFixed(1)},${y(p[idxPrimoReale].valore).toFixed(1)} `;
+
+  const primoLabel = p[0].annomese.split('-').reverse().join('/');
+  const ultimoLabel = p[p.length - 1].annomese.split('-').reverse().join('/');
+  const haReale = idxPrimoReale >= 0;
+
+  return `
+    <div class="section-lbl"><span>Andamento patrimonio</span></div>
+    <div class="card" style="padding:16px 14px">
+      <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">
+        <path d="${dStima}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-dasharray="4 3" opacity="0.55"/>
+        ${haReale ? `<path d="${dReale}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>` : ''}
+      </svg>
+      <div style="display:flex;justify-content:space-between;margin-top:8px">
+        <span class="meta">${primoLabel}</span>
+        <span class="meta">${ultimoLabel}</span>
+      </div>
+      <div style="display:flex;gap:16px;margin-top:10px;font-size:11px;color:var(--txt-2)">
+        <span>┈ stima ricostruita</span>
+        ${haReale ? '<span>━ rilevazioni reali</span>' : '<span style="opacity:.6">Le rilevazioni reali compariranno man mano che salvi il patrimonio ogni mese</span>'}
+      </div>
+    </div>`;
+}
