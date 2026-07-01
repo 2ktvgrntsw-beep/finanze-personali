@@ -336,3 +336,75 @@ select.sheet-input{color-scheme:dark}
 /* barra avanzamento mutuo */
 .progress-big{height:12px;background:var(--surface-3);border-radius:100px;overflow:hidden;margin:14px 0 6px}
 .progress-big>span{display:block;height:100%;border-radius:100px;background:linear-gradient(90deg,var(--accent),var(--accent-2));transition:width .5s ease}
+
+/* ============================================================================
+   Conti collassabili per tipo (v2.2) — sostituisce lo strip orizzontale
+   ============================================================================ */
+.gruppo-conti{margin-bottom:8px;border-radius:var(--r-md);overflow:hidden;border:1px solid rgba(38,38,47,.6);background:var(--surface)}
+.gruppo-head{display:flex;align-items:center;gap:12px;padding:14px;cursor:pointer}
+.gruppo-head:active{background:var(--surface-2)}
+.gruppo-ic{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:18px;flex:none}
+.gruppo-nome{flex:1;font-size:15px;font-weight:650}
+.gruppo-tot{font-size:15px;font-weight:750;margin-right:8px}
+.gruppo-chev{color:var(--txt-3);font-size:16px;width:14px;text-align:center}
+.conto-riga{display:flex;align-items:center;gap:12px;padding:12px 14px 12px 52px;border-top:1px solid var(--line);cursor:pointer}
+.conto-riga:active{background:var(--surface-2)}
+.conto-nome{flex:1;font-size:14px;color:var(--txt-2)}
+.conto-saldo{font-size:14px;font-weight:650}
+.conto-chev{color:var(--txt-3);font-size:15px}
+
+.pt-dot{cursor:pointer}
+
+/* intestazione con crumb nell'analisi categoria */
+.head-crumb{display:flex;align-items:center;gap:6px;margin-top:8px}
+.head-crumb .crumb{font-size:12px;color:var(--txt-2);font-weight:600}
+
+/* ============================================================================
+   v2.2 — data nativa nel form, gruppi conti collassabili, selezione multipla
+   ============================================================================ */
+/* data nativa iOS dentro la riga del form */
+.frow .fdate{flex:1;padding:0 14px;font-size:15px;border:0;background:transparent;color:var(--txt);font-family:var(--font);outline:none;height:46px;color-scheme:dark}
+.frow .fdate::-webkit-date-and-time-value{text-align:left}
+
+/* gruppi conti collassabili nel patrimonio */
+.gruppo-conti{margin-bottom:6px}
+.gruppo-head{display:flex;align-items:center;justify-content:space-between;padding:14px 4px;cursor:pointer;user-select:none}
+.gruppo-head .gh-left{display:flex;align-items:center;gap:10px}
+.gruppo-head .gh-ic{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:17px}
+.gruppo-head .gh-nome{font-size:13px;font-weight:700;color:var(--txt-2);text-transform:uppercase;letter-spacing:.04em}
+.gruppo-head .gh-tot{font-weight:800;font-size:15px}
+.gruppo-head .gh-arrow{color:var(--txt-3);font-size:13px;transition:transform .2s;margin-left:8px}
+.gruppo-head.closed .gh-arrow{transform:rotate(-90deg)}
+.gruppo-conti .conto-riga{display:flex;align-items:center;gap:12px;padding:11px 4px 11px 48px;cursor:pointer}
+.gruppo-conti .conto-riga .cr-nome{flex:1;font-size:14.5px}
+.gruppo-conti .conto-riga .cr-saldo{font-weight:650;font-size:14.5px}
+.gruppo-conti.closed .conto-riga{display:none}
+
+/* selezione multipla nella ricerca */
+.sel-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--surface-2);border-radius:12px;padding:10px 14px;margin-bottom:10px;position:sticky;top:calc(64px + var(--safe-top));z-index:40}
+.sel-toolbar .sel-count{font-size:14px;font-weight:700}
+.sel-toolbar .sel-actions{display:flex;gap:8px}
+.sel-toolbar button{border:0;border-radius:9px;padding:8px 12px;font-size:13px;font-weight:650;font-family:var(--font);cursor:pointer}
+.sel-toolbar .sel-tutti{background:var(--surface-3);color:var(--txt)}
+.sel-toolbar .sel-modifica{background:var(--accent);color:#fff}
+.mov.selectable .selbox{width:24px;height:24px;border-radius:7px;border:2px solid var(--txt-3);flex:none;display:flex;align-items:center;justify-content:center;font-size:14px;margin-right:2px}
+.mov.selectable.sel .selbox{background:var(--accent);border-color:var(--accent);color:#fff}
+
+/* grafico patrimonio con assi */
+.chart-axis-label{font-size:9px;fill:var(--txt-3)}
+.chart-touch-info{background:var(--surface-2);border-radius:8px;padding:6px 12px;font-size:12px;color:var(--txt);display:inline-block;margin-top:8px}
+
+/* allineamento classi conti collassabili (nomi usati nel componente) */
+.gruppo-conti .gruppo-head{display:flex;align-items:center;gap:10px;padding:14px 4px;cursor:pointer;user-select:none}
+.gruppo-conti .gruppo-ic{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:17px;flex:none}
+.gruppo-conti .gruppo-nome{flex:1;font-size:13px;font-weight:700;color:var(--txt-2);text-transform:uppercase;letter-spacing:.03em}
+.gruppo-conti .gruppo-nome .meta{text-transform:none;font-weight:500}
+.gruppo-conti .gruppo-tot{font-weight:800;font-size:15px}
+.gruppo-conti .gruppo-chev{color:var(--txt-3);font-size:15px;width:16px;text-align:center}
+.gruppo-conti .conto-riga{display:flex;align-items:center;gap:12px;padding:11px 4px 11px 48px;cursor:pointer}
+.gruppo-conti .conto-riga .conto-nome{flex:1;font-size:14.5px}
+.gruppo-conti .conto-riga .conto-saldo{font-weight:650;font-size:14.5px}
+.gruppo-conti .conto-riga .conto-chev{color:var(--txt-3);font-size:15px}
+
+/* mini importo cliccabile nella modifica ricorrente */
+.mini-amount{font-size:22px;font-weight:800;padding:12px 14px;background:var(--surface-2);border:1px solid var(--line);border-radius:12px;margin:8px 0;cursor:pointer;color:var(--accent)}
