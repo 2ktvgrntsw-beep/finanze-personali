@@ -1,0 +1,443 @@
+/* ============================================================================
+   Finanze PWA v2 — Design System (scuro, stile Revolut)
+   Nero profondo OLED, accento viola unico, numeri tabulari, molto respiro.
+   ============================================================================ */
+
+:root{
+  --bg:#08080C;
+  --surface:#131319;
+  --surface-2:#1C1C24;
+  --surface-3:#24242E;
+  --line:#26262F;
+
+  --txt:#FFFFFF;
+  --txt-2:#9A9AAB;
+  --txt-3:#5E5E6E;
+
+  --accent:#6E5BFF;
+  --accent-2:#8B7BFF;
+  --accent-glow:rgba(110,91,255,.35);
+
+  --up:#2FD08A;         /* entrate / positivo */
+  --up-bg:rgba(47,208,138,.14);
+  --down:#FF6B5E;       /* spese / negativo */
+  --down-bg:rgba(255,107,94,.14);
+  --transfer:#3DB6FF;   /* trasferimenti / investimenti */
+  --transfer-bg:rgba(61,182,255,.16);
+  --warn:#F5A623;
+
+  --r:22px; --r-md:16px; --r-sm:12px;
+  --safe-top:env(safe-area-inset-top);
+  --safe-bottom:env(safe-area-inset-bottom);
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",Roboto,system-ui,sans-serif;
+}
+
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0}
+html,body{background:var(--bg);color:var(--txt);font-family:var(--font);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+body{
+  padding-top:calc(64px + var(--safe-top));
+  padding-bottom:calc(90px + var(--safe-bottom));
+  font-size:15px; line-height:1.45;
+  max-width:480px; margin:0 auto;
+  min-height:100vh;
+}
+.num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+
+/* ----------------------------------------------------------------- Header */
+.app-header{
+  position:fixed;top:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;
+  height:calc(64px + var(--safe-top));padding-top:var(--safe-top);
+  background:rgba(8,8,12,.82);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);
+  border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:6px;padding-left:18px;padding-right:14px;z-index:100;
+}
+.app-header .title{flex:1;font-size:24px;font-weight:800;letter-spacing:-.03em;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.app-header .title .crumb{display:block;font-size:12px;font-weight:600;color:var(--txt-2);letter-spacing:0}
+.hbtn{width:38px;height:38px;border-radius:50%;background:var(--surface-2);border:0;color:var(--txt);
+  display:flex;align-items:center;justify-content:center;font-size:17px;flex:none;cursor:pointer;transition:transform .1s,background .15s}
+.hbtn:active{transform:scale(.9)}
+.hbtn.add{background:var(--accent);box-shadow:0 4px 14px var(--accent-glow);font-size:22px;font-weight:300}
+.hbtn.back{background:transparent;font-size:26px;font-weight:300;margin-left:-6px;width:34px}
+.hbtn.back:active{background:var(--surface-2)}
+
+.app-main{padding:16px;max-width:480px;margin:0 auto}
+
+/* ------------------------------------------------------------------ Cards */
+.card{background:var(--surface);border-radius:var(--r);padding:18px;margin-bottom:14px;border:1px solid rgba(38,38,47,.6)}
+.card h2{margin:0 0 14px;font-size:12px;font-weight:700;color:var(--txt-2);text-transform:uppercase;letter-spacing:.06em}
+
+/* ---------------------------------------------------------- Segmented ctrl */
+.seg{display:flex;background:var(--surface-2);border-radius:12px;padding:4px;gap:2px;margin-bottom:4px}
+.seg button{flex:1;border:0;background:transparent;color:var(--txt-2);font-size:14px;font-weight:600;padding:9px;border-radius:9px;font-family:var(--font);cursor:pointer;transition:background .15s,color .15s}
+.seg button.on{background:var(--accent);color:#fff;box-shadow:0 4px 14px var(--accent-glow)}
+
+/* --------------------------------------------------------- Navigatore mese */
+.month-nav{display:flex;align-items:center;justify-content:center;gap:18px;margin:18px 0 4px}
+.month-nav .m{font-size:15px;font-weight:600;color:var(--txt);min-width:130px;text-align:center}
+.month-nav .arr{width:32px;height:32px;border-radius:50%;background:var(--surface-2);border:0;color:var(--txt);display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer}
+.month-nav .arr:active{background:var(--surface-3)}
+.month-nav .arr:disabled{opacity:.3}
+
+/* ------------------------------------------------------- Tripletta riassunto */
+.triple{display:flex;margin-top:14px;background:var(--surface);border-radius:var(--r);overflow:hidden;border:1px solid rgba(38,38,47,.6)}
+.triple .cell{flex:1;padding:16px 10px;text-align:center;position:relative}
+.triple .cell + .cell::before{content:'';position:absolute;left:0;top:20%;height:60%;width:1px;background:var(--line)}
+.triple .lbl{font-size:11px;color:var(--txt-2);font-weight:600;margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em}
+.triple .val{font-size:18px;font-weight:800;letter-spacing:-.02em}
+.triple .val.sp{color:var(--down)} .triple .val.en{color:var(--up)} .triple .val.sa{color:var(--txt)}
+.triple .delta{font-size:10.5px;font-weight:600;margin-top:3px}
+.delta.worse{color:var(--down)} .delta.better{color:var(--up)} .delta.flat{color:var(--txt-2)}
+
+/* -------------------------------------------------- Barra "dove sto col mese" */
+.pace{margin-top:12px;background:var(--surface);border-radius:var(--r-md);padding:14px 16px;border:1px solid rgba(38,38,47,.6)}
+.pace .top{display:flex;justify-content:space-between;font-size:12.5px;color:var(--txt-2);margin-bottom:9px}
+.pace .top b{color:var(--txt)}
+.pace .track{height:8px;background:var(--surface-3);border-radius:100px;overflow:hidden;position:relative}
+.pace .track>.fill{display:block;height:100%;border-radius:100px;background:linear-gradient(90deg,var(--accent),var(--accent-2));transition:width .5s ease}
+.pace .track>.marker{position:absolute;top:-3px;height:14px;width:2px;background:var(--txt);border-radius:2px}
+.pace .cap{font-size:11px;color:var(--txt-3);margin-top:8px}
+
+/* -------------------------------------------------- Indicatore investito (riga) */
+.invest-row{margin-top:12px;background:var(--transfer-bg);border:1px solid rgba(61,182,255,.22);border-radius:var(--r-sm);
+  padding:11px 15px;display:flex;align-items:center;gap:12px;cursor:pointer}
+.invest-row .ic{width:30px;height:30px;border-radius:9px;background:rgba(61,182,255,.2);display:flex;align-items:center;justify-content:center;font-size:15px;flex:none}
+.invest-row .t{flex:1;font-size:13px;color:var(--txt-2)}
+.invest-row .t b{color:var(--transfer);font-weight:700}
+.invest-row .chev{color:var(--transfer);font-size:17px}
+
+/* ----------------------------------------------------- Lista categorie a barre */
+.section-lbl{padding:22px 4px 10px;font-size:12px;color:var(--txt-2);font-weight:700;text-transform:uppercase;letter-spacing:.06em;display:flex;justify-content:space-between;align-items:center}
+.catrow{display:flex;align-items:center;gap:14px;padding:13px 4px}
+.catrow .icon{width:44px;height:44px;border-radius:13px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:21px;flex:none;cursor:pointer;transition:transform .1s}
+.catrow .icon:active{transform:scale(.88)}
+.catrow .body{flex:1;min-width:0;cursor:pointer}
+.catrow .row1{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;gap:8px}
+.catrow .name{font-size:15.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.catrow .right{white-space:nowrap;flex:none}
+.catrow .amt{font-size:15.5px;font-weight:700}
+.catrow .pct{font-size:12.5px;color:var(--txt-2);margin-left:8px;font-weight:600}
+.bar{height:6px;background:var(--surface-2);border-radius:100px;overflow:hidden}
+.bar>span{display:block;height:100%;border-radius:100px;background:linear-gradient(90deg,var(--accent),var(--accent-2));transition:width .4s ease}
+.bar.red>span{background:var(--down)}
+.catrow .chev{color:var(--txt-3);font-size:17px;flex:none}
+
+/* ------------------------------------------------------------- Bottom nav */
+.bottom-nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;
+  background:rgba(8,8,12,.86);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);
+  border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-around;
+  height:calc(72px + var(--safe-bottom));padding-bottom:var(--safe-bottom);z-index:100}
+.bottom-nav a{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--txt-3);
+  font-size:10.5px;font-weight:600;text-decoration:none;cursor:pointer;position:relative;padding-top:4px;transition:color .15s}
+.bottom-nav a .ni{width:24px;height:24px;display:flex;align-items:center;justify-content:center}
+.bottom-nav a .ni svg{width:23px;height:23px;stroke:currentColor;fill:none;stroke-width:1.8}
+.bottom-nav a.active{color:var(--accent)}
+.bottom-nav a.active::before{content:'';position:absolute;top:0;width:20px;height:3px;border-radius:0 0 3px 3px;background:var(--accent)}
+
+/* -------------------------------------------------- Lista movimenti per giorno */
+.day-head{display:flex;justify-content:space-between;padding:18px 4px 8px;font-size:11.5px;color:var(--txt-2);text-transform:uppercase;letter-spacing:.04em;font-weight:600}
+.day-head b{color:var(--txt-2);font-weight:700}
+.mov{display:flex;align-items:center;gap:13px;padding:11px 4px;position:relative;cursor:pointer;background:var(--bg);transition:transform .2s ease}
+.mov .ic{width:42px;height:42px;border-radius:12px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:19px;flex:none}
+.mov .body{flex:1;min-width:0}
+.mov .d1{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mov .d2{font-size:12px;color:var(--txt-2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mov .amt{font-weight:700;font-size:15px;white-space:nowrap;flex:none}
+.mov .amt.sp{color:var(--down)} .mov .amt.en{color:var(--up)} .mov .amt.tr{color:var(--transfer)}
+/* contenitore per swipe-to-delete */
+.mov-wrap{position:relative;overflow:hidden}
+.mov-wrap .del-bg{position:absolute;inset:0;background:var(--down);display:flex;align-items:center;justify-content:flex-end;padding-right:20px;color:#fff;font-weight:700;font-size:14px}
+
+/* --------------------------------------------------------------- Ricerca */
+.searchbar{background:var(--surface-2);border-radius:13px;display:flex;align-items:center;gap:10px;padding:12px 16px;margin-bottom:4px}
+.searchbar svg{width:18px;height:18px;stroke:var(--txt-2);fill:none;stroke-width:2}
+.searchbar input{background:transparent;border:0;color:var(--txt);font-size:16px;flex:1;font-family:var(--font);outline:none}
+.searchbar input::placeholder{color:var(--txt-3)}
+.search-summary{margin-top:16px;background:linear-gradient(135deg,rgba(110,91,255,.15),rgba(110,91,255,.05));border:1px solid rgba(110,91,255,.25);border-radius:var(--r-md);padding:15px 17px}
+.search-summary .n{font-size:12.5px;color:var(--txt-2)}
+.search-summary .big{font-size:24px;font-weight:800;margin-top:3px}
+
+/* --------------------------------------------------------- Card patrimonio */
+.net-card{background:linear-gradient(150deg,#1A1730,#0E0C18);border-radius:24px;padding:24px;position:relative;overflow:hidden;margin-bottom:4px}
+.net-card::after{content:'';position:absolute;right:-40px;top:-40px;width:180px;height:180px;background:radial-gradient(circle,var(--accent-glow),transparent 70%);pointer-events:none}
+.net-card .lbl{font-size:12.5px;color:var(--txt-2);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+.net-card .big{font-size:38px;font-weight:850;letter-spacing:-.03em;margin:6px 0 4px}
+.net-card .delta{font-size:13.5px;font-weight:600}
+.net-card .sub{display:flex;gap:24px;margin-top:18px}
+.net-card .sub .lbl2{font-size:12px;color:var(--txt-2)}
+.net-card .sub b{display:block;font-size:16px;color:var(--txt);font-weight:750;margin-top:3px}
+.net-card .sub b.neg{color:var(--down)}
+
+.swipe-hint{text-align:center;font-size:11.5px;color:var(--txt-3);margin-top:14px;letter-spacing:.02em}
+
+/* conti scorrevoli orizzontalmente */
+.conti-strip{display:flex;gap:12px;overflow-x:auto;padding:14px 0 6px;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch}
+.conti-strip::-webkit-scrollbar{display:none}
+.conti-card{flex:none;width:150px;background:var(--surface);border-radius:var(--r-md);padding:15px;scroll-snap-align:start;border:1px solid rgba(38,38,47,.6);cursor:pointer}
+.conti-card.on{border-color:var(--accent)}
+.conti-card .cn{font-size:12.5px;color:var(--txt-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.conti-card .cv{font-size:19px;font-weight:800;margin-top:6px}
+
+/* riga patrimonio con barra */
+.patrow{display:flex;align-items:center;gap:14px;padding:14px 4px}
+.patrow .icon{width:44px;height:44px;border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:20px;flex:none}
+.patrow .body{flex:1;min-width:0;cursor:pointer}
+.patrow .row1{display:flex;justify-content:space-between;margin-bottom:8px;gap:8px}
+.patrow .name{font-size:15.5px;font-weight:650}
+.patrow .amt{font-size:15.5px;font-weight:750;white-space:nowrap}
+.patrow .amt.neg{color:var(--down)}
+.patrow .sub{font-size:12px;color:var(--txt-2);margin-top:2px}
+.patrow .chev{color:var(--txt-3);font-size:17px;flex:none}
+.tap-val{cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+.tap-val .chev-sm{color:var(--txt-3);font-size:14px}
+
+/* ------------------------------------------------------------ Ricorrenti */
+.rec-hero{background:linear-gradient(150deg,#1A1730,#0E0C18);border-radius:var(--r);padding:22px;position:relative;overflow:hidden;margin-bottom:4px}
+.rec-hero::after{content:'';position:absolute;right:-40px;top:-40px;width:160px;height:160px;background:radial-gradient(circle,var(--accent-glow),transparent 70%);pointer-events:none}
+.rec-hero .lbl{font-size:12px;color:var(--txt-2);text-transform:uppercase;letter-spacing:.05em}
+.rec-hero .big{font-size:32px;font-weight:850;margin:6px 0 2px}
+.rec-hero .sub{font-size:13px;color:var(--txt-2)}
+.recrow{display:flex;align-items:center;gap:14px;padding:13px 4px}
+.recrow .ic{width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:19px;flex:none}
+.recrow .body{flex:1}
+.recrow .d1{font-size:15px;font-weight:600}
+.recrow .d2{font-size:12px;color:var(--txt-2);margin-top:1px}
+.recrow .amt{font-weight:700;font-size:15px}
+.recrow .amt.sp{color:var(--down)} .recrow .amt.tr{color:var(--transfer)}
+
+/* --------------------------------------------------------------- Form */
+.form-rows{margin-top:14px;border-radius:var(--r-md);overflow:hidden;border:1px solid var(--line)}
+.form-row{display:flex;align-items:center;border-bottom:1px solid var(--line);background:var(--surface);min-height:58px}
+.form-row:last-child{border-bottom:0}
+.form-row .ic{width:56px;align-self:stretch;display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--txt-2);flex:none;border-right:1px solid var(--line)}
+.form-row .ic.act{background:var(--accent);color:#fff}
+.form-row .fld{flex:1;padding:0 16px;font-size:16px;border:0;background:transparent;color:var(--txt);font-family:var(--font);outline:none;height:58px}
+.form-row .fld.ph,.form-row .val.ph{color:var(--txt-3)}
+.form-row .val{flex:1;padding:0 16px;font-size:16px;display:flex;align-items:center;height:58px;cursor:pointer}
+.form-row .val.amount{font-weight:800;font-size:21px}
+.form-row .clear{margin-left:auto;color:var(--down);font-size:18px;padding:0 16px;cursor:pointer}
+
+.type-switch{display:flex;justify-content:center;gap:0;margin:16px auto 0;background:var(--surface-2);border-radius:12px;padding:4px;width:max-content}
+.type-switch button{border:0;background:transparent;color:var(--txt-2);font-size:14px;font-weight:650;padding:9px 18px;border-radius:9px;font-family:var(--font);cursor:pointer}
+.type-switch button.on{background:var(--accent);color:#fff}
+.type-switch button.on.en{background:var(--up)} .type-switch button.on.tr{background:var(--transfer)}
+
+/* Tastierino numerico */
+.numpad{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;
+  background:var(--surface);border-top:1px solid var(--line);
+  display:grid;grid-template-columns:repeat(3,1fr) 92px;gap:1px;padding-bottom:var(--safe-bottom);z-index:120}
+.numpad button{background:var(--surface);border:0;color:var(--txt);font-size:23px;font-weight:500;padding:17px 0;font-family:var(--font);cursor:pointer}
+.numpad button:active{background:var(--surface-3)}
+.numpad button.sub{background:var(--surface-2);color:var(--txt-2);font-size:16px}
+.numpad button.ok{background:var(--accent);color:#fff;font-size:16px;font-weight:700}
+.numpad button.ok:active{background:var(--accent-2)}
+
+/* --------------------------------------------------------- Bottom sheet */
+.sheet-bg{position:fixed;inset:0;background:rgba(4,4,8,.6);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);
+  display:flex;align-items:flex-end;z-index:300;animation:fade .2s ease}
+.sheet{background:var(--surface);width:100%;max-width:480px;margin:0 auto;border-radius:24px 24px 0 0;
+  padding:20px 18px calc(20px + var(--safe-bottom));max-height:88vh;overflow-y:auto;animation:slideUp .28s cubic-bezier(.16,1,.3,1)}
+.sheet::before{content:'';display:block;width:38px;height:4px;background:var(--surface-3);border-radius:100px;margin:-8px auto 16px}
+.sheet h3{font-size:18px;font-weight:750;margin-bottom:16px;letter-spacing:-.02em}
+
+/* griglia icone categoria nel sheet */
+.cat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px 8px;margin-top:6px}
+.cat-cell{display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer}
+.cat-cell .ci{width:56px;height:56px;border-radius:16px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:23px;transition:transform .1s}
+.cat-cell:active .ci{transform:scale(.9)}
+.cat-cell.sel .ci{background:var(--accent);box-shadow:0 6px 18px var(--accent-glow)}
+.cat-cell span{font-size:11px;color:var(--txt-2);text-align:center;line-height:1.2;max-width:70px}
+.cat-cell.sel span{color:var(--txt)}
+
+/* --------------------------------------------------------- Grafico anni */
+.yearchart{background:var(--surface);border-radius:var(--r);padding:20px 14px 12px;margin-top:16px;border:1px solid rgba(38,38,47,.6)}
+.yc-bars{display:flex;align-items:flex-end;gap:6px;height:130px}
+.yc-bars .yb{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end;cursor:pointer}
+.yc-bars .yb .col{width:100%;border-radius:6px 6px 0 0;background:var(--surface-3);min-height:3px;transition:height .4s ease}
+.yc-bars .yb.on .col{background:linear-gradient(180deg,var(--accent-2),var(--accent))}
+.yc-bars .yb span{font-size:10px;color:var(--txt-3)}
+.yc-bars .yb.on span{color:var(--txt);font-weight:700}
+
+/* ------------------------------------------------------------- Buttons */
+.btn{display:flex;align-items:center;justify-content:center;padding:14px 18px;border-radius:var(--r-sm);border:0;
+  font-size:15px;font-weight:650;cursor:pointer;font-family:var(--font);width:100%;transition:transform .1s,background .15s}
+.btn:active{transform:scale(.98)}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:active{background:var(--accent-2)}
+.btn-secondary{background:var(--surface-2);color:var(--txt)}
+.btn-danger{background:var(--down-bg);color:var(--down)}
+.btn-ghost{background:transparent;color:var(--txt-2)}
+.btn-row{display:flex;gap:10px}
+
+/* --------------------------------------------------------------- Vari */
+.empty{text-align:center;color:var(--txt-3);padding:40px 16px;font-size:14px}
+.empty .big-ic{font-size:40px;margin-bottom:12px;opacity:.5}
+.meta{color:var(--txt-2);font-size:12.5px}
+.chip-row{display:flex;gap:8px;overflow-x:auto;padding:4px 0;scroll-snap-type:x mandatory}
+.chip-row::-webkit-scrollbar{display:none}
+.chip{flex:none;padding:8px 14px;border-radius:100px;background:var(--surface-2);color:var(--txt-2);font-size:13px;font-weight:600;cursor:pointer;border:1px solid transparent;white-space:nowrap}
+.chip.on{background:var(--accent);color:#fff}
+
+.toast{position:fixed;bottom:calc(100px + var(--safe-bottom));left:50%;transform:translateX(-50%) translateY(10px);
+  background:var(--txt);color:var(--bg);padding:12px 20px;border-radius:14px;font-size:14px;font-weight:600;
+  opacity:0;transition:opacity .25s,transform .25s;pointer-events:none;z-index:400;max-width:88%;text-align:center}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+.divider{height:1px;background:var(--line);margin:8px 0}
+input,select,textarea{font-family:var(--font)}
+input[type=date]{color-scheme:dark}
+
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+@media (prefers-reduced-motion:reduce){*{animation:none !important;transition:none !important}}
+
+/* ============================================================================
+   Inserimento compatto (v2.1) — righe basse, tendina, ruota data, toggle basso
+   ============================================================================ */
+.ins-compact{margin-top:8px;border-radius:var(--r-md);overflow:hidden;border:1px solid var(--line);background:var(--surface)}
+.frow{display:flex;align-items:center;border-bottom:1px solid var(--line);min-height:46px;position:relative}
+.frow:last-child{border-bottom:0}
+.frow .fic{width:48px;align-self:stretch;display:flex;align-items:center;justify-content:center;font-size:16px;color:var(--txt-2);flex:none;border-right:1px solid var(--line)}
+.frow .fic.act{background:var(--accent);color:#fff}
+.frow .ffld{flex:1;padding:0 14px;font-size:15px;border:0;background:transparent;color:var(--txt);font-family:var(--font);outline:none;height:46px}
+.frow .fval{flex:1;padding:0 14px;font-size:15px;display:flex;align-items:center;height:46px;cursor:pointer}
+.frow .fval.famount{font-weight:800;font-size:19px}
+.frow .fph{color:var(--txt-3)}
+.frow .fclear{color:var(--down);font-size:16px;padding:0 14px;cursor:pointer}
+
+/* tendina suggerimenti sotto la descrizione */
+.sugg-dropdown{position:absolute;top:100%;left:48px;right:0;background:var(--surface-2);border:1px solid var(--line);border-top:0;border-radius:0 0 12px 12px;z-index:60;display:none;max-height:220px;overflow-y:auto;box-shadow:0 12px 24px rgba(0,0,0,.4)}
+.sugg-item{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 14px;cursor:pointer;border-bottom:1px solid var(--line)}
+.sugg-item:last-child{border-bottom:0}
+.sugg-item:active{background:var(--surface-3)}
+.sugg-item b{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sugg-item span{font-size:12px;color:var(--txt-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:none;max-width:55%}
+
+/* ruota data inline */
+.date-wheel{display:flex;gap:8px;padding:10px 14px;background:var(--surface-2);border-bottom:1px solid var(--line);max-height:180px}
+.wheel-col{flex:1;overflow-y:auto;max-height:160px;scroll-snap-type:y mandatory;text-align:center;border-radius:10px;background:var(--bg)}
+.wheel-col::-webkit-scrollbar{display:none}
+.wheel-opt{padding:9px 4px;font-size:15px;color:var(--txt-3);cursor:pointer;scroll-snap-align:center}
+.wheel-opt.sel{color:var(--accent);font-weight:800;font-size:16px}
+
+/* toggle tipo in basso */
+.type-switch-bottom{display:flex;gap:0;margin-top:14px;background:var(--surface-2);border-radius:12px;padding:4px}
+.type-switch-bottom button{flex:1;border:0;background:transparent;color:var(--txt-2);font-size:14px;font-weight:650;padding:11px 8px;border-radius:9px;font-family:var(--font);cursor:pointer;transition:background .15s,color .15s}
+.type-switch-bottom button.on{background:var(--accent);color:#fff}
+.type-switch-bottom button.on.en{background:var(--up)}
+.type-switch-bottom button.on.tr{background:var(--transfer)}
+
+.ins-actions{display:flex;gap:10px;margin-top:14px}
+.ins-actions .btn{flex:1}
+
+/* input generico nei bottom sheet */
+.sheet-input{width:100%;padding:12px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);color:var(--txt);font-size:15px;margin:6px 0 12px;font-family:var(--font)}
+select.sheet-input{color-scheme:dark}
+
+/* barra avanzamento mutuo */
+.progress-big{height:12px;background:var(--surface-3);border-radius:100px;overflow:hidden;margin:14px 0 6px}
+.progress-big>span{display:block;height:100%;border-radius:100px;background:linear-gradient(90deg,var(--accent),var(--accent-2));transition:width .5s ease}
+
+/* ============================================================================
+   Conti collassabili per tipo (v2.2) — sostituisce lo strip orizzontale
+   ============================================================================ */
+.gruppo-conti{margin-bottom:8px;border-radius:var(--r-md);overflow:hidden;border:1px solid rgba(38,38,47,.6);background:var(--surface)}
+.gruppo-head{display:flex;align-items:center;gap:12px;padding:14px;cursor:pointer}
+.gruppo-head:active{background:var(--surface-2)}
+.gruppo-ic{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:18px;flex:none}
+.gruppo-nome{flex:1;font-size:15px;font-weight:650}
+.gruppo-tot{font-size:15px;font-weight:750;margin-right:8px}
+.gruppo-chev{color:var(--txt-3);font-size:16px;width:14px;text-align:center}
+.conto-riga{display:flex;align-items:center;gap:12px;padding:12px 14px 12px 52px;border-top:1px solid var(--line);cursor:pointer}
+.conto-riga:active{background:var(--surface-2)}
+.conto-nome{flex:1;font-size:14px;color:var(--txt-2)}
+.conto-saldo{font-size:14px;font-weight:650}
+.conto-chev{color:var(--txt-3);font-size:15px}
+
+.pt-dot{cursor:pointer}
+
+/* intestazione con crumb nell'analisi categoria */
+.head-crumb{display:flex;align-items:center;gap:6px;margin-top:8px}
+.head-crumb .crumb{font-size:12px;color:var(--txt-2);font-weight:600}
+
+/* ============================================================================
+   v2.2 — data nativa nel form, gruppi conti collassabili, selezione multipla
+   ============================================================================ */
+/* data nativa iOS dentro la riga del form */
+.frow .fdate{flex:1;padding:0 14px;font-size:15px;border:0;background:transparent;color:var(--txt);font-family:var(--font);outline:none;height:46px;color-scheme:dark}
+.frow .fdate::-webkit-date-and-time-value{text-align:left}
+
+/* gruppi conti collassabili nel patrimonio */
+.gruppo-conti{margin-bottom:6px}
+.gruppo-head{display:flex;align-items:center;justify-content:space-between;padding:14px 4px;cursor:pointer;user-select:none}
+.gruppo-head .gh-left{display:flex;align-items:center;gap:10px}
+.gruppo-head .gh-ic{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:17px}
+.gruppo-head .gh-nome{font-size:13px;font-weight:700;color:var(--txt-2);text-transform:uppercase;letter-spacing:.04em}
+.gruppo-head .gh-tot{font-weight:800;font-size:15px}
+.gruppo-head .gh-arrow{color:var(--txt-3);font-size:13px;transition:transform .2s;margin-left:8px}
+.gruppo-head.closed .gh-arrow{transform:rotate(-90deg)}
+.gruppo-conti .conto-riga{display:flex;align-items:center;gap:12px;padding:11px 4px 11px 48px;cursor:pointer}
+.gruppo-conti .conto-riga .cr-nome{flex:1;font-size:14.5px}
+.gruppo-conti .conto-riga .cr-saldo{font-weight:650;font-size:14.5px}
+.gruppo-conti.closed .conto-riga{display:none}
+
+/* selezione multipla nella ricerca */
+.sel-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--surface-2);border-radius:12px;padding:10px 14px;margin-bottom:10px;position:sticky;top:calc(64px + var(--safe-top));z-index:40}
+.sel-toolbar .sel-count{font-size:14px;font-weight:700}
+.sel-toolbar .sel-actions{display:flex;gap:8px}
+.sel-toolbar button{border:0;border-radius:9px;padding:8px 12px;font-size:13px;font-weight:650;font-family:var(--font);cursor:pointer}
+.sel-toolbar .sel-tutti{background:var(--surface-3);color:var(--txt)}
+.sel-toolbar .sel-modifica{background:var(--accent);color:#fff}
+.mov.selectable .selbox{width:24px;height:24px;border-radius:7px;border:2px solid var(--txt-3);flex:none;display:flex;align-items:center;justify-content:center;font-size:14px;margin-right:2px}
+.mov.selectable.sel .selbox{background:var(--accent);border-color:var(--accent);color:#fff}
+
+/* grafico patrimonio con assi */
+.chart-axis-label{font-size:9px;fill:var(--txt-3)}
+.chart-touch-info{background:var(--surface-2);border-radius:8px;padding:6px 12px;font-size:12px;color:var(--txt);display:inline-block;margin-top:8px}
+
+/* allineamento classi conti collassabili (nomi usati nel componente) */
+.gruppo-conti .gruppo-head{display:flex;align-items:center;gap:10px;padding:14px 4px;cursor:pointer;user-select:none}
+.gruppo-conti .gruppo-ic{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:17px;flex:none}
+.gruppo-conti .gruppo-nome{flex:1;font-size:13px;font-weight:700;color:var(--txt-2);text-transform:uppercase;letter-spacing:.03em}
+.gruppo-conti .gruppo-nome .meta{text-transform:none;font-weight:500}
+.gruppo-conti .gruppo-tot{font-weight:800;font-size:15px}
+.gruppo-conti .gruppo-chev{color:var(--txt-3);font-size:15px;width:16px;text-align:center}
+.gruppo-conti .conto-riga{display:flex;align-items:center;gap:12px;padding:11px 4px 11px 48px;cursor:pointer}
+.gruppo-conti .conto-riga .conto-nome{flex:1;font-size:14.5px}
+.gruppo-conti .conto-riga .conto-saldo{font-weight:650;font-size:14.5px}
+.gruppo-conti .conto-riga .conto-chev{color:var(--txt-3);font-size:15px}
+
+/* mini importo cliccabile nella modifica ricorrente */
+.mini-amount{font-size:22px;font-weight:800;padding:12px 14px;background:var(--surface-2);border:1px solid var(--line);border-radius:12px;margin:8px 0;cursor:pointer;color:var(--accent)}
+
+/* header del bottom sheet con X di chiusura sempre visibile */
+.sheet-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;position:sticky;top:0;background:var(--surface);z-index:5;padding-top:2px}
+.sheet-head h3{margin:0}
+.sheet-close{width:34px;height:34px;border-radius:50%;background:var(--surface-3);border:0;color:var(--txt);font-size:16px;cursor:pointer;flex:none;display:flex;align-items:center;justify-content:center}
+.sheet-close:active{background:var(--line)}
+
+/* tastierino INLINE dentro i bottom sheet (non ancorato in fondo allo schermo) */
+.numpad.numpad-inline{position:static;transform:none;width:100%;max-width:none;border:1px solid var(--line);border-radius:14px;margin:8px 0 4px;overflow:hidden;padding-bottom:0}
+.numpad.numpad-inline button{padding:15px 0;font-size:20px}
+
+/* header movimenti bloccato in alto (sticky) + badge filtro */
+.mov-sticky{position:sticky;top:calc(56px + var(--safe-top));background:var(--bg);z-index:30;padding-top:8px;margin:-8px -4px 4px;padding-left:4px;padding-right:4px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+.filtro-badge{background:var(--surface-2);border-radius:10px;padding:8px 12px;font-size:12.5px;color:var(--txt-2);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.filtro-badge b{color:var(--accent)}
+.filtro-badge #clear-filtro{margin-left:auto;color:var(--down);cursor:pointer;font-size:14px;padding:0 4px}
+
+/* strumenti di investimento dentro il gruppo conti */
+.strumenti-sub{border-top:1px dashed var(--line);margin:4px 12px 0;padding-top:4px}
+.strumenti-lbl{font-size:10.5px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.04em;padding:6px 4px 2px}
+
+/* pagina categorie: accordion espandibile senza icone */
+.cat-accordion{background:var(--surface);border:1px solid var(--line);border-radius:14px;margin-bottom:8px;overflow:hidden}
+.cat-acc-head{display:flex;align-items:center;gap:10px;padding:15px 16px;cursor:pointer;user-select:none}
+.cat-acc-title{font-size:15px;font-weight:700;flex:1}
+.cat-acc-meta{font-size:11px;color:var(--txt-3)}
+.cat-acc-tot{font-weight:750;font-size:14px;color:var(--down)}
+.cat-acc-chev{color:var(--txt-3);font-size:14px;width:14px;text-align:center}
+.cat-acc-body{border-top:1px solid var(--line);background:var(--bg)}
+.cat-riga{display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;border-bottom:1px solid var(--line)}
+.cat-riga:last-child{border-bottom:0}
+.cat-riga-nome{font-size:14px;font-weight:550}
+.cat-riga-subs{font-size:11.5px;color:var(--txt-3);margin-top:2px}
