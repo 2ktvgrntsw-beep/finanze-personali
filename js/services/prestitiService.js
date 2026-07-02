@@ -17,7 +17,8 @@ export const calcolaPiano = (p, eventi = []) => {
   const estinzioni = eventi.filter(e => e.tipo === 'estinzione_parziale');
 
   for (let i = 1; i <= p.durata_mesi && residuo > 0.005; i++) {
-    const dataRata = new Date(start); dataRata.setMonth(dataRata.getMonth() + i);
+    // la prima rata (i=1) cade il giorno di INIZIO del prestito; le successive un mese dopo.
+    const dataRata = new Date(start); dataRata.setMonth(dataRata.getMonth() + (i - 1));
     const interessi = tassoMensile > 0 ? residuo * tassoMensile : 0;
     let capitale = p.rata - interessi;
     if (capitale > residuo) capitale = residuo;
@@ -117,17 +118,21 @@ export const sincronizzaRicorrenzaPrestito = async (prestito, tipo) => {
   const { dbAll: _all, dbAdd: _add, dbDelete: _del } = await import('../core/db.js');
   const rif = tipo === 'mutuo' ? 'mutuo-principale' : prestito.id;
 
-  // trova una eventuale ricorrenza già collegata
+  // trova una eventuale ricorrenza già collegata (per id di origine).
   const tutte = await _all('ricorrenti');
   const esistente = tutte.find(r => r.origineMutuo === rif);
 
-  // calcola la prossima rata NON ancora presente nello storico
+  // se il prestito non deve generare ricorrenza, rimuovi quella collegata e basta
+  if (prestito.generaRicorrenza === false) {
+    if (esistente) { await _del('ricorrenti', esistente.id); await refreshAll(); }
+    return;
+  }
+
   const piano = calcolaPiano(prestito, tipo === 'mutuo' ? (await _all('eventiMutuo')) : []);
   const oggiISO = new Date().toISOString().slice(0, 10);
-  // prima rata futura (da oggi in poi)
   const prossimaRata = piano.find(r => r.data >= oggiISO);
   if (!prossimaRata) {
-    // prestito concluso: rimuovi la ricorrenza se c'era
+    // prestito concluso: la ricorrenza muore
     if (esistente) await _del('ricorrenti', esistente.id);
     await refreshAll();
     return;
@@ -139,7 +144,7 @@ export const sincronizzaRicorrenzaPrestito = async (prestito, tipo) => {
     tipo: 'spesa',
     frequenza: 'mensile',
     giorno: prestito.giorno_addebito || null,
-    imp: round2(prestito.rata),   // rata INTERA come spesa (denaro che esce davvero dal conto)
+    imp: round2(prestito.rata * (prestito.quota_utente || 100) / 100),   // rata per la TUA quota
     macro: prestito.macro || 'Casa',
     cat: prestito.cat || '',
     sub: prestito.sub || (tipo === 'mutuo' ? 'Rata Mutuo' : ''),
@@ -149,13 +154,15 @@ export const sincronizzaRicorrenzaPrestito = async (prestito, tipo) => {
     desc: prestito.descMovimento || '',
     modalita: 'fisso', soglia: null, isRegola: false,
     attiva: true,
-    dataInizio: prossimaRata.data,
-    prossima: prossimaRata.data,
+    // PRESERVA lo stato di generazione se la ricorrenza esisteva già: altrimenti
+    // ad ogni salvataggio rigenererebbe i movimenti già creati (doppioni).
+    dataInizio: esistente ? esistente.dataInizio : prossimaRata.data,
+    prossima: esistente ? esistente.prossima : prossimaRata.data,
     fineTipo: 'data',
-    fineData: piano[piano.length - 1].data,   // termina con l'ultima rata
+    fineData: piano[piano.length - 1].data,
     fineConteggio: null,
-    generati: 0,
-    origineMutuo: rif,   // collega la ricorrenza al prestito
+    generati: esistente ? (esistente.generati || 0) : 0,
+    origineMutuo: rif,
   };
   await _add('ricorrenti', rec);
   await refreshAll();

@@ -21,6 +21,7 @@ export const saveConto = async (c) => {
     saldo_iniziale: round2(c.saldo_iniziale || 0),
     data_saldo: c.data_saldo,
     possessoData: c.possessoData || null,   // data di ingresso nel patrimonio (per asset)
+    ordine: c.ordine ?? null,                // ordine di visualizzazione (riordino manuale)
     note: c.note || '',
     attivo: c.attivo !== false,
   };

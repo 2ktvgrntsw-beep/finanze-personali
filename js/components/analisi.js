@@ -15,7 +15,7 @@ import { listaMacro, categoriaHaSub } from '../services/categorieService.js';
 let _tab = 'categoria';   // 'categoria' | 'anno' | 'tag'
 let _annoSel = String(new Date().getFullYear());
 // stato drill per la vista "categoria nel tempo"
-let _cMacro = '', _cCat = '', _cSub = '';
+let _cMacro = '', _cCat = '', _cSub = '', _cAnno = '';
 
 export const renderAnalisi = async (root) => {
   root.innerHTML = `
@@ -52,10 +52,20 @@ const _renderCategoriaTempo = (body, root) => {
   const livello = _cSub ? 'movimenti' : _cCat ? 'sub' : 'cat';
   const filtroDesc = [_cMacro, _cCat, _cSub].filter(Boolean).join(' › ');
 
-  // funzione: totale per anno del ramo selezionato
+  // determina il tipo di movimento prevalente per questa macro:
+  // così "Entrate" mostra le entrate e "Investimenti" i trasferimenti (non solo le spese).
+  const tipiNellaMacro = {};
+  for (const m of state.movimenti) {
+    if (m.macro !== _cMacro) continue;
+    tipiNellaMacro[m.tipo] = (tipiNellaMacro[m.tipo] || 0) + 1;
+  }
+  const tipoMacro = Object.entries(tipiNellaMacro).sort((a, b) => b[1] - a[1])[0]?.[0] || 'spesa';
+  const filtraTipo = (m) => m.tipo === tipoMacro;
+
+  // totale per anno del ramo selezionato
   const perAnno = {};
   for (const m of state.movimenti) {
-    if (m.tipo !== 'spesa') continue;
+    if (!filtraTipo(m)) continue;
     if (m.macro !== _cMacro) continue;
     if (_cCat && m.cat !== _cCat) continue;
     if (_cSub && m.sub !== _cSub) continue;
@@ -67,17 +77,30 @@ const _renderCategoriaTempo = (body, root) => {
   const totale = Object.values(perAnno).reduce((s, v) => s + v, 0);
   const mediaAnnua = anni.length ? totale / anni.length : 0;
 
-  // sotto-voci per il drill (livello successivo)
+  // anno selezionato (default: l'ultimo disponibile). Navigabile con le frecce.
+  if (!_cAnno || !anni.includes(_cAnno)) _cAnno = anni.length ? anni[anni.length - 1] : String(new Date().getFullYear());
+  const idxAnno = anni.indexOf(_cAnno);
+  const prevAnno = idxAnno > 0 ? anni[idxAnno - 1] : null;
+  const nextAnno = idxAnno >= 0 && idxAnno < anni.length - 1 ? anni[idxAnno + 1] : null;
+  const totaleAnno = perAnno[_cAnno] || 0;
+  // delta rispetto all'anno precedente
+  let deltaAnno = '';
+  if (prevAnno && perAnno[prevAnno] > 0) {
+    const pct = Math.round((totaleAnno - perAnno[prevAnno]) / perAnno[prevAnno] * 100);
+    deltaAnno = `<div class="delta ${pct > 0 ? 'worse' : 'better'} num" style="margin-top:3px">${pct > 0 ? '+' : ''}${pct}% vs ${prevAnno}</div>`;
+  }
+
+  // sotto-voci per il drill (livello successivo) — usa il tipo giusto della macro
   let sottoVoci = [];
   if (livello === 'cat') {
     const agg = {};
-    for (const m of soloSpese(state.movimenti).filter(m => m.macro === _cMacro)) {
+    for (const m of state.movimenti.filter(m => filtraTipo(m) && m.macro === _cMacro)) {
       const k = m.cat || '(senza)'; agg[k] = (agg[k] || 0) + m.imp;
     }
     sottoVoci = Object.entries(agg).map(([nome, tot]) => ({ nome, tot })).sort((a, b) => b.tot - a.tot);
   } else if (livello === 'sub') {
     const agg = {};
-    for (const m of soloSpese(state.movimenti).filter(m => m.macro === _cMacro && m.cat === _cCat)) {
+    for (const m of state.movimenti.filter(m => filtraTipo(m) && m.macro === _cMacro && m.cat === _cCat)) {
       const k = m.sub || '(senza)'; agg[k] = (agg[k] || 0) + m.imp;
     }
     sottoVoci = Object.entries(agg).map(([nome, tot]) => ({ nome, tot })).sort((a, b) => b.tot - a.tot);
@@ -90,19 +113,25 @@ const _renderCategoriaTempo = (body, root) => {
       <div><div class="crumb">${_cCat ? escapeHtml(_cMacro) + (_cSub ? ' › ' + escapeHtml(_cCat) : '') : ''}</div><div style="font-size:18px;font-weight:750">${escapeHtml(_cSub || _cCat || _cMacro)}</div></div>
     </div>
 
-    <div class="triple" style="margin-top:12px">
-      <div class="cell"><div class="lbl">Totale storico</div><div class="val sp num">${fmtEUR(totale)}</div></div>
+    <div class="month-nav" style="margin:12px 0 4px">
+      <button class="arr" id="ca-prev" ${prevAnno ? '' : 'disabled'}>‹</button>
+      <div class="m">${_cAnno}</div>
+      <button class="arr" id="ca-next" ${nextAnno ? '' : 'disabled'}>›</button>
+    </div>
+
+    <div class="triple">
+      <div class="cell"><div class="lbl">Spesa ${_cAnno}</div><div class="val sp num">${fmtEUR(totaleAnno)}</div>${deltaAnno}</div>
       <div class="cell"><div class="lbl">Media/anno</div><div class="val sa num">${fmtEUR0(mediaAnnua)}</div></div>
-      <div class="cell"><div class="lbl">Anni</div><div class="val sa num">${anni.length}</div></div>
+      <div class="cell"><div class="lbl">Totale ${anni.length} anni</div><div class="val sa num">${fmtEUR0(totale)}</div></div>
     </div>
 
     <div class="yearchart">
       <div class="yc-bars">${anni.map(a => `
-        <div class="yb ${a === String(new Date().getFullYear()) ? 'on' : ''}" data-anno-bar="${a}" title="${a}: ${fmtEUR(perAnno[a])}">
+        <div class="yb ${a === _cAnno ? 'on' : ''}" data-anno-bar="${a}" title="${a}: ${fmtEUR(perAnno[a])}">
           <div class="col" style="height:${Math.max(3, perAnno[a] / maxVal * 100)}%"></div>
           <span>'${a.slice(2)}</span>
         </div>`).join('')}</div>
-      <div id="cat-tip" class="meta" style="text-align:center;margin-top:10px;min-height:16px;color:var(--accent);font-weight:600"></div>
+      <div id="cat-tip" class="meta" style="text-align:center;margin-top:10px;min-height:16px;color:var(--accent);font-weight:600">${_cAnno}: ${fmtEUR(totaleAnno)}</div>
     </div>
 
     ${sottoVoci.length && livello !== 'movimenti' ? `
@@ -117,19 +146,21 @@ const _renderCategoriaTempo = (body, root) => {
           <div class="chev">›</div>
         </div>`).join('')}` : ''}
 
-    <div style="margin-top:18px"><button class="btn btn-secondary" id="vedi-mov">Vedi i movimenti di ${escapeHtml(_cSub || _cCat || _cMacro)}</button></div>
+    <div style="margin-top:18px"><button class="btn btn-secondary" id="vedi-mov">Vedi i movimenti di ${escapeHtml(_cSub || _cCat || _cMacro)} nel ${_cAnno}</button></div>
   `;
+
+  // navigazione anni con le frecce
+  const cap = body.querySelector('#ca-prev'), can = body.querySelector('#ca-next');
+  if (cap && prevAnno) cap.addEventListener('click', () => { _cAnno = prevAnno; renderAnalisi(root); });
+  if (can && nextAnno) can.addEventListener('click', () => { _cAnno = nextAnno; renderAnalisi(root); });
 
   // back nel drill
   body.querySelector('#c-back').addEventListener('click', () => {
     if (_cSub) _cSub = ''; else if (_cCat) _cCat = ''; else _cMacro = '';
     renderAnalisi(root);
   });
-  // tocco barra anno -> mostra cifra
-  const tip = body.querySelector('#cat-tip');
-  body.querySelectorAll('[data-anno-bar]').forEach(el => el.addEventListener('click', () => {
-    const a = el.dataset.annoBar; if (tip) tip.textContent = `${a}: ${fmtEUR(perAnno[a])}`;
-  }));
+  // tocco barra anno -> seleziona quell'anno
+  body.querySelectorAll('[data-anno-bar]').forEach(el => el.addEventListener('click', () => { _cAnno = el.dataset.annoBar; renderAnalisi(root); }));
   // drill nelle sotto-voci
   body.querySelectorAll('[data-drill]').forEach(el => el.addEventListener('click', () => {
     const v = el.dataset.drill === '(senza)' ? '' : el.dataset.drill;
@@ -137,7 +168,8 @@ const _renderCategoriaTempo = (body, root) => {
     else if (livello === 'sub') { _cSub = v; }
     renderAnalisi(root);
   }));
-  body.querySelector('#vedi-mov').addEventListener('click', () => navigate('movimenti', { macro: _cMacro, cat: _cCat, sub: _cSub }));
+  // vedi movimenti dell'anno selezionato
+  body.querySelector('#vedi-mov').addEventListener('click', () => navigate('movimenti', { macro: _cMacro, cat: _cCat, sub: _cSub, periodo: 'anno', mese: _cAnno + '-01' }));
 };
 
 // ---- VISTA: un anno, tutte le categorie ----

@@ -8,7 +8,7 @@ import { iconaMacro } from '../core/icons.js';
 import { navigate } from '../core/router.js';
 import { saldoStimato, saveConto, LABEL_TIPO } from '../services/contiService.js';
 import {
-  composizioneAttivita, totaleAttivita, totalePassivita, patrimonioNetto,
+  totaleAttivita, totalePassivita, patrimonioNetto,
   deltaNettoMese, salvaSnapshotMese, snapshotMeseMancante, serieStoricoPatrimonio,
 } from '../services/patrimonioService.js';
 import { statoPrestito } from '../services/prestitiService.js';
@@ -29,8 +29,6 @@ export const renderPatrimonio = async (root) => {
   const att = totaleAttivita();
   const pass = totalePassivita();
   const delta = deltaNettoMese();
-  const comp = composizioneAttivita();
-  const maxAtt = comp.length ? Math.max(...comp.map(c => c.totale)) : 1;
 
   // conti per lo strip orizzontale
   const contiAttivi = state.conti.filter(c => c.attivo !== false);
@@ -62,16 +60,7 @@ export const renderPatrimonio = async (root) => {
     ${_contiCollassabiliHTML()}
 
     ${_graficoLineaHTML()}
-
-    <div class="section-lbl"><span>Composizione</span>${snapshotMeseMancante() ? '<span style="color:var(--accent);font-size:11px;cursor:pointer" id="snap">📸 Salva rilevazione</span>' : ''}</div>
-    ${comp.map(c => `
-      <div class="patrow">
-        <div class="icon" style="background:${COLORE_ICONA[c.tipo]}">${ICONA_TIPO_ATT[c.tipo]}</div>
-        <div class="body" data-tipo="${c.tipo}">
-          <div class="row1"><span class="name">${LABEL_TIPO[c.tipo]}</span><span class="amt num">${fmtEUR(c.totale)}</span></div>
-          <div class="bar"><span style="width:${Math.max(3, c.totale / maxAtt * 100)}%"></span></div>
-        </div>
-      </div>`).join('') || '<div class="empty">Nessun conto configurato</div>'}
+    ${snapshotMeseMancante() ? '<div style="text-align:center;margin:10px 0"><button class="btn btn-secondary" id="snap" style="width:auto;display:inline-flex;padding:9px 16px;font-size:13px">📸 Salva rilevazione di oggi</button></div>' : ''}
 
     ${debiti.length ? `
       <div class="section-lbl"><span>Debiti</span></div>
@@ -106,6 +95,13 @@ export const renderPatrimonio = async (root) => {
   // tap su singolo conto -> modifica
   root.querySelectorAll('[data-conto]').forEach(el => el.addEventListener('click', (e) => { e.stopPropagation(); _modificaConto(root, el.dataset.conto); }));
 
+  // tap su strumento di investimento -> movimenti di quello strumento
+  root.querySelectorAll('[data-strumento]').forEach(el => el.addEventListener('click', (e) => { e.stopPropagation(); navigate('movimenti', { tipo: 'trasferimento', sub: el.dataset.strumento, periodo: 'anno', mese: new Date().toISOString().slice(0, 7) }); }));
+
+  // riordino conti
+  const rio = root.querySelector('#riordina-conti');
+  if (rio) rio.addEventListener('click', () => _riordinaConti(root));
+
   // tap su tipo attività -> dettaglio conti di quel tipo
   root.querySelectorAll('[data-tipo]').forEach(el => el.addEventListener('click', () => navigate('conti', { tipo: el.dataset.tipo })));
 
@@ -120,6 +116,44 @@ export const renderPatrimonio = async (root) => {
     dot.addEventListener('touchstart', mostra, { passive: true });
     dot.addEventListener('mouseenter', mostra);
   });
+};
+
+// Riordino conti: sheet con frecce su/giù per ogni conto (salva il campo 'ordine')
+const _riordinaConti = (root) => {
+  const conti = state.conti.filter(c => c.attivo !== false)
+    .slice().sort((a, b) => (a.ordine ?? 999) - (b.ordine ?? 999));
+  let lista = conti.map(c => c.id);
+
+  const render = (body, chiudi) => {
+    const byId = (id) => state.conti.find(c => c.id === id);
+    body.innerHTML = `
+      <p class="meta" style="margin-bottom:12px">Usa le frecce per cambiare l'ordine dei conti.</p>
+      <div>${lista.map((id, i) => {
+        const c = byId(id);
+        return `<div class="mov" style="cursor:default"><div class="ic">${ICONA_TIPO_ATT[c.tipo] || '💳'}</div>
+          <div class="body"><div class="d1">${escapeHtml(c.nome)}</div><div class="d2">${LABEL_TIPO[c.tipo] || c.tipo}</div></div>
+          <div style="display:flex;gap:4px">
+            <button class="hbtn" data-up="${i}" ${i === 0 ? 'disabled' : ''} style="width:32px;height:32px">↑</button>
+            <button class="hbtn" data-down="${i}" ${i === lista.length - 1 ? 'disabled' : ''} style="width:32px;height:32px">↓</button>
+          </div></div>`;
+      }).join('')}</div>
+      <button class="btn btn-primary" id="rio-ok" style="margin-top:16px">Salva ordine</button>`;
+
+    body.querySelectorAll('[data-up]').forEach(b => b.addEventListener('click', () => {
+      const i = parseInt(b.dataset.up); [lista[i - 1], lista[i]] = [lista[i], lista[i - 1]]; render(body, chiudi);
+    }));
+    body.querySelectorAll('[data-down]').forEach(b => b.addEventListener('click', () => {
+      const i = parseInt(b.dataset.down); [lista[i + 1], lista[i]] = [lista[i], lista[i + 1]]; render(body, chiudi);
+    }));
+    body.querySelector('#rio-ok').addEventListener('click', async () => {
+      for (let i = 0; i < lista.length; i++) {
+        const c = state.conti.find(x => x.id === lista[i]);
+        if (c) await saveConto({ ...c, ordine: i });
+      }
+      chiudi(); toast('Ordine salvato'); renderPatrimonio(root);
+    });
+  };
+  apriSheet('Riordina conti', '', render);
 };
 
 // Bottom sheet per modificare un conto (saldo/valore) — sostituisce l'icona matita
@@ -145,17 +179,46 @@ const _modificaConto = (root, contoId) => {
   });
 };
 
-// Sezione conti collassabile per tipo (sostituisce lo strip orizzontale).
+// Sezione conti collassabile per tipo. Nel gruppo Investimenti mostra anche gli
+// strumenti (PAC, Crypto, Azioni sciolte) ricavati dai trasferimenti. I conti sono
+// riordinabili (campo 'ordine').
 function _contiCollassabiliHTML() {
   const perTipo = contiPerTipoLocale();
   const ordine = ['liquidita', 'risparmio', 'investimenti', 'asset'];
   const LABEL = { liquidita: 'Liquidità', risparmio: 'Risparmio', investimenti: 'Investimenti', asset: 'Beni / Asset' };
-  let html = '<div class="section-lbl"><span>I tuoi conti</span></div>';
+  let html = '<div class="section-lbl"><span>I tuoi conti</span><span style="color:var(--accent);font-size:11px;cursor:pointer" id="riordina-conti">Riordina</span></div>';
   for (const tipo of ordine) {
-    const conti = perTipo[tipo] || [];
+    let conti = perTipo[tipo] || [];
     if (!conti.length) continue;
+    // ordina per campo 'ordine' (se impostato), altrimenti lascia l'ordine naturale
+    conti = conti.slice().sort((a, b) => (a.ordine ?? 999) - (b.ordine ?? 999));
     const tot = conti.reduce((s, c) => s + saldoStimato(c), 0);
     const aperto = _gruppiAperti.has(tipo);
+
+    // per gli investimenti: strumenti dai trasferimenti (sub), incluse le azioni sciolte
+    let strumentiHTML = '';
+    if (tipo === 'investimenti' && aperto) {
+      const perStrumento = {};
+      for (const m of state.movimenti) {
+        if (m.tipo !== 'trasferimento') continue;
+        const dest = state.conti.find(c => c.nome === m.contoDest);
+        const isInv = dest ? dest.tipo === 'investimenti' : m.macro === 'Investimenti';
+        if (!isInv) continue;
+        const k = m.sub || 'Altro';
+        perStrumento[k] = (perStrumento[k] || 0) + m.imp;
+      }
+      const strumenti = Object.entries(perStrumento).sort((a, b) => b[1] - a[1]);
+      if (strumenti.length) {
+        strumentiHTML = `<div class="strumenti-sub"><div class="strumenti-lbl">Strumenti (versato)</div>` +
+          strumenti.map(([nome, tot]) => `
+            <div class="conto-riga" data-strumento="${escapeHtml(nome)}">
+              <div class="conto-nome" style="font-size:13.5px;color:var(--txt-2)">📈 ${escapeHtml(nome)}</div>
+              <div class="conto-saldo num" style="color:var(--transfer)">${fmtEUR(tot)}</div>
+              <div class="conto-chev">›</div>
+            </div>`).join('') + `</div>`;
+      }
+    }
+
     html += `
       <div class="gruppo-conti">
         <div class="gruppo-head" data-gruppo="${tipo}">
@@ -170,6 +233,7 @@ function _contiCollassabiliHTML() {
             <div class="conto-saldo num">${fmtEUR(saldoStimato(c))}</div>
             <div class="conto-chev">›</div>
           </div>`).join('') : ''}
+        ${strumentiHTML}
       </div>`;
   }
   return html;

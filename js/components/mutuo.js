@@ -68,41 +68,35 @@ const _edit = (root) => {
   const conti = state.conti.filter(c => c.attivo !== false).map(c => c.nome);
   const tmp = { data_inizio: m.data_inizio, macro: m.macro || 'Casa', cat: m.cat || '', sub: m.sub || 'Rata Mutuo' };
   const vals = { importo: String(m.importo_iniziale).replace('.', ','), tasso: String(m.tasso).replace('.', ','), rata: String(m.rata).replace('.', ','), durata: String(m.durata_mesi), quota: String(m.quota_utente) };
-  const txtInput = (label, id, val) => `<label class="meta">${label}</label><input type="text" inputmode="decimal" id="${id}" value="${escapeHtml(val)}" class="sheet-input" readonly>`;
+  const txtInput = (label, id, val) => `<label class="meta">${label}</label><input type="text" inputmode="decimal" id="${id}" value="${escapeHtml(val)}" class="sheet-input">`;
 
   apriSheet('Modifica mutuo', `
     <label class="meta">Nome</label><input id="m-nome" value="${escapeHtml(m.nome)}" class="sheet-input">
-    ${txtInput('Importo iniziale (€)', 'm-imp', vals.importo)}<div id="np-imp"></div>
-    ${txtInput('Tasso annuo (%)', 'm-tasso', vals.tasso)}<div id="np-tasso"></div>
-    ${txtInput('Durata (mesi)', 'm-durata', vals.durata)}<div id="np-durata"></div>
-    ${txtInput('Rata (€)', 'm-rata', vals.rata)}<div id="np-rata"></div>
-    <label class="meta">Data inizio</label><button type="button" id="m-data-btn" class="sheet-input" style="text-align:left">${_fmtDMutuo(tmp.data_inizio)}</button>
-    ${txtInput('Tua quota (%)', 'm-quota', vals.quota)}<div id="np-quota"></div>
+    ${txtInput('Importo iniziale (€)', 'm-imp', vals.importo)}
+    ${txtInput('Tasso annuo (%)', 'm-tasso', vals.tasso)}
+    ${txtInput('Durata (mesi)', 'm-durata', vals.durata)}
+    ${txtInput('Rata (€)', 'm-rata', vals.rata)}
+    <label class="meta">Data inizio</label><button type="button" id="m-data-btn" class="sheet-input" style="text-align:left;cursor:pointer">${_fmtDMutuo(tmp.data_inizio)}</button>
+    ${txtInput('Tua quota (%)', 'm-quota', vals.quota)}
     <label class="meta">Banca</label><input id="m-banca" value="${escapeHtml(m.banca || '')}" class="sheet-input">
     <div class="divider" style="margin:14px 0"></div>
     <label class="meta">Conto da cui esce la rata</label>
     <select id="m-conto" class="sheet-input">${conti.map(c => `<option ${c === m.conto ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}</select>
     <label class="meta">Classificazione delle rate generate</label>
-    <button type="button" id="m-cat-btn" class="sheet-input" style="text-align:left">${[tmp.macro, tmp.cat, tmp.sub].filter(Boolean).join(' › ') || 'Scegli'}</button>
+    <button type="button" id="m-cat-btn" class="sheet-input" style="text-align:left;cursor:pointer">${[tmp.macro, tmp.cat, tmp.sub].filter(Boolean).join(' › ') || 'Scegli'}</button>
     <p class="meta" style="font-size:11px;margin:4px 0 12px;opacity:.8">Le rate future compariranno tra le spese con questa classificazione, dalla prossima scadenza in avanti (le rate passate restano quelle già nello storico).</p>
     <button class="btn btn-primary" id="m-ok" style="margin-top:8px">Salva</button>
   `, (body, chiudi) => {
-    const attach = (inputId, npId, key) => {
-      const inp = body.querySelector('#' + inputId);
-      inp.addEventListener('click', () => montaTastierino(body.querySelector('#' + npId), vals[key], (s) => { vals[key] = s; inp.value = s; }, () => {}));
-    };
-    attach('m-imp', 'np-imp', 'importo'); attach('m-tasso', 'np-tasso', 'tasso');
-    attach('m-durata', 'np-durata', 'durata'); attach('m-rata', 'np-rata', 'rata'); attach('m-quota', 'np-quota', 'quota');
-
     body.querySelector('#m-data-btn').addEventListener('click', () => apriDataNativa(tmp.data_inizio, (nd) => { tmp.data_inizio = nd; body.querySelector('#m-data-btn').textContent = _fmtDMutuo(nd); }));
     body.querySelector('#m-cat-btn').addEventListener('click', () => apriSelettoreCategoria(sel => { tmp.macro = sel.macro; tmp.cat = sel.cat; tmp.sub = sel.sub; body.querySelector('#m-cat-btn').textContent = [sel.macro, sel.cat, sel.sub].filter(Boolean).join(' › '); }));
 
     body.querySelector('#m-ok').addEventListener('click', async () => {
+      const num = (fid) => parseFloat(String(body.querySelector('#' + fid).value).replace(',', '.')) || 0;
       await saveMutuo({
-        nome: body.querySelector('#m-nome').value, importo_iniziale: parseFloat(vals.importo.replace(',', '.')) || 0,
-        tasso: parseFloat(vals.tasso.replace(',', '.')) || 0, durata_mesi: parseInt(vals.durata) || 0,
-        rata: parseFloat(vals.rata.replace(',', '.')) || 0, data_inizio: tmp.data_inizio,
-        quota_utente: parseFloat(vals.quota) || 100, banca: body.querySelector('#m-banca').value,
+        nome: body.querySelector('#m-nome').value, importo_iniziale: num('m-imp'),
+        tasso: num('m-tasso'), durata_mesi: parseInt(body.querySelector('#m-durata').value) || 0,
+        rata: num('m-rata'), data_inizio: tmp.data_inizio,
+        quota_utente: num('m-quota') || 100, banca: body.querySelector('#m-banca').value,
         giorno_addebito: m.giorno_addebito || 1, conto: body.querySelector('#m-conto').value,
         macro: tmp.macro, cat: tmp.cat, sub: tmp.sub, descMovimento: m.descMovimento || '',
       });
@@ -115,19 +109,16 @@ const _fmtDMutuo = (iso) => { if (!iso) return ''; const [a, mm, g] = iso.split(
 
 const _addEvento = (root) => {
   const tmp = { data: new Date().toISOString().slice(0, 10) };
-  let impStr = '0';
   apriSheet('Estinzione parziale', `
     <label class="meta">Importo estinto (€)</label>
-    <input type="text" inputmode="decimal" id="e-imp" value="0" class="sheet-input" readonly>
-    <div id="e-numpad"></div>
+    <input type="text" inputmode="decimal" id="e-imp" value="" placeholder="0,00" class="sheet-input">
     <label class="meta">Data</label>
-    <button type="button" id="e-data-btn" class="sheet-input" style="text-align:left">${_fmtDMutuo(tmp.data)}</button>
+    <button type="button" id="e-data-btn" class="sheet-input" style="text-align:left;cursor:pointer">${_fmtDMutuo(tmp.data)}</button>
     <button class="btn btn-primary" id="e-ok" style="margin-top:8px">Registra</button>
   `, (body, chiudi) => {
-    body.querySelector('#e-imp').addEventListener('click', () => montaTastierino(body.querySelector('#e-numpad'), impStr, (s) => { impStr = s; body.querySelector('#e-imp').value = s; }, () => {}));
     body.querySelector('#e-data-btn').addEventListener('click', () => apriDataNativa(tmp.data, (nd) => { tmp.data = nd; body.querySelector('#e-data-btn').textContent = _fmtDMutuo(nd); }));
     body.querySelector('#e-ok').addEventListener('click', async () => {
-      const imp = parseFloat(impStr.replace(',', '.')) || 0;
+      const imp = parseFloat(String(body.querySelector('#e-imp').value).replace(',', '.')) || 0;
       if (imp <= 0) { toast('Inserisci un importo'); return; }
       await saveEventoMutuo({ tipo: 'estinzione_parziale', importo: imp, data: tmp.data, riferimento: 'mutuo-principale' });
       chiudi(); toast('Registrato'); renderMutuo(root);

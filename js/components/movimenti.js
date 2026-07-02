@@ -10,19 +10,29 @@ import { deleteMovimento, movimentiDiVoce } from '../services/movimentiService.j
 import { toast } from '../core/utils.js';
 
 let _mese = annomese(todayISO());
+let _periodo = 'mese';   // 'settimana' | 'mese' | 'anno'
 
 export const renderMovimenti = async (root, params = {}) => {
-  const { macro, cat, sub, tipo, periodo } = params;
+  const { macro, cat, sub, tipo } = params;
   if (params.mese) _mese = params.mese;
+  if (params.periodo) _periodo = params.periodo;
 
-  const haFiltri = macro || cat || sub || tipo;
+  const haFiltri = macro || cat || sub || tipo || params.contoDest;
 
-  // seleziona il set di movimenti
+  // set di movimenti SEMPRE limitato al periodo selezionato (mai tutto lo storico)
+  const [anno, mese] = _mese.split('-');
   let movs;
-  if (periodo === 'anno' && params.mese) movs = state.movimenti.filter(m => m.data.startsWith(params.mese.slice(0, 4)));
-  else if (haFiltri) movs = state.movimenti;  // se filtro per categoria, cerco su tutto
-  else movs = movimentiDelMese(_mese);
+  if (_periodo === 'anno') {
+    movs = state.movimenti.filter(m => m.data.startsWith(anno));
+  } else if (_periodo === 'settimana') {
+    const oggi = new Date(); const s = new Date(); s.setDate(oggi.getDate() - 6);
+    const da = s.toISOString().slice(0, 10), a = oggi.toISOString().slice(0, 10);
+    movs = state.movimenti.filter(m => m.data >= da && m.data <= a);
+  } else {
+    movs = movimentiDelMese(_mese);
+  }
 
+  // applica i filtri di categoria/tipo DENTRO il periodo
   if (macro) movs = movs.filter(m => m.macro === macro);
   if (cat) movs = movs.filter(m => m.cat === cat);
   if (sub) movs = movs.filter(m => m.sub === sub);
@@ -31,7 +41,7 @@ export const renderMovimenti = async (root, params = {}) => {
 
   movs = movs.slice().sort((a, b) => b.data.localeCompare(a.data));
 
-  // titolo
+  // titolo (mostra la categoria/filtro se presente)
   let titolo = 'Movimenti';
   if (tipo === 'trasferimento') titolo = 'Investimenti e accantonamenti';
   else if (sub) titolo = sub;
@@ -42,7 +52,6 @@ export const renderMovimenti = async (root, params = {}) => {
   // raggruppa per giorno
   const perGiorno = gruppoPer(movs, m => m.data);
   const giorni = Object.keys(perGiorno).sort((a, b) => b.localeCompare(a));
-
   const totaleFiltro = movs.filter(m => m.tipo === 'spesa').reduce((s, m) => s + m.imp, 0);
 
   const listaHTML = giorni.length ? giorni.map(g => {
@@ -69,29 +78,52 @@ export const renderMovimenti = async (root, params = {}) => {
     return `
       <div class="day-head"><span>${fmtDataEstesa(g)}</span><b class="num">${totGiorno < 0 ? '−' : '+'}${fmtEUR(Math.abs(totGiorno))}</b></div>
       ${righe}`;
-  }).join('') : '<div class="empty"><div class="big-ic">📭</div>Nessun movimento</div>';
+  }).join('') : '<div class="empty"><div class="big-ic">📭</div>Nessun movimento in questo periodo</div>';
 
-  const [anno, mese] = _mese.split('-');
+  const labelPeriodo = _periodo === 'anno' ? anno
+    : _periodo === 'settimana' ? 'Ultimi 7 giorni'
+    : `${nomeMese(parseInt(mese) - 1)} ${anno}`;
+
+  // HEADER STICKY: selettore periodo + navigatore, sempre presente e bloccato in alto
   root.innerHTML = `
-    ${haFiltri ? `
-      <div class="search-summary"><div class="n">${movs.length} movimenti · totale spese</div><div class="big num">${fmtEUR(totaleFiltro)}</div></div>
-    ` : `
-      <div class="month-nav">
-        <button class="arr" id="prev">‹</button>
-        <div class="m">${nomeMese(parseInt(mese) - 1)} ${anno}</div>
-        <button class="arr" id="next">›</button>
+    <div class="mov-sticky">
+      <div class="seg" style="margin-bottom:8px">
+        <button data-p="settimana" class="${_periodo === 'settimana' ? 'on' : ''}">Settimana</button>
+        <button data-p="mese" class="${_periodo === 'mese' ? 'on' : ''}">Mese</button>
+        <button data-p="anno" class="${_periodo === 'anno' ? 'on' : ''}">Anno</button>
       </div>
-    `}
-    ${!haFiltri ? '<div class="cap" style="text-align:center;font-size:11px;color:var(--txt-3);margin:6px 0">← scorri un movimento a sinistra per eliminarlo</div>' : ''}
+      ${_periodo !== 'settimana' ? `
+        <div class="month-nav" style="margin:6px 0">
+          <button class="arr" id="prev">‹</button>
+          <div class="m">${labelPeriodo}</div>
+          <button class="arr" id="next">›</button>
+        </div>` : `<div class="month-nav" style="margin:6px 0"><div class="m">${labelPeriodo}</div></div>`}
+      ${haFiltri ? `<div class="filtro-badge">Filtro: <b>${escapeHtml(titolo)}</b> · ${movs.length} mov · spese ${fmtEUR(totaleFiltro)} <span id="clear-filtro">✕</span></div>` : ''}
+    </div>
     ${listaHTML}
   `;
 
-  // navigazione mesi
-  const prev = root.querySelector('#prev'), next = root.querySelector('#next');
-  if (prev) prev.addEventListener('click', () => { const d = new Date(parseInt(anno), parseInt(mese) - 2, 1); _mese = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; renderMovimenti(root); });
-  if (next) next.addEventListener('click', () => { const d = new Date(parseInt(anno), parseInt(mese), 1); _mese = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; renderMovimenti(root); });
+  // selettore periodo
+  root.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => { _periodo = b.dataset.p; renderMovimenti(root, params); }));
 
-  // tap su movimento -> dettaglio/modifica (sheet), swipe -> elimina
+  // navigazione periodo (mese o anno)
+  const prev = root.querySelector('#prev'), next = root.querySelector('#next');
+  if (prev) prev.addEventListener('click', () => {
+    if (_periodo === 'anno') _mese = `${parseInt(anno) - 1}-${mese}`;
+    else { const d = new Date(parseInt(anno), parseInt(mese) - 2, 1); _mese = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
+    renderMovimenti(root, params);
+  });
+  if (next) next.addEventListener('click', () => {
+    if (_periodo === 'anno') _mese = `${parseInt(anno) + 1}-${mese}`;
+    else { const d = new Date(parseInt(anno), parseInt(mese), 1); _mese = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
+    renderMovimenti(root, params);
+  });
+
+  // rimuovi filtro (torna a tutti i movimenti del periodo)
+  const cf = root.querySelector('#clear-filtro');
+  if (cf) cf.addEventListener('click', () => renderMovimenti(root, { periodo: _periodo, mese: _mese }));
+
+  // swipe-to-delete + tap per modifica
   _abilitaSwipe(root, () => renderMovimenti(root, params));
 };
 

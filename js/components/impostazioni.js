@@ -4,6 +4,7 @@ import { state, refreshAll } from '../core/store.js';
 import { escapeHtml, fmtEUR, fmtDataEstesa } from '../core/utils.js';
 import { navigate } from '../core/router.js';
 import { esportaBackup, importaBackup } from '../services/excelService.js';
+import { registraBackupExcelFatto, giorniDaUltimoBackupExcel } from '../services/backupService.js';
 import { applicaTagBulk, cercaMovimenti } from '../services/movimentiService.js';
 import { STORE_NAMES } from '../core/db.js';
 import { dbClear } from '../core/db.js';
@@ -50,20 +51,36 @@ export const renderImpostazioni = async (root) => {
     <p class="meta" style="text-align:center;margin-top:16px;opacity:.6">Finanze Personali · offline · nessun dato lascia il dispositivo</p>
   `;
 
-  // export
-  root.querySelector('#export').addEventListener('click', () => { try { esportaBackup(); toast('Backup esportato'); } catch (e) { toast('Errore export'); console.error(e); } });
+  // export (async: mostra l'errore vero se qualcosa va storto, invece di fallire in silenzio)
+  root.querySelector('#export').addEventListener('click', async () => {
+    try {
+      await esportaBackup();
+      await registraBackupExcelFatto();
+      toast('Backup Excel esportato ✓');
+    } catch (e) {
+      console.error('Errore export backup:', e);
+      toast('Errore export: ' + (e.message || e));
+    }
+  });
 
   // import
   const fileInp = root.querySelector('#import-file');
   root.querySelector('#import-btn').addEventListener('click', () => fileInp.click());
   fileInp.addEventListener('change', async () => {
     if (!fileInp.files.length) return;
-    if (!confirm('Il ripristino SOSTITUISCE i dati attuali con quelli del backup. Continuare?')) { fileInp.value = ''; return; }
+    if (!confirm('Il ripristino SOSTITUISCE i dati attuali con quelli presenti nel backup. Continuare?')) { fileInp.value = ''; return; }
     try {
       const r = await importaBackup(fileInp.files[0]);
-      toast(`Ripristinati ${r.movimenti} movimenti`);
+      let msg = `Ripristinati ${r.movimenti} movimenti`;
+      if (r.preservati && r.preservati.length) {
+        // il backup proveniva da una versione priva di alcuni fogli: quei dati sono stati preservati
+        const nomi = { mutuo: 'mutuo', finanziamenti: 'finanziamenti', ricorrenti: 'ricorrenti', eventiMutuo: 'eventi', tag: 'tag' };
+        const lista = r.preservati.map(s => nomi[s] || s).filter(Boolean);
+        if (lista.length) msg += ` · ${lista.join(', ')} mantenuti dal dispositivo`;
+      }
+      toast(msg);
       navigate('spese');
-    } catch (e) { toast('Errore import'); console.error(e); }
+    } catch (e) { console.error('Errore import:', e); toast('Errore import: ' + (e.message || e)); }
     fileInp.value = '';
   });
 

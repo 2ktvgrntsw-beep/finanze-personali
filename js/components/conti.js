@@ -45,8 +45,7 @@ const _editConto = (root, id) => {
       ${TIPI_CONTO.map(t => `<option value="${t}" ${c.tipo === t ? 'selected' : ''}>${LABEL_TIPO[t]}</option>`).join('')}
     </select>
     <label class="meta">Saldo / Valore (€)</label>
-    <input type="text" inputmode="decimal" id="c-saldo" value="${String(c.saldo_iniziale).replace('.', ',')}" class="sheet-input" readonly>
-    <div id="c-numpad"></div>
+    <input type="text" inputmode="decimal" id="c-saldo" value="${String(c.saldo_iniziale).replace('.', ',')}" class="sheet-input">
     <label class="meta">Data del saldo</label>
     <button type="button" id="c-data-btn" class="sheet-input" style="text-align:left;cursor:pointer">${_fmtD(tmp.data_saldo)}</button>
     <div id="c-possesso-wrap" style="${c.tipo === 'asset' ? '' : 'display:none'}">
@@ -58,11 +57,6 @@ const _editConto = (root, id) => {
       <button class="btn btn-primary" id="c-ok">Salva</button>
     </div>
   `, (body, chiudi) => {
-    let saldoStr = String(c.saldo_iniziale).replace('.', ',');
-    // tastierino per il saldo
-    body.querySelector('#c-saldo').addEventListener('click', () => {
-      montaTastierino(body.querySelector('#c-numpad'), saldoStr, (s) => { saldoStr = s; body.querySelector('#c-saldo').value = s; }, () => {});
-    });
     // data nativa
     body.querySelector('#c-data-btn').addEventListener('click', () => apriDataNativa(tmp.data_saldo, (nd) => { tmp.data_saldo = nd; body.querySelector('#c-data-btn').textContent = _fmtD(nd); }));
     const possBtn = body.querySelector('#c-possesso-btn');
@@ -77,7 +71,7 @@ const _editConto = (root, id) => {
       if (!nome) { toast('Inserisci un nome'); return; }
       await saveConto({
         id: c.id, nome, tipo: body.querySelector('#c-tipo').value,
-        saldo_iniziale: parseFloat(saldoStr.replace(',', '.')) || 0,
+        saldo_iniziale: parseFloat(String(body.querySelector('#c-saldo').value).replace(',', '.')) || 0,
         data_saldo: tmp.data_saldo, possessoData: tmp.possessoData || null,
       });
       chiudi(); toast('Salvato'); renderConti(root);

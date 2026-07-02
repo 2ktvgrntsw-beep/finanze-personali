@@ -8,10 +8,14 @@ import { listaMacro, categorieDi, sottocategorieDi } from '../services/categorie
 export const apriSheet = (titolo, contenutoHTML, onMount) => {
   const bg = document.createElement('div');
   bg.className = 'sheet-bg';
-  bg.innerHTML = `<div class="sheet"><h3>${escapeHtml(titolo)}</h3><div class="sheet-body">${contenutoHTML}</div></div>`;
+  bg.innerHTML = `<div class="sheet">
+    <div class="sheet-head"><h3>${escapeHtml(titolo)}</h3><button class="sheet-close" aria-label="Chiudi">✕</button></div>
+    <div class="sheet-body">${contenutoHTML}</div>
+  </div>`;
   document.body.appendChild(bg);
   const chiudi = () => bg.remove();
   bg.addEventListener('click', (e) => { if (e.target === bg) chiudi(); });
+  bg.querySelector('.sheet-close').addEventListener('click', chiudi);
   if (onMount) onMount(bg.querySelector('.sheet-body'), chiudi);
   return chiudi;
 };
@@ -133,7 +137,7 @@ export const rigaDataNativa = (labelData, dataISO, containerEl, onChange) => {
 export const montaTastierino = (container, valoreIniziale, onChange, onDone) => {
   let str = valoreIniziale || '0';
   const tasti = ['7', '8', '9', '4', '5', '6', '1', '2', '3', ',', '0', '00'];
-  container.innerHTML = `<div class="numpad">
+  container.innerHTML = `<div class="numpad numpad-inline">
     ${tasti.map(t => `<button type="button" data-k="${t}">${t}</button>`).join('')
       .replace('<button type="button" data-k="9">9</button>', '<button type="button" data-k="9">9</button><button type="button" class="sub" data-k="C">C</button>')
       .replace('<button type="button" data-k="6">6</button>', '<button type="button" data-k="6">6</button><button type="button" class="sub" data-k="back">⌫</button>')

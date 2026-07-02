@@ -70,22 +70,47 @@ export const esportaBackup = async () => {
   })));
 
   // Meta / impostazioni (backup automatico, versione, ecc.)
+  // Meta / impostazioni — ESCLUSO il backup automatico interno ('_backup_auto'):
+  // contiene tutti i dati serializzati e supererebbe il limite di 32.767 caratteri
+  // per cella di Excel, facendo fallire l'intero export. Escludo per sicurezza anche
+  // qualsiasi altro valore anomalo oltre i 30.000 caratteri.
   const meta = await dbAll('meta');
-  sheet('_Meta', meta.map(x => ({ Chiave: x.chiave, Valore: typeof x.valore === 'object' ? JSON.stringify(x.valore) : x.valore })));
+  const metaRows = meta
+    .filter(x => x.chiave !== '_backup_auto')
+    .map(x => ({ Chiave: x.chiave, Valore: typeof x.valore === 'object' ? JSON.stringify(x.valore) : String(x.valore ?? '') }))
+    .filter(x => x.Valore.length < 30000);
+  sheet('_Meta', metaRows);
 
   const oggi = new Date();
   const nome = `backup_finanze_${String(oggi.getDate()).padStart(2, '0')}-${String(oggi.getMonth() + 1).padStart(2, '0')}-${oggi.getFullYear()}.xlsx`;
   XLSX().writeFile(wb, nome);
 };
 
-// --- IMPORT (recovery completo) ---
+// --- IMPORT (recovery completo, RESILIENTE tra versioni) ---
+// Regola di robustezza: uno store viene azzerato e reimportato SOLO se il foglio
+// corrispondente esiste nel file (con almeno una riga utile). Se il backup proviene
+// da una versione precedente che non aveva quel foglio, i dati attuali di quello
+// store vengono PRESERVATI invece di essere cancellati.
 export const importaBackup = async (file) => {
   const buf = await file.arrayBuffer();
   const wb = XLSX().read(buf, { type: 'array' });
   const leggi = (nome) => { const ws = wb.Sheets[nome]; return ws ? XLSX().utils.sheet_to_json(ws, { defval: '' }) : []; };
+  // un foglio "esiste davvero" se è presente e ha almeno una riga con contenuto
+  const haFoglio = (nome) => {
+    const righe = leggi(nome);
+    return righe.length > 0 && righe.some(r => Object.values(r).some(v => v !== '' && v !== null && v !== undefined));
+  };
 
-  // Svuota TUTTI gli store principali
-  for (const s of ['movimenti', 'conti', 'categorie', 'tag', 'ricorrenti', 'mutuo', 'finanziamenti', 'eventiMutuo']) await dbClear(s);
+  // Azzera in modo CONDIZIONALE: solo gli store coperti dal file
+  const mappaFogli = {
+    movimenti: 'Movimenti', conti: 'Conti', categorie: 'Categorie', tag: 'Tag',
+    ricorrenti: 'Ricorrenti', mutuo: 'Mutuo', finanziamenti: 'Finanziamenti', eventiMutuo: 'EventiMutuo',
+  };
+  const preservati = [];
+  for (const [store, foglio] of Object.entries(mappaFogli)) {
+    if (haFoglio(foglio)) await dbClear(store);
+    else preservati.push(store);
+  }
 
   // Movimenti
   const movs = leggi('Movimenti').map((r, i) => {
@@ -168,5 +193,5 @@ export const importaBackup = async (file) => {
   })).filter(e => e.importo > 0));
 
   await refreshAll();
-  return { movimenti: movs.length };
+  return { movimenti: movs.length, preservati };
 };

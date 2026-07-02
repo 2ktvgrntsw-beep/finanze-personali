@@ -7,7 +7,7 @@ import { fmtEUR, escapeHtml, round2, todayISO } from '../core/utils.js';
 import { iconaMacro } from '../core/icons.js';
 import { ricorrentiAttive, saveRicorrente, deleteRicorrente, FREQUENZE } from '../services/ricorrentiService.js';
 import { applicaModificaAmbito } from '../services/movimentiService.js';
-import { apriSheet } from './shared.js';
+import { apriSheet, montaTastierino } from './shared.js';
 import { toast } from '../core/utils.js';
 
 const FREQ_LABEL = { giornaliera: 'Ogni giorno', settimanale: 'Ogni settimana', mensile: 'Ogni mese', annuale: 'Ogni anno' };
@@ -98,27 +98,12 @@ const _modificaRic = (root, id) => {
     </div>
     <button class="btn btn-ghost" id="mr-toggle" style="margin-top:10px">${r.attiva === false ? 'Riattiva' : 'Metti in pausa'}</button>
   `, (body, chiudi) => {
-    // mini tastierino per l'importo
+    // tastierino per l'importo (usa l'helper condiviso: inline, non sventrato)
     const amountEl = body.querySelector('#mr-amount');
     const pad = body.querySelector('#mr-pad');
     amountEl.addEventListener('click', () => {
       if (pad.innerHTML) { pad.innerHTML = ''; return; }
-      const tasti = ['7', '8', '9', '4', '5', '6', '1', '2', '3', ',', '0', '00'];
-      pad.innerHTML = `<div class="numpad" style="position:static;max-width:none;border-radius:12px;margin:8px 0;border:1px solid var(--line)">
-        ${tasti.map(t => `<button data-k="${t}">${t}</button>`).join('')
-          .replace('<button data-k="9">9</button>', '<button data-k="9">9</button><button class="sub" data-k="C">C</button>')
-          .replace('<button data-k="6">6</button>', '<button data-k="6">6</button><button class="sub" data-k="back">⌫</button>')
-          .replace('<button data-k="3">3</button>', '<button data-k="3">3</button><button class="ok" data-k="ok" style="grid-row:span 2">OK</button>')}
-      </div>`;
-      pad.querySelectorAll('.numpad button').forEach(b => b.addEventListener('click', () => {
-        const k = b.dataset.k;
-        if (k === 'C') impStr = '0';
-        else if (k === 'back') impStr = impStr.length > 1 ? impStr.slice(0, -1) : '0';
-        else if (k === 'ok') { pad.innerHTML = ''; return; }
-        else if (k === ',') { if (!impStr.includes(',')) impStr += ','; }
-        else { impStr = impStr === '0' ? k : impStr + k; }
-        amountEl.textContent = `${impStr} €`;
-      }));
+      montaTastierino(pad, impStr, (s) => { impStr = s; amountEl.textContent = `${impStr} €`; }, () => {});
     });
 
     body.querySelector('#mr-ok').addEventListener('click', async () => {
