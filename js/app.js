@@ -90,6 +90,12 @@ const costruisciChrome = () => {
 
 const boot = async () => {
   try {
+    // Chiede al browser di marcare lo storage come PERSISTENTE: riduce (non azzera)
+    // la probabilità che iOS/il browser cancelli i dati per liberare spazio.
+    if (navigator.storage && navigator.storage.persist) {
+      navigator.storage.persist().catch(() => {});
+    }
+
     await openDB();
     await seedStoricoSeNecessario();   // carica lo storico al primo avvio
     await refreshAll();

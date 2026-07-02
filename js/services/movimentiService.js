@@ -48,7 +48,7 @@ export const applicaModificaAmbito = async (ricorrenza, modifiche, ambito) => {
     const matchDesc = desc && (m.desc || '').toLowerCase() === desc;
     const matchSub = sub && m.sub === sub && Math.abs(m.imp - impVecchio) < 0.02;
     return matchDesc || matchSub;
-  }).map(m => ({ ...m, ...modifiche, annomese: m.annomese }));
+  }).map(m => { const n = { ...m, ...modifiche }; n.annomese = annomese(n.data); return n; });
 
   if (daAggiornare.length) { await dbBulkPut('movimenti', daAggiornare); await refreshAll(); }
   return daAggiornare.length;

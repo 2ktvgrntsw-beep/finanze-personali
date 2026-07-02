@@ -24,9 +24,21 @@ restano sul tuo dispositivo (IndexedDB), nessun account, nessun server, nessun c
 2. Tocca **Condividi → Aggiungi a Home**.
 3. Apri l'app dall'icona: funziona a schermo intero e offline.
 
-## Aggiornamenti
-Dopo aver caricato una nuova versione su GitHub, incrementa `CACHE_VERSION` in
-`service-worker.js`. Sull'iPhone, chiudi e riapri l'app per aggiornare la cache.
+## Aggiornamenti — procedura di rilascio
+
+**Regola d'oro (imparata a caro prezzo):** ogni versione consegnata DEVE avere un
+numero nuovo, altrimenti i telefoni continuano a servire il codice vecchio dalla cache.
+
+1. Incrementa `APP_VERSION` in `js/core/version.js`
+2. Incrementa `CACHE_VERSION` in `service-worker.js` (stesso numero)
+3. Esegui i test: `node tests/unit.mjs` (il primo test verifica proprio la coerenza versioni)
+4. Carica su GitHub; sull'iPhone chiudi e riapri l'app
+5. Verifica in Impostazioni che compaia il numero nuovo
+
+## Test
+
+- `node tests/unit.mjs` — logica pura (piani di ammortamento, date, coerenza versioni, asset SW)
+- `python3 tests/e2e.py` — browser reale (avvio, idempotenza doppio avvio, no doppioni, tutte le schermate)
 
 ## Struttura
 - `js/core/` — database, stato, router, utility, seed dei dati

@@ -3,7 +3,7 @@
 // l'app dopo un deploy, basta incrementare CACHE_VERSION: il vecchio cache viene
 // eliminato e i file ricaricati.
 
-const CACHE_VERSION = 'finanze-v2.2.0';
+const CACHE_VERSION = 'finanze-v2.4.0';
 
 const ASSETS = [
   './',
@@ -14,6 +14,7 @@ const ASSETS = [
   './js/app.js',
   './js/core/db.js',
   './js/core/utils.js',
+  './js/core/version.js',
   './js/core/store.js',
   './js/core/seed.js',
   './js/core/router.js',
@@ -60,7 +61,7 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_VERSION).map(k => caches.delete(k)))
+      Promise.all(keys.filter(k => k !== CACHE_VERSION && k !== CACHE_VERSION + '-cdn').map(k => caches.delete(k)))
     ).then(() => self.clients.claim())
   );
 });
@@ -68,8 +69,24 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
 
-  // Le richieste esterne (es. CDN SheetJS) passano dalla rete
-  if (url.origin !== location.origin) return;
+  // Richieste esterne (CDN SheetJS): stale-while-revalidate — servi dalla cache se
+  // presente, altrimenti rete + salva in cache. Dopo il primo avvio online, la
+  // libreria Excel funziona anche offline.
+  if (url.origin !== location.origin) {
+    e.respondWith(
+      caches.match(e.request).then(cached => {
+        const fetched = fetch(e.request).then(resp => {
+          if (resp && (resp.status === 200 || resp.type === 'opaque')) {
+            const copy = resp.clone();
+            caches.open(CACHE_VERSION + '-cdn').then(c => c.put(e.request, copy));
+          }
+          return resp;
+        }).catch(() => cached);
+        return cached || fetched;
+      })
+    );
+    return;
+  }
 
   // Cache-first per gli asset locali
   e.respondWith(

@@ -16,9 +16,20 @@ export const calcolaPiano = (p, eventi = []) => {
   // eventi di estinzione parziale indicizzati per data
   const estinzioni = eventi.filter(e => e.tipo === 'estinzione_parziale');
 
+  const [sy, sm, sg] = p.data_inizio.split('-').map(Number);
+  // giorno delle rate successive alla prima: il giorno di addebito se impostato,
+  // altrimenti il giorno della data di inizio (la prima rata cade sempre alla data di inizio)
+  const giornoRata = p.giorno_addebito || sg;
+
   for (let i = 1; i <= p.durata_mesi && residuo > 0.005; i++) {
-    // la prima rata (i=1) cade il giorno di INIZIO del prestito; le successive un mese dopo.
-    const dataRata = new Date(start); dataRata.setMonth(dataRata.getMonth() + (i - 1));
+    // ogni rata è calcolata DALLA DATA DI INIZIO (mese di partenza + i-1), preservando
+    // il giorno voluto, o l'ultimo giorno del mese se non esiste (31 -> 28 feb).
+    const mesiTot = sm - 1 + (i - 1);
+    const anno = sy + Math.floor(mesiTot / 12);
+    const mese = (mesiTot % 12) + 1;
+    const maxG = new Date(anno, mese, 0).getDate();
+    const giorno = i === 1 ? sg : giornoRata;
+    const dataRata = new Date(anno, mese - 1, Math.min(giorno, maxG));
     const interessi = tassoMensile > 0 ? residuo * tassoMensile : 0;
     let capitale = p.rata - interessi;
     if (capitale > residuo) capitale = residuo;
@@ -179,6 +190,17 @@ export const eventiMutuo = () => state.eventiMutuo.filter(e => e.riferimento ===
 // Chiamata all'avvio dell'app. Usa sincronizzaRicorrenzaPrestito, che rispetta la
 // regola d'oro (solo dal presente in avanti, niente doppioni col passato).
 export const sincronizzaPrestiti = async () => {
+  // DEDUP DI SICUREZZA: se per un bug passato un prestito ha più ricorrenze
+  // collegate (stesso origineMutuo), tengo la prima ed elimino le altre.
+  const { dbAll: _all, dbDelete: _del } = await import('../core/db.js');
+  const tutte = await _all('ricorrenti');
+  const viste = new Map();
+  for (const r of tutte) {
+    if (!r.origineMutuo) continue;
+    if (viste.has(r.origineMutuo)) await _del('ricorrenti', r.id);
+    else viste.set(r.origineMutuo, r.id);
+  }
+
   if (state.mutuo && state.mutuo.importo_iniziale && state.mutuo.generaRicorrenza !== false) {
     await sincronizzaRicorrenzaPrestito(state.mutuo, 'mutuo');
   }

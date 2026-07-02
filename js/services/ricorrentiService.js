@@ -3,7 +3,7 @@
 // automatiche" sono ricorrenze speciali per gli accantonamenti (es. 20€/giorno su
 // deposito, PAC settimanale, ricarica a soglia) — parametrizzabili e modificabili.
 
-import { dbAdd, dbDelete } from '../core/db.js';
+import { dbAdd, dbDelete, dbGet } from '../core/db.js';
 import { state, refreshAll } from '../core/store.js';
 import { uid, round2, todayISO } from '../core/utils.js';
 import { saveMovimento } from './movimentiService.js';
@@ -38,6 +38,11 @@ export const saveRicorrente = async (r) => {
     generati: r.generati || 0,         // quante occorrenze già generate (per il conteggio)
     ultimaGenerazione: r.ultimaGenerazione || null,
     prossima: r.prossima || dataInizio,
+    // collegamento con mutuo/finanziamento e provenienza: vanno SEMPRE preservati,
+    // altrimenti modificando la ricorrenza si spezza il legame col prestito
+    // e la sincronizzazione successiva ne creerebbe un doppione.
+    origineMutuo: r.origineMutuo || null,
+    origine: r.origine || '',
   };
   await dbAdd('ricorrenti', obj);
   await refreshAll();
@@ -48,12 +53,20 @@ export const deleteRicorrente = async (id) => { await dbDelete('ricorrenti', id)
 
 // Calcola la data della prossima occorrenza dopo una certa data
 const prossimaData = (dataISO, frequenza) => {
-  const d = new Date(dataISO + 'T00:00:00');
-  if (frequenza === 'giornaliera') d.setDate(d.getDate() + 1);
-  else if (frequenza === 'settimanale') d.setDate(d.getDate() + 7);
-  else if (frequenza === 'mensile') d.setMonth(d.getMonth() + 1);
-  else if (frequenza === 'annuale') d.setFullYear(d.getFullYear() + 1);
-  return d.toISOString().slice(0, 10);
+  const [y, m, g] = dataISO.split('-').map(Number);
+  if (frequenza === 'giornaliera' || frequenza === 'settimanale') {
+    const d = new Date(y, m - 1, g + (frequenza === 'giornaliera' ? 1 : 7));
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  if (frequenza === 'annuale') {
+    const maxG = new Date(y + 1, m, 0).getDate();   // gestisce 29 feb
+    return `${y + 1}-${String(m).padStart(2, '0')}-${String(Math.min(g, maxG)).padStart(2, '0')}`;
+  }
+  // mensile: giorno voluto, o ULTIMO del mese se non esiste (31 gen -> 28 feb, non 3 mar)
+  const ny = m === 12 ? y + 1 : y;
+  const nm = m === 12 ? 1 : m + 1;
+  const maxG = new Date(ny, nm, 0).getDate();
+  return `${ny}-${String(nm).padStart(2, '0')}-${String(Math.min(g, maxG)).padStart(2, '0')}`;
 };
 
 // Genera i movimenti per tutte le ricorrenze scadute fino a oggi.
@@ -87,13 +100,21 @@ export const generaScaduti = async () => {
       }
 
       if (importo > 0) {
-        await saveMovimento({
-          data: cursore, tipo: r.tipo, imp: importo,
-          macro: r.macro, cat: r.cat, sub: r.sub,
-          conto: r.conto, contoDest: r.contoDest, tag: r.tag,
-          desc: r.desc || r.nome, note: 'Generato da ricorrenza', origine: 'ricorrenza',
-        });
-        generati++;
+        // CHIAVE DI IDEMPOTENZA: id deterministico ricorrenza+data. Se per qualsiasi
+        // motivo la generazione ripartisse dallo stesso punto (reset di 'prossima',
+        // doppio avvio, bug futuro), il movimento esiste già e NON viene duplicato.
+        const idGen = `gen-${r.id}-${cursore}`;
+        const esiste = await dbGet('movimenti', idGen);
+        if (!esiste) {
+          await saveMovimento({
+            id: idGen,
+            data: cursore, tipo: r.tipo, imp: importo,
+            macro: r.macro, cat: r.cat, sub: r.sub,
+            conto: r.conto, contoDest: r.contoDest, tag: r.tag,
+            desc: r.desc || r.nome, note: 'Generato da ricorrenza', origine: 'ricorrenza',
+          });
+          generati++;
+        }
         contatore++;
       }
       cursore = prossimaData(cursore, r.frequenza);

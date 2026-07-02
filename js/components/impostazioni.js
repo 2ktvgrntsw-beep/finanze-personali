@@ -1,10 +1,11 @@
 // impostazioni.js — Impostazioni: backup/recovery Excel, bulk tag, gestione dati.
 
 import { state, refreshAll } from '../core/store.js';
+import { APP_VERSION } from '../core/version.js';
 import { escapeHtml, fmtEUR, fmtDataEstesa } from '../core/utils.js';
 import { navigate } from '../core/router.js';
 import { esportaBackup, importaBackup } from '../services/excelService.js';
-import { registraBackupExcelFatto, giorniDaUltimoBackupExcel } from '../services/backupService.js';
+import { registraBackupExcelFatto, giorniDaUltimoBackupExcel, esportaJSON, importaJSON } from '../services/backupService.js';
 import { applicaTagBulk, cercaMovimenti } from '../services/movimentiService.js';
 import { STORE_NAMES } from '../core/db.js';
 import { dbClear } from '../core/db.js';
@@ -18,13 +19,22 @@ export const renderImpostazioni = async (root) => {
   const nConti = state.conti.length;
   const nTag = state.tag.length;
 
+  const giorniBackup = await giorniDaUltimoBackupExcel();
+  const promemoriaBackup = giorniBackup === null
+    ? '<span style="color:var(--down)">Non hai ancora mai esportato un backup.</span>'
+    : giorniBackup > 7
+      ? `<span style="color:var(--down)">Ultimo backup: ${giorniBackup} giorni fa — è ora di rifarlo.</span>`
+      : `Ultimo backup: ${giorniBackup === 0 ? 'oggi' : giorniBackup + ' giorni fa'} ✓`;
+
   root.innerHTML = `
     <div class="section-lbl"><span>Backup e ripristino</span></div>
     <div class="card">
-      <p class="meta" style="margin-bottom:14px">I tuoi dati sono salvati solo su questo dispositivo. L'app fa un <b>backup automatico interno</b> a ogni avvio (ti protegge da errori dell'app), ma per essere davvero al sicuro esporta ogni tanto un backup Excel: è l'unico che sopravvive se iOS libera spazio.</p>
-      <button class="btn btn-primary" id="export" style="margin-bottom:10px">⬇️ Esporta backup Excel</button>
-      <button class="btn btn-secondary" id="import-btn">⬆️ Importa da backup (recovery)</button>
-      <input type="file" id="import-file" accept=".xlsx,.xls" style="display:none">
+      <p class="meta" style="margin-bottom:8px">I tuoi dati vivono solo su questo dispositivo. L'app fa un <b>backup automatico interno</b> a ogni avvio, ma per essere davvero al sicuro esporta ogni tanto un file: è l'unico che sopravvive se iOS libera spazio.</p>
+      <p class="meta" style="margin-bottom:14px">${promemoriaBackup}</p>
+      <button class="btn btn-primary" id="export-json" style="margin-bottom:10px">⬇️ Backup completo (JSON) — consigliato</button>
+      <button class="btn btn-secondary" id="export" style="margin-bottom:10px">📊 Esporta Excel (per consultazione)</button>
+      <button class="btn btn-secondary" id="import-btn">⬆️ Ripristina da backup (.json o .xlsx)</button>
+      <input type="file" id="import-file" accept=".json,.xlsx,.xls" style="display:none">
     </div>
 
     <div class="section-lbl"><span>Tag</span></div>
@@ -44,16 +54,26 @@ export const renderImpostazioni = async (root) => {
     <div class="card">
       <div style="display:flex;justify-content:space-between;padding:5px 0"><span class="meta">Movimenti</span><span class="num">${nMov}</span></div>
       <div style="display:flex;justify-content:space-between;padding:5px 0"><span class="meta">Tag</span><span class="num">${nTag}</span></div>
-      <div style="display:flex;justify-content:space-between;padding:5px 0"><span class="meta">Versione</span><span>2.2</span></div>
+      <div style="display:flex;justify-content:space-between;padding:5px 0"><span class="meta">Versione</span><span>${APP_VERSION}</span></div>
     </div>
 
     <div style="margin-top:20px"><button class="btn btn-danger" id="reset">Azzera tutti i dati</button></div>
     <p class="meta" style="text-align:center;margin-top:16px;opacity:.6">Finanze Personali · offline · nessun dato lascia il dispositivo</p>
   `;
 
-  // export (async: mostra l'errore vero se qualcosa va storto, invece di fallire in silenzio)
+  // export JSON (formato di recovery primario: nativo, senza librerie)
+  root.querySelector('#export-json').addEventListener('click', async () => {
+    try {
+      await esportaJSON();
+      await registraBackupExcelFatto();
+      toast('Backup JSON esportato ✓');
+    } catch (e) { console.error('Errore export JSON:', e); toast('Errore: ' + (e.message || e)); }
+  });
+
+  // export Excel (per consultazione; richiede la libreria dal CDN la prima volta online)
   root.querySelector('#export').addEventListener('click', async () => {
     try {
+      if (!window.XLSX) { toast('Libreria Excel non disponibile offline: usa il backup JSON, oppure riapri l\u2019app con connessione.'); return; }
       await esportaBackup();
       await registraBackupExcelFatto();
       toast('Backup Excel esportato ✓');
@@ -70,10 +90,12 @@ export const renderImpostazioni = async (root) => {
     if (!fileInp.files.length) return;
     if (!confirm('Il ripristino SOSTITUISCE i dati attuali con quelli presenti nel backup. Continuare?')) { fileInp.value = ''; return; }
     try {
-      const r = await importaBackup(fileInp.files[0]);
+      const file = fileInp.files[0];
+      const isJSON = file.name.toLowerCase().endsWith('.json');
+      if (!isJSON && !window.XLSX) { toast('Per i file Excel serve la connessione la prima volta. Usa un backup .json.'); fileInp.value = ''; return; }
+      const r = isJSON ? await importaJSON(file) : await importaBackup(file);
       let msg = `Ripristinati ${r.movimenti} movimenti`;
       if (r.preservati && r.preservati.length) {
-        // il backup proveniva da una versione priva di alcuni fogli: quei dati sono stati preservati
         const nomi = { mutuo: 'mutuo', finanziamenti: 'finanziamenti', ricorrenti: 'ricorrenti', eventiMutuo: 'eventi', tag: 'tag' };
         const lista = r.preservati.map(s => nomi[s] || s).filter(Boolean);
         if (lista.length) msg += ` · ${lista.join(', ')} mantenuti dal dispositivo`;

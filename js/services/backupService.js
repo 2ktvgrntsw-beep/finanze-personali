@@ -69,3 +69,40 @@ export const giorniDaUltimoBackupExcel = async () => {
   const diff = Date.now() - new Date(rec.valore).getTime();
   return Math.floor(diff / (1000 * 60 * 60 * 24));
 };
+
+// --- Backup JSON (formato di recovery PRIMARIO) ---
+// Nessuna libreria esterna, nessun limite di cella, nessuna perdita di tipo:
+// il file .json contiene tutti gli store così come sono. È il formato più
+// affidabile per il ripristino; l'Excel resta per la consultazione umana.
+export const esportaJSON = async () => {
+  const dati = { _formato: 'finanze-backup', _versione: 1, _data: new Date().toISOString() };
+  for (const s of STORE_DATI) dati[s] = await dbAll(s);
+  const blob = new Blob([JSON.stringify(dati)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const oggi = new Date();
+  a.href = url;
+  a.download = `backup_finanze_${String(oggi.getDate()).padStart(2, '0')}-${String(oggi.getMonth() + 1).padStart(2, '0')}-${oggi.getFullYear()}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+};
+
+// Import JSON, RESILIENTE come l'import Excel: azzera e reimporta solo gli store
+// presenti nel file (con dati); gli altri vengono preservati.
+export const importaJSON = async (file) => {
+  const testo = await file.text();
+  const dati = JSON.parse(testo);
+  if (dati._formato !== 'finanze-backup') throw new Error('File non riconosciuto come backup Finanze');
+  const preservati = [];
+  for (const s of STORE_DATI) {
+    const righe = dati[s];
+    if (Array.isArray(righe) && righe.length > 0) {
+      await dbClear(s);
+      await dbBulkPut(s, righe);
+    } else {
+      preservati.push(s);
+    }
+  }
+  await refreshAll();
+  return { movimenti: (dati.movimenti || []).length, preservati };
+};
