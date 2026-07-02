@@ -84,7 +84,9 @@ const _edit = (root) => {
     <select id="m-conto" class="sheet-input">${conti.map(c => `<option ${c === m.conto ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}</select>
     <label class="meta">Classificazione delle rate generate</label>
     <button type="button" id="m-cat-btn" class="sheet-input" style="text-align:left;cursor:pointer">${[tmp.macro, tmp.cat, tmp.sub].filter(Boolean).join(' › ') || 'Scegli'}</button>
-    <p class="meta" style="font-size:11px;margin:4px 0 12px;opacity:.8">Le rate future compariranno tra le spese con questa classificazione, dalla prossima scadenza in avanti (le rate passate restano quelle già nello storico).</p>
+    <label class="meta">Descrizione delle rate generate</label>
+    <input id="m-descmov" value="${escapeHtml(m.descMovimento || '')}" placeholder="Vuota = come le rate storiche (solo classificazione)" class="sheet-input">
+    <p class="meta" style="font-size:11px;margin:4px 0 12px;opacity:.8">Le rate future compariranno tra le spese con questa classificazione e descrizione, dalla prossima scadenza in avanti (le rate passate restano quelle già nello storico). Per cambiare anche le passate usa la modifica massiva dal Cerca.</p>
     <button class="btn btn-primary" id="m-ok" style="margin-top:8px">Salva</button>
   `, (body, chiudi) => {
     body.querySelector('#m-data-btn').addEventListener('click', () => apriDataNativa(tmp.data_inizio, (nd) => { tmp.data_inizio = nd; body.querySelector('#m-data-btn').textContent = _fmtDMutuo(nd); }));
@@ -98,7 +100,7 @@ const _edit = (root) => {
         rata: num('m-rata'), data_inizio: tmp.data_inizio,
         quota_utente: num('m-quota') || 100, banca: body.querySelector('#m-banca').value,
         giorno_addebito: m.giorno_addebito || 1, conto: body.querySelector('#m-conto').value,
-        macro: tmp.macro, cat: tmp.cat, sub: tmp.sub, descMovimento: m.descMovimento || '',
+        macro: tmp.macro, cat: tmp.cat, sub: tmp.sub, descMovimento: body.querySelector('#m-descmov').value.trim(),
       });
       chiudi(); toast('Salvato'); renderMutuo(root);
     });

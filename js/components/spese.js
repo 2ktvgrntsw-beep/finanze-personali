@@ -106,8 +106,8 @@ export const renderSpese = async (root) => {
       </div>` : `<div class="month-nav"><div class="m">${labelPeriodo}</div></div>`}
 
     <div class="triple">
-      <div class="cell"><div class="lbl">Spese</div><div class="val sp num">${fmtEUR(tot.spese)}</div>${deltaHTML}</div>
-      <div class="cell"><div class="lbl">Entrate</div><div class="val en num">${fmtEUR(tot.entrate)}</div></div>
+      <div class="cell" data-tot="spesa" style="cursor:pointer"><div class="lbl">Spese</div><div class="val sp num">${fmtEUR(tot.spese)}</div>${deltaHTML}</div>
+      <div class="cell" data-tot="entrata" style="cursor:pointer"><div class="lbl">Entrate</div><div class="val en num">${fmtEUR(tot.entrate)}</div></div>
       <div class="cell"><div class="lbl">Saldo</div><div class="val sa num">${tot.saldo < 0 ? '−' : ''}${fmtEUR(Math.abs(tot.saldo))}</div></div>
     </div>
 
@@ -141,6 +141,11 @@ export const renderSpese = async (root) => {
   }));
   root.querySelectorAll('[data-macro-drill]').forEach(el => el.addEventListener('click', () => {
     navigate('drill', { macro: el.dataset.macroDrill, periodo: _periodo, mese: _meseCorrente });
+  }));
+
+  // totaloni cliccabili: rosso -> movimenti spese, verde -> movimenti entrate (del periodo)
+  root.querySelectorAll('[data-tot]').forEach(el => el.addEventListener('click', () => {
+    navigate('movimenti', { tipo: el.dataset.tot, periodo: _periodo, mese: _meseCorrente });
   }));
 
   const gi = root.querySelector('#go-investiti');

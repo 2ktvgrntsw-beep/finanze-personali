@@ -83,11 +83,17 @@ const _renderCategoriaTempo = (body, root) => {
   const prevAnno = idxAnno > 0 ? anni[idxAnno - 1] : null;
   const nextAnno = idxAnno >= 0 && idxAnno < anni.length - 1 ? anni[idxAnno + 1] : null;
   const totaleAnno = perAnno[_cAnno] || 0;
-  // delta rispetto all'anno precedente
+  // etichetta e colore in base al TIPO della macro: le entrate sono verdi,
+  // gli investimenti azzurri, le spese rosse. Il delta segue la logica giusta:
+  // per le entrate crescere è positivo, per le spese è negativo.
+  const lblTipo = tipoMacro === 'entrata' ? 'Entrate' : tipoMacro === 'trasferimento' ? 'Investito' : 'Spesa';
+  const clsTipo = tipoMacro === 'entrata' ? 'en' : tipoMacro === 'trasferimento' ? 'tr' : 'sp';
+  const colTipo = tipoMacro === 'entrata' ? 'var(--up)' : tipoMacro === 'trasferimento' ? 'var(--transfer)' : 'var(--accent)';
   let deltaAnno = '';
   if (prevAnno && perAnno[prevAnno] > 0) {
     const pct = Math.round((totaleAnno - perAnno[prevAnno]) / perAnno[prevAnno] * 100);
-    deltaAnno = `<div class="delta ${pct > 0 ? 'worse' : 'better'} num" style="margin-top:3px">${pct > 0 ? '+' : ''}${pct}% vs ${prevAnno}</div>`;
+    const buono = tipoMacro === 'spesa' ? pct <= 0 : pct >= 0;
+    deltaAnno = `<div class="delta ${buono ? 'better' : 'worse'} num" style="margin-top:3px">${pct > 0 ? '+' : ''}${pct}% vs ${prevAnno}</div>`;
   }
 
   // sotto-voci per il drill (livello successivo) — usa il tipo giusto della macro
@@ -120,7 +126,7 @@ const _renderCategoriaTempo = (body, root) => {
     </div>
 
     <div class="triple">
-      <div class="cell"><div class="lbl">Spesa ${_cAnno}</div><div class="val sp num">${fmtEUR(totaleAnno)}</div>${deltaAnno}</div>
+      <div class="cell"><div class="lbl">${lblTipo} ${_cAnno}</div><div class="val ${clsTipo} num">${fmtEUR(totaleAnno)}</div>${deltaAnno}</div>
       <div class="cell"><div class="lbl">Media/anno</div><div class="val sa num">${fmtEUR0(mediaAnnua)}</div></div>
       <div class="cell"><div class="lbl">Totale ${anni.length} anni</div><div class="val sa num">${fmtEUR0(totale)}</div></div>
     </div>
@@ -128,10 +134,10 @@ const _renderCategoriaTempo = (body, root) => {
     <div class="yearchart">
       <div class="yc-bars">${anni.map(a => `
         <div class="yb ${a === _cAnno ? 'on' : ''}" data-anno-bar="${a}" title="${a}: ${fmtEUR(perAnno[a])}">
-          <div class="col" style="height:${Math.max(3, perAnno[a] / maxVal * 100)}%"></div>
+          <div class="col" style="height:${Math.max(3, perAnno[a] / maxVal * 100)}%${a === _cAnno && tipoMacro !== 'spesa' ? ';background:' + colTipo : ''}"></div>
           <span>'${a.slice(2)}</span>
         </div>`).join('')}</div>
-      <div id="cat-tip" class="meta" style="text-align:center;margin-top:10px;min-height:16px;color:var(--accent);font-weight:600">${_cAnno}: ${fmtEUR(totaleAnno)}</div>
+      <div id="cat-tip" class="meta" style="text-align:center;margin-top:10px;min-height:16px;color:${colTipo};font-weight:600">${_cAnno}: ${fmtEUR(totaleAnno)}</div>
     </div>
 
     ${sottoVoci.length && livello !== 'movimenti' ? `

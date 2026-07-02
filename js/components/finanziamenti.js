@@ -130,6 +130,8 @@ const _edit = (root, id) => {
     <select id="f-conto" class="sheet-input">${conti.map(c => `<option ${c === f.conto ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}</select>
     <label class="meta">Classificazione delle rate generate</label>
     <button type="button" id="f-cat-btn" class="sheet-input" style="text-align:left;cursor:pointer">${[tmp.macro, tmp.cat, tmp.sub].filter(Boolean).join(' › ') || 'Scegli categoria'}</button>
+    <label class="meta">Descrizione delle rate generate</label>
+    <input id="f-descmov" value="${escapeHtml(f.descMovimento ?? f.nome ?? '')}" placeholder="Es. Rata Dyson (vuota = solo classificazione)" class="sheet-input">
     <div class="btn-row" style="margin-top:16px">
       ${id ? '<button class="btn btn-danger" id="f-del">Elimina</button>' : ''}
       <button class="btn btn-primary" id="f-ok">Salva</button>
@@ -147,7 +149,7 @@ const _edit = (root, id) => {
         durata_mesi: parseInt(body.querySelector('#f-durata').value) || 0, rata: num('f-rata'),
         data_inizio: tmp.data_inizio, quota_utente: num('f-quota') || 100,
         conto: body.querySelector('#f-conto').value, macro: tmp.macro, cat: tmp.cat, sub: tmp.sub,
-        descMovimento: nome,
+        descMovimento: body.querySelector('#f-descmov').value.trim(),
       });
       chiudi(); toast('Salvato'); renderFinanziamenti(root);
     });
