@@ -35,7 +35,7 @@
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0}
 html,body{background:var(--bg);color:var(--txt);font-family:var(--font);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
 body{
-  padding-top:calc(64px + var(--safe-top));
+  padding-top:calc(50px + var(--safe-top));
   padding-bottom:calc(90px + var(--safe-bottom));
   font-size:15px; line-height:1.45;
   max-width:480px; margin:0 auto;
@@ -46,14 +46,14 @@ body{
 /* ----------------------------------------------------------------- Header */
 .app-header{
   position:fixed;top:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;
-  height:calc(64px + var(--safe-top));padding-top:var(--safe-top);
+  height:calc(50px + var(--safe-top));padding-top:var(--safe-top);
   background:rgba(8,8,12,.82);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);
   border-bottom:1px solid var(--line);
   display:flex;align-items:center;gap:6px;padding-left:18px;padding-right:14px;z-index:100;
 }
-.app-header .title{flex:1;font-size:24px;font-weight:800;letter-spacing:-.03em;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.app-header .title{flex:1;font-size:17px;font-weight:750;letter-spacing:-.03em;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .app-header .title .crumb{display:block;font-size:12px;font-weight:600;color:var(--txt-2);letter-spacing:0}
-.hbtn{width:38px;height:38px;border-radius:50%;background:var(--surface-2);border:0;color:var(--txt);
+.hbtn{width:33px;height:33px;border-radius:50%;background:var(--surface-2);border:0;color:var(--txt);
   display:flex;align-items:center;justify-content:center;font-size:17px;flex:none;cursor:pointer;transition:transform .1s,background .15s}
 .hbtn:active{transform:scale(.9)}
 .hbtn.add{background:var(--accent);box-shadow:0 4px 14px var(--accent-glow);font-size:22px;font-weight:300}
@@ -381,7 +381,7 @@ select.sheet-input{color-scheme:dark}
 .gruppo-conti.closed .conto-riga{display:none}
 
 /* selezione multipla nella ricerca */
-.sel-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--surface-2);border-radius:12px;padding:10px 14px;margin-bottom:10px;position:sticky;top:calc(64px + var(--safe-top));z-index:40}
+.sel-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--surface-2);border-radius:12px;padding:10px 14px;margin-bottom:10px;position:sticky;top:calc(50px + var(--safe-top));z-index:40}
 .sel-toolbar .sel-count{font-size:14px;font-weight:700}
 .sel-toolbar .sel-actions{display:flex;gap:8px}
 .sel-toolbar button{border:0;border-radius:9px;padding:8px 12px;font-size:13px;font-weight:650;font-family:var(--font);cursor:pointer}
@@ -420,7 +420,7 @@ select.sheet-input{color-scheme:dark}
 .numpad.numpad-inline button{padding:15px 0;font-size:20px}
 
 /* header movimenti bloccato in alto (sticky) + badge filtro */
-.mov-sticky{position:sticky;top:calc(56px + var(--safe-top));background:var(--bg);z-index:30;padding-top:8px;margin:-8px -4px 4px;padding-left:4px;padding-right:4px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+.mov-sticky{position:sticky;top:calc(50px + var(--safe-top));background:var(--bg);z-index:30;padding-top:8px;margin:-8px -4px 4px;padding-left:4px;padding-right:4px;padding-bottom:6px;border-bottom:1px solid var(--line)}
 .filtro-badge{background:var(--surface-2);border-radius:10px;padding:8px 12px;font-size:12.5px;color:var(--txt-2);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .filtro-badge b{color:var(--accent)}
 .filtro-badge #clear-filtro{margin-left:auto;color:var(--down);cursor:pointer;font-size:14px;padding:0 4px}
@@ -446,3 +446,18 @@ select.sheet-input{color-scheme:dark}
 .cat-gest{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--accent);cursor:pointer;font-size:14px;flex:none;background:var(--surface-2)}
 .sub-chip{display:inline-block;background:var(--surface-2);border-radius:8px;padding:3px 8px;margin:2px 2px 0 0;cursor:pointer;font-size:11.5px;color:var(--txt-2)}
 .sub-chip:active{background:var(--surface-3)}
+
+
+/* Anti double-tap zoom di iOS: il doppio tocco rapido sui controlli non deve
+   zoomare/scrollare la pagina (bug tastierino). Vale per tutti gli interattivi. */
+button,.hbtn,.numpad button,.seg button,.mov,.catrow,.chip,.frow .fval,.type-switch-bottom button,
+.gruppo-head,.cat-acc-head,.cat-riga,.sub-chip,.cat-gest,.month-nav .arr,a{touch-action:manipulation}
+
+/* barra pace ridotta a filo + quadrupla card compatta */
+.pace.pace-slim{padding:6px 2px 2px}
+.pace.pace-slim .track{height:5px}
+.triple.quad{/* flex: le 4 celle si dividono lo spazio */}
+.triple.quad .cell{padding:10px 6px}
+.triple.quad .lbl{font-size:9.5px}
+.triple.quad .val{font-size:14.5px}
+.triple.quad .delta{font-size:9.5px}

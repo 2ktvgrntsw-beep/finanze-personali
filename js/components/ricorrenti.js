@@ -12,12 +12,31 @@ import { toast } from '../core/utils.js';
 
 const FREQ_LABEL = { giornaliera: 'Ogni giorno', settimanale: 'Ogni settimana', mensile: 'Ogni mese', annuale: 'Ogni anno' };
 
+// Totale di una ricorrenza NEL MESE CORRENTE: conteggio REALE delle occorrenze
+// (non proiezione media). 100€/settimana valgono 400€ o 500€ a seconda di quanti
+// lunedì/mercoledì ha davvero il mese — mai 433€ "medi" che non esistono.
 const _mensile = (r) => {
-  let m = r.imp;
-  if (r.frequenza === 'giornaliera') m = r.imp * 30;
-  else if (r.frequenza === 'settimanale') m = r.imp * 4.33;
-  else if (r.frequenza === 'annuale') m = r.imp / 12;
-  return m;
+  const oggi = new Date();
+  const anno = oggi.getFullYear(), mese = oggi.getMonth();   // mese corrente
+  const giorniNelMese = new Date(anno, mese + 1, 0).getDate();
+
+  if (r.frequenza === 'mensile') return r.imp;
+  if (r.frequenza === 'giornaliera') return r.imp * giorniNelMese;
+  if (r.frequenza === 'annuale') {
+    // conta solo se l'anniversario cade nel mese corrente
+    const rif = r.prossima || r.dataInizio;
+    return rif && parseInt(rif.split('-')[1]) === mese + 1 ? r.imp : 0;
+  }
+  if (r.frequenza === 'settimanale') {
+    // quante volte cade il giorno-della-settimana della ricorrenza in questo mese
+    const rif = r.prossima || r.dataInizio;
+    if (!rif) return r.imp * 4;
+    const dow = new Date(rif + 'T00:00:00').getDay();
+    let count = 0;
+    for (let g = 1; g <= giorniNelMese; g++) if (new Date(anno, mese, g).getDay() === dow) count++;
+    return r.imp * count;
+  }
+  return r.imp;
 };
 
 export const renderRicorrenti = async (root) => {
@@ -49,12 +68,12 @@ export const renderRicorrenti = async (root) => {
   root.innerHTML = `
     <div class="rec-hero" style="display:flex;gap:0;padding:0;overflow:hidden">
       <div style="flex:1;padding:20px 16px;border-right:1px solid rgba(255,255,255,.08)">
-        <div class="lbl" style="color:var(--txt-2);font-size:11px;text-transform:uppercase;letter-spacing:.05em">Spese/mese</div>
+        <div class="lbl" style="color:var(--txt-2);font-size:11px;text-transform:uppercase;letter-spacing:.05em">Spese questo mese</div>
         <div class="num" style="font-size:24px;font-weight:850;margin-top:4px;color:var(--down)">${fmtEUR(totSpese)}</div>
         <div class="sub" style="font-size:11.5px;color:var(--txt-2);margin-top:2px">${spese.length} ricorrenze</div>
       </div>
       <div style="flex:1;padding:20px 16px">
-        <div class="lbl" style="color:var(--txt-2);font-size:11px;text-transform:uppercase;letter-spacing:.05em">Accantonato/mese</div>
+        <div class="lbl" style="color:var(--txt-2);font-size:11px;text-transform:uppercase;letter-spacing:.05em">Accantonato questo mese</div>
         <div class="num" style="font-size:24px;font-weight:850;margin-top:4px;color:var(--transfer)">${fmtEUR(totTrasf)}</div>
         <div class="sub" style="font-size:11.5px;color:var(--txt-2);margin-top:2px">${trasf.length} trasferimenti</div>
       </div>

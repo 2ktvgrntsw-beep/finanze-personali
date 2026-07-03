@@ -94,8 +94,9 @@ export const renderMovimenti = async (root, params = {}) => {
     const deltaCell = (rif, lbl) => {
       if (_periodo === 'settimana' || rif <= 0) return `<div class="cell"><div class="lbl">${lbl}</div><div class="val sa num">—</div></div>`;
       const pct = Math.round((totaleFiltro - rif) / rif * 100);
+      const diff = totaleFiltro - rif;
       const buono = inverti ? pct >= 0 : pct <= 0;
-      return `<div class="cell"><div class="lbl">${lbl}</div><div class="val num ${buono ? 'en' : 'sp'}">${pct > 0 ? '+' : ''}${pct}%</div></div>`;
+      return `<div class="cell"><div class="lbl">${lbl}</div><div class="val num ${buono ? 'en' : 'sp'}">${pct > 0 ? '+' : ''}${pct}%</div><div class="delta num" style="color:var(--txt-2)">${diff > 0 ? '+' : '−'}${fmtEUR(Math.abs(diff))}</div></div>`;
     };
     cardsHTML = `
       <div class="triple" style="margin:8px 0 4px">

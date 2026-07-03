@@ -12,23 +12,15 @@ import { navigate } from '../core/router.js';
 import { apriSheet, apriSelettoreCategoria } from './shared.js';
 import { toast } from '../core/utils.js';
 
-const _aperte = new Set();
+const _aperte = new Set();      // macro espanse
+const _aperteCat = new Set();   // categorie espanse ("macro|cat")
 
 export const renderCategorie = async (root) => {
   document.getElementById('view-title').textContent = 'Categorie';
   const macros = listaMacro();
 
-  const spesaMacro = {}, countMacro = {}, spesaCat = {};
-  for (const m of state.movimenti) {
-    if (m.tipo !== 'spesa') continue;
-    spesaMacro[m.macro] = (spesaMacro[m.macro] || 0) + m.imp;
-    countMacro[m.macro] = (countMacro[m.macro] || 0) + 1;
-    const k = m.macro + '||' + (m.cat || '');
-    spesaCat[k] = (spesaCat[k] || 0) + m.imp;
-  }
-
   root.innerHTML = `
-    <p class="meta" style="margin:12px 4px">Tocca ✎ per rinominare o eliminare. Le rinomine aggiornano anche i movimenti passati, così le analisi restano coerenti.</p>
+    <p class="meta" style="margin:12px 4px">Tocca per aprire l'albero, ✎ per rinominare o eliminare. Le rinomine aggiornano anche i movimenti passati.</p>
     ${macros.map(macro => {
       const cats = categorieDi(macro);
       const aperta = _aperte.has(macro);
@@ -36,23 +28,27 @@ export const renderCategorie = async (root) => {
         <div class="cat-accordion">
           <div class="cat-acc-head" data-macro="${escapeHtml(macro)}">
             <div class="cat-acc-title">${escapeHtml(macro)}</div>
-            <div class="cat-acc-meta">${cats.length} cat · ${countMacro[macro] || 0} mov</div>
-            <div class="cat-acc-tot num">${fmtEUR(spesaMacro[macro] || 0)}</div>
+            <div class="cat-acc-meta">${cats.length} categorie</div>
             <div class="cat-gest" data-gest-macro="${escapeHtml(macro)}">✎</div>
             <div class="cat-acc-chev">${aperta ? '⌄' : '›'}</div>
           </div>
           ${aperta ? `<div class="cat-acc-body">
             ${cats.length ? cats.map(cat => {
               const subs = sottocategorieDi(macro, cat);
+              const kCat = macro + '|' + cat;
+              const catAperta = _aperteCat.has(kCat);
               return `
-                <div class="cat-riga">
-                  <div style="flex:1" data-vaimov="${escapeHtml(macro)}|${escapeHtml(cat)}">
-                    <div class="cat-riga-nome">${escapeHtml(cat)}</div>
-                    ${subs.length ? `<div class="cat-riga-subs">${subs.map(s => `<span class="sub-chip" data-gest-sub="${escapeHtml(macro)}|${escapeHtml(cat)}|${escapeHtml(s)}">${escapeHtml(s)}</span>`).join(' ')}</div>` : ''}
-                  </div>
-                  <div class="num" style="font-size:13px;color:var(--txt-2)">${fmtEUR(spesaCat[macro + '||' + cat] || 0)}</div>
-                  <div class="cat-gest" data-gest-cat="${escapeHtml(macro)}|${escapeHtml(cat)}">✎</div>
-                </div>`;
+                <div class="cat-riga" data-togglecat="${escapeHtml(kCat)}">
+                  <div class="cat-riga-nome" style="flex:1">${escapeHtml(cat)}${subs.length ? ` <span class="meta">· ${subs.length} sub</span>` : ''}</div>
+                  <div class="cat-gest" data-gest-cat="${escapeHtml(kCat)}">✎</div>
+                  ${subs.length ? `<div class="cat-acc-chev">${catAperta ? '⌄' : '›'}</div>` : '<div class="cat-acc-chev" style="opacity:.25">·</div>'}
+                </div>
+                ${catAperta && subs.length ? subs.map(s => `
+                  <div class="cat-riga cat-riga-sub">
+                    <div class="cat-riga-nome" style="flex:1;color:var(--txt-2)">${escapeHtml(s)}</div>
+                    <div class="cat-gest" data-gest-sub="${escapeHtml(macro)}|${escapeHtml(cat)}|${escapeHtml(s)}">✎</div>
+                    <div class="cat-acc-chev" style="opacity:0">·</div>
+                  </div>`).join('') : ''}`;
             }).join('') : '<div class="meta" style="padding:12px 16px">Nessuna categoria</div>'}
           </div>` : ''}
         </div>`;
@@ -65,10 +61,10 @@ export const renderCategorie = async (root) => {
     if (_aperte.has(m)) _aperte.delete(m); else _aperte.add(m);
     renderCategorie(root);
   }));
-  root.querySelectorAll('[data-vaimov]').forEach(el => el.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const [macro, cat] = el.dataset.vaimov.split('|');
-    navigate('movimenti', { macro, cat, periodo: 'anno', mese: new Date().toISOString().slice(0, 7) });
+  root.querySelectorAll('[data-togglecat]').forEach(el => el.addEventListener('click', () => {
+    const k = el.dataset.togglecat;
+    if (_aperteCat.has(k)) _aperteCat.delete(k); else _aperteCat.add(k);
+    renderCategorie(root);
   }));
   root.querySelectorAll('[data-gest-macro]').forEach(el => el.addEventListener('click', (e) => {
     e.stopPropagation(); _gestisciNodo(root, 'macro', el.dataset.gestMacro, '', '');

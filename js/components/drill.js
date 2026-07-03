@@ -53,7 +53,8 @@ export const renderDrill = async (root, params) => {
   const deltaCell = (rif, lbl) => {
     if (periodo === 'settimana' || rif <= 0) return `<div class="cell"><div class="lbl">${lbl}</div><div class="val sa num">—</div></div>`;
     const pct = Math.round((totRamo - rif) / rif * 100);
-    return `<div class="cell"><div class="lbl">${lbl}</div><div class="val num ${pct <= 0 ? 'en' : 'sp'}">${pct > 0 ? '+' : ''}${pct}%</div></div>`;
+    const diff = totRamo - rif;
+    return `<div class="cell"><div class="lbl">${lbl}</div><div class="val num ${pct <= 0 ? 'en' : 'sp'}">${pct > 0 ? '+' : ''}${pct}%</div><div class="delta num" style="color:var(--txt-2)">${diff > 0 ? '+' : '−'}${fmtEUR(Math.abs(diff))}</div></div>`;
   };
 
   // percorso per il titolo

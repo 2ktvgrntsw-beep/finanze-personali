@@ -63,6 +63,7 @@ const costruisciChrome = () => {
   header.innerHTML = `
     <button class="hbtn back" id="btn-back" style="display:none">‹</button>
     <div class="title" id="view-title">Spese</div>
+    <div id="head-spacer" style="flex:1;display:none"></div>
     <button class="hbtn add" id="btn-add" title="Aggiungi">+</button>
     <button class="hbtn" id="btn-search" title="Cerca">
       <svg viewBox="0 0 24 24" style="width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>

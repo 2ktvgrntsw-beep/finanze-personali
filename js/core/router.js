@@ -55,6 +55,15 @@ const _updateChrome = (name) => {
     a.classList.toggle('active', a.dataset.route === name));
   const back = document.getElementById('btn-back');
   if (back) back.style.display = ROTTE_PRINCIPALI.includes(name) ? 'none' : 'flex';
+  // HEADER COMPATTO: nelle pagine principali il titolo è ridondante (c'è il tab
+  // evidenziato sotto) e sparisce; resta nelle sottopagine come breadcrumb.
+  // La lente vive solo nei Movimenti, dove ha senso.
+  const titolo = document.getElementById('view-title');
+  if (titolo) titolo.style.display = ROTTE_PRINCIPALI.includes(name) ? 'none' : 'block';
+  const lente = document.getElementById('btn-search');
+  if (lente) lente.style.display = (name === 'movimenti' || name === 'ricerca') ? 'flex' : 'none';
+  const spacer = document.getElementById('head-spacer');
+  if (spacer) spacer.style.display = ROTTE_PRINCIPALI.includes(name) ? 'block' : 'none';
 };
 
 export const initRouter = () => {

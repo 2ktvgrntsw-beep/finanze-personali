@@ -48,7 +48,7 @@ export const renderSpese = async (root) => {
     if (d) deltaHTML = `<div class="delta ${d.classe} num">${d.testo}</div>`;
   }
 
-  // barra "dove sto col mese" (solo vista mese corrente)
+  // barra "dove sto col mese": solo il filo con la tacca, niente testi (compatta)
   let paceHTML = '';
   if (_periodo === 'mese' && _meseCorrente === annomese(todayISO())) {
     const giorno = new Date().getDate();
@@ -57,21 +57,8 @@ export const renderSpese = async (root) => {
     const media = mediaSpeseMensile(_meseCorrente);
     const pctSpeso = media > 0 ? clamp(Math.round(tot.spese / media * 100), 0, 100) : 0;
     paceHTML = `
-      <div class="pace">
-        <div class="top"><span>Sei al <b>giorno ${giorno}</b> del mese</span><span>hai speso il <b>${pctSpeso}%</b> del solito</span></div>
+      <div class="pace pace-slim" title="Speso ${pctSpeso}% del solito · giorno ${giorno}/${giorniMese}">
         <div class="track"><span class="fill" style="width:${pctSpeso}%"></span><span class="marker" style="left:${pctTempo}%"></span></div>
-        <div class="cap">La tacca è il punto in cui sei nel mese${pctSpeso > pctTempo + 5 ? ' · stai spendendo un po’ più in fretta' : pctSpeso < pctTempo - 5 ? ' · sei sotto il ritmo, bene' : ''}.</div>
-      </div>`;
-  }
-
-  // indicatore investito compatto (solo se > 0)
-  let investHTML = '';
-  if (tot.investito > 0) {
-    investHTML = `
-      <div class="invest-row" id="go-investiti">
-        <div class="ic">💠</div>
-        <div class="t">Questo periodo hai investito/accantonato <b class="num">${fmtEUR(tot.investito)}</b></div>
-        <div class="chev">›</div>
       </div>`;
   }
 
@@ -105,14 +92,15 @@ export const renderSpese = async (root) => {
         <button class="arr" id="next">›</button>
       </div>` : `<div class="month-nav"><div class="m">${labelPeriodo}</div></div>`}
 
-    <div class="triple">
+    <div class="triple quad">
       <div class="cell" data-tot="spesa" style="cursor:pointer"><div class="lbl">Spese</div><div class="val sp num">${fmtEUR(tot.spese)}</div>${deltaHTML}</div>
       <div class="cell" data-tot="entrata" style="cursor:pointer"><div class="lbl">Entrate</div><div class="val en num">${fmtEUR(tot.entrate)}</div></div>
       <div class="cell"><div class="lbl">Saldo</div><div class="val sa num">${tot.saldo < 0 ? '−' : ''}${fmtEUR(Math.abs(tot.saldo))}</div></div>
+      <div class="cell" data-tot="trasferimento" style="cursor:pointer"><div class="lbl">Accant.</div><div class="val tr num">${fmtEUR(tot.investito || 0)}</div></div>
     </div>
 
     ${paceHTML}
-    ${investHTML}
+
 
     <div class="section-lbl"><span>Per categoria</span></div>
     ${righeHTML}
@@ -148,8 +136,6 @@ export const renderSpese = async (root) => {
     navigate('movimenti', { tipo: el.dataset.tot, periodo: _periodo, mese: _meseCorrente });
   }));
 
-  const gi = root.querySelector('#go-investiti');
-  if (gi) gi.addEventListener('click', () => navigate('movimenti', { tipo: 'trasferimento', periodo: _periodo, mese: _meseCorrente }));
 };
 
 // esportati per il drill-down (condivide il periodo corrente)

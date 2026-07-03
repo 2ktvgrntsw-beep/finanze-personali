@@ -251,11 +251,18 @@ const _salva = async () => {
 
   // crea la ricorrenza se richiesta — ANCHE in modifica (bug precedente: solo su nuovo)
   if (d.ripeti) {
+    // Il movimento appena salvato È la prima occorrenza della ricorrenza:
+    // la ricorrenza deve partire dall'occorrenza SUCCESSIVA, altrimenti il
+    // generatore ricreerebbe il movimento di oggi (doppione).
+    // Se invece la data di inizio è futura (oltre il movimento), parte da lì.
+    const copreMovimento = d.ripeti.dataInizio <= d.data;
+    const prossima = copreMovimento ? _occorrenzaSuccessiva(d.ripeti.dataInizio, d.ripeti.frequenza) : d.ripeti.dataInizio;
     await saveRicorrente({
       nome: d.desc || d.macro, tipo: d.tipo, frequenza: d.ripeti.frequenza,
       imp: d.imp, macro: d.macro, cat: d.cat, sub: d.sub,
       conto: d.conto, contoDest: d.contoDest, tag: d.tag, desc: d.desc,
-      dataInizio: d.ripeti.dataInizio, prossima: d.ripeti.dataInizio,
+      dataInizio: d.ripeti.dataInizio, prossima,
+      generati: copreMovimento ? 1 : 0,   // il movimento manuale conta come prima occorrenza
       fineTipo: d.ripeti.fineTipo, fineData: d.ripeti.fineData, fineConteggio: d.ripeti.fineConteggio,
     });
     toast('Salvato e reso ricorrente');
@@ -265,4 +272,20 @@ const _salva = async () => {
 
   d = null;
   navigate(wasTrasf ? 'movimenti' : 'spese');
+};
+
+// Occorrenza successiva a una data, per frequenza (fine mese gestito: 31 gen -> 28 feb)
+const _occorrenzaSuccessiva = (dataISO, frequenza) => {
+  const [y, m, g] = dataISO.split('-').map(Number);
+  if (frequenza === 'giornaliera' || frequenza === 'settimanale') {
+    const d = new Date(y, m - 1, g + (frequenza === 'giornaliera' ? 1 : 7));
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  if (frequenza === 'annuale') {
+    const maxG = new Date(y + 1, m, 0).getDate();
+    return `${y + 1}-${String(m).padStart(2, '0')}-${String(Math.min(g, maxG)).padStart(2, '0')}`;
+  }
+  const ny = m === 12 ? y + 1 : y, nm = m === 12 ? 1 : m + 1;
+  const maxG = new Date(ny, nm, 0).getDate();
+  return `${ny}-${String(nm).padStart(2, '0')}-${String(Math.min(g, maxG)).padStart(2, '0')}`;
 };
