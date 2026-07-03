@@ -58,17 +58,19 @@ const registraRotte = () => {
 };
 
 const costruisciChrome = () => {
-  // Header
+  // Header: [+] a sinistra · selettore periodo piccolo al centro (Spese/Movimenti)
+  // · lente (solo Movimenti) · ⚙️ a destra. Nelle sottopagine: [‹][titolo]…[+][⚙️].
   const header = document.getElementById('app-header');
   header.innerHTML = `
-    <button class="hbtn back" id="btn-back" style="display:none">‹</button>
-    <div class="title" id="view-title">Spese</div>
-    <div id="head-spacer" style="flex:1;display:none"></div>
-    <button class="hbtn add" id="btn-add" title="Aggiungi">+</button>
-    <button class="hbtn" id="btn-search" title="Cerca">
+    <button class="hbtn back" id="btn-back" style="display:none;order:1">‹</button>
+    <button class="hbtn add" id="btn-add" title="Aggiungi" style="order:2">+</button>
+    <div class="title" id="view-title" style="order:3">Spese</div>
+    <div id="head-seg" style="order:4;flex:1;display:flex;justify-content:center"></div>
+    <div id="head-spacer" style="flex:1;display:none;order:5"></div>
+    <button class="hbtn" id="btn-search" title="Cerca" style="order:6">
       <svg viewBox="0 0 24 24" style="width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
     </button>
-    <button class="hbtn" id="btn-settings" title="Impostazioni">
+    <button class="hbtn" id="btn-settings" title="Impostazioni" style="order:9">
       <svg viewBox="0 0 24 24" style="width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
     </button>
   `;

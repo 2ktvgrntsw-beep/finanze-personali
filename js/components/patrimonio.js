@@ -9,7 +9,7 @@ import { navigate } from '../core/router.js';
 import { saldoStimato, saveConto, LABEL_TIPO } from '../services/contiService.js';
 import {
   totaleAttivita, totalePassivita, patrimonioNetto,
-  deltaNettoMese, salvaSnapshotMese, snapshotMeseMancante, serieStoricoPatrimonio,
+  salvaSnapshotMese, snapshotMeseMancante, serieStoricoPatrimonio,
 } from '../services/patrimonioService.js';
 import { statoPrestito } from '../services/prestitiService.js';
 import { apriSheet } from './shared.js';
@@ -28,7 +28,11 @@ export const renderPatrimonio = async (root) => {
   const netto = patrimonioNetto();
   const att = totaleAttivita();
   const pass = totalePassivita();
-  const delta = deltaNettoMese();
+  // accantonato questo mese: trasferimenti reali del mese corrente
+  const meseCorr = new Date().toISOString().slice(0, 7);
+  const accMese = state.movimenti
+    .filter(m => m.tipo === 'trasferimento' && (m.annomese || m.data.slice(0, 7)) === meseCorr)
+    .reduce((s, m) => s + m.imp, 0);
 
   // conti per lo strip orizzontale
   const contiAttivi = state.conti.filter(c => c.attivo !== false);
@@ -50,7 +54,7 @@ export const renderPatrimonio = async (root) => {
     <div class="net-card">
       <div class="lbl">Patrimonio netto</div>
       <div class="big num">${fmtEUR(netto)}</div>
-      ${delta !== null ? `<div class="delta" style="color:${delta >= 0 ? 'var(--up)' : 'var(--down)'}">${delta >= 0 ? '▲' : '▼'} ${fmtEUR(Math.abs(delta))} da ultima rilevazione</div>` : '<div class="delta" style="color:var(--txt-2)">Prima rilevazione</div>'}
+      <div class="delta" style="color:var(--transfer)">💠 Accantonato questo mese: ${fmtEUR(accMese)}</div>
       <div class="sub">
         <div><span class="lbl2">Attività</span><b class="num">${fmtEUR(att)}</b></div>
         <div><span class="lbl2">Passività</span><b class="neg num">${pass > 0 ? '−' : ''}${fmtEUR(pass)}</b></div>

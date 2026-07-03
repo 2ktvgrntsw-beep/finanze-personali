@@ -17,7 +17,19 @@ let _annoSel = String(new Date().getFullYear());
 // stato drill per la vista "categoria nel tempo"
 let _cMacro = '', _cCat = '', _cSub = '', _cAnno = '';
 
-export const renderAnalisi = async (root) => {
+export const renderAnalisi = async (root, params = {}) => {
+  // Il drill di categoria viaggia nell'HASH: così il breadcrumb sta nell'header,
+  // il tasto ‹ usa la cronologia e lo swipe-back dal bordo di iOS funziona.
+  _cMacro = params.macro || '';
+  _cCat = params.cat || '';
+  _cSub = params.sub || '';
+  // senza drill attivo, l'header torna pulito (titolo e back nascosti)
+  if (!_cMacro) {
+    const vt0 = document.getElementById('view-title');
+    const bb0 = document.getElementById('btn-back');
+    if (vt0) vt0.style.display = 'none';
+    if (bb0) bb0.style.display = 'none';
+  }
   root.innerHTML = `
     <div class="seg">
       <button data-t="categoria" class="${_tab === 'categoria' ? 'on' : ''}">Categoria</button>
@@ -44,7 +56,7 @@ const _renderCategoriaTempo = (body, root) => {
       <div class="cat-grid" style="margin-top:6px">
         ${macros.map(m => `<div class="cat-cell" data-macro="${escapeHtml(m)}"><div class="ci">${iconaMacro(m)}</div><span>${escapeHtml(m)}</span></div>`).join('')}
       </div>`;
-    body.querySelectorAll('[data-macro]').forEach(el => el.addEventListener('click', () => { _cMacro = el.dataset.macro; _cCat = ''; _cSub = ''; renderAnalisi(root); }));
+    body.querySelectorAll('[data-macro]').forEach(el => el.addEventListener('click', () => { location.hash = buildHash('analisi', { macro: el.dataset.macro }); }));
     return;
   }
 
@@ -96,30 +108,34 @@ const _renderCategoriaTempo = (body, root) => {
     deltaAnno = `<div class="delta ${buono ? 'better' : 'worse'} num" style="margin-top:3px">${pct > 0 ? '+' : ''}${pct}% vs ${prevAnno}</div>`;
   }
 
-  // sotto-voci per il drill (livello successivo) — usa il tipo giusto della macro
+  // sotto-voci per il drill — filtrate sull'ANNO SELEZIONATO (si aggiornano con le frecce)
   let sottoVoci = [];
   if (livello === 'cat') {
     const agg = {};
-    for (const m of state.movimenti.filter(m => filtraTipo(m) && m.macro === _cMacro)) {
+    for (const m of state.movimenti.filter(m => filtraTipo(m) && m.macro === _cMacro && annoDi(m.data) === _cAnno)) {
       const k = m.cat || '(senza)'; agg[k] = (agg[k] || 0) + m.imp;
     }
     sottoVoci = Object.entries(agg).map(([nome, tot]) => ({ nome, tot })).sort((a, b) => b.tot - a.tot);
   } else if (livello === 'sub') {
     const agg = {};
-    for (const m of state.movimenti.filter(m => filtraTipo(m) && m.macro === _cMacro && m.cat === _cCat)) {
+    for (const m of state.movimenti.filter(m => filtraTipo(m) && m.macro === _cMacro && m.cat === _cCat && annoDi(m.data) === _cAnno)) {
       const k = m.sub || '(senza)'; agg[k] = (agg[k] || 0) + m.imp;
     }
     sottoVoci = Object.entries(agg).map(([nome, tot]) => ({ nome, tot })).sort((a, b) => b.tot - a.tot);
   }
   const maxSotto = sottoVoci.length ? sottoVoci[0].tot : 1;
 
-  body.innerHTML = `
-    <div class="head-crumb">
-      <button class="hbtn back" id="c-back" style="position:static">‹</button>
-      <div><div class="crumb">${_cCat ? escapeHtml(_cMacro) + (_cSub ? ' › ' + escapeHtml(_cCat) : '') : ''}</div><div style="font-size:18px;font-weight:750">${escapeHtml(_cSub || _cCat || _cMacro)}</div></div>
-    </div>
+  // breadcrumb NELL'HEADER dell'app (titolo + back), come chiesto: niente riga sprecata
+  const vt = document.getElementById('view-title');
+  const bb = document.getElementById('btn-back');
+  if (vt) {
+    vt.style.display = 'block';
+    vt.innerHTML = `${_cCat ? `<span class="crumb">${escapeHtml(_cMacro)}${_cSub ? ' › ' + escapeHtml(_cCat) : ''}</span>` : ''}${escapeHtml(_cSub || _cCat || _cMacro)}`;
+  }
+  if (bb) bb.style.display = 'flex';
 
-    <div class="month-nav" style="margin:12px 0 4px">
+  body.innerHTML = `
+    <div class="month-nav" style="margin:8px 0 4px">
       <button class="arr" id="ca-prev" ${prevAnno ? '' : 'disabled'}>‹</button>
       <div class="m">${_cAnno}</div>
       <button class="arr" id="ca-next" ${nextAnno ? '' : 'disabled'}>›</button>
@@ -141,7 +157,7 @@ const _renderCategoriaTempo = (body, root) => {
     </div>
 
     ${sottoVoci.length && livello !== 'movimenti' ? `
-      <div class="section-lbl"><span>${livello === 'cat' ? 'Dettaglio per categoria' : 'Dettaglio per sottocategoria'} (tocca per approfondire)</span></div>
+      <div class="section-lbl"><span>${livello === 'cat' ? 'Dettaglio' : 'Sottocategorie'} ${_cAnno} (tocca per approfondire)</span></div>
       ${sottoVoci.map(s => `
         <div class="catrow">
           <div class="icon" data-drill="${escapeHtml(s.nome)}">${iconaMacro(_cMacro)}</div>
@@ -157,22 +173,18 @@ const _renderCategoriaTempo = (body, root) => {
 
   // navigazione anni con le frecce
   const cap = body.querySelector('#ca-prev'), can = body.querySelector('#ca-next');
-  if (cap && prevAnno) cap.addEventListener('click', () => { _cAnno = prevAnno; renderAnalisi(root); });
-  if (can && nextAnno) can.addEventListener('click', () => { _cAnno = nextAnno; renderAnalisi(root); });
+  const ancora = { macro: _cMacro, cat: _cCat, sub: _cSub };   // conserva il drill nei re-render
+  if (cap && prevAnno) cap.addEventListener('click', () => { _cAnno = prevAnno; renderAnalisi(root, ancora); });
+  if (can && nextAnno) can.addEventListener('click', () => { _cAnno = nextAnno; renderAnalisi(root, ancora); });
 
-  // back nel drill
-  body.querySelector('#c-back').addEventListener('click', () => {
-    if (_cSub) _cSub = ''; else if (_cCat) _cCat = ''; else _cMacro = '';
-    renderAnalisi(root);
-  });
+  // (il back vive nell'header: history.back() risale il drill via hash)
   // tocco barra anno -> seleziona quell'anno
-  body.querySelectorAll('[data-anno-bar]').forEach(el => el.addEventListener('click', () => { _cAnno = el.dataset.annoBar; renderAnalisi(root); }));
-  // drill nelle sotto-voci
+  body.querySelectorAll('[data-anno-bar]').forEach(el => el.addEventListener('click', () => { _cAnno = el.dataset.annoBar; renderAnalisi(root, ancora); }));
+  // drill nelle sotto-voci: naviga via hash (cronologia + swipe-back iOS)
   body.querySelectorAll('[data-drill]').forEach(el => el.addEventListener('click', () => {
     const v = el.dataset.drill === '(senza)' ? '' : el.dataset.drill;
-    if (livello === 'cat') { _cCat = v; _cSub = ''; }
-    else if (livello === 'sub') { _cSub = v; }
-    renderAnalisi(root);
+    if (livello === 'cat') location.hash = buildHash('analisi', { macro: _cMacro, cat: v });
+    else if (livello === 'sub') location.hash = buildHash('analisi', { macro: _cMacro, cat: _cCat, sub: v });
   }));
   // vedi movimenti dell'anno selezionato
   body.querySelector('#vedi-mov').addEventListener('click', () => navigate('movimenti', { macro: _cMacro, cat: _cCat, sub: _cSub, periodo: 'anno', mese: _cAnno + '-01' }));

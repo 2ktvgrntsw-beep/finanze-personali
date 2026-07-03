@@ -42,9 +42,11 @@ export const renderCurrent = async () => {
   const root = document.getElementById('app-root');
   root.className = 'app-main view-' + name;
   root.innerHTML = '';
+  // il chrome (header) si aggiorna PRIMA del render: così il componente può
+  // sovrascriverlo quando serve (es. breadcrumb del drill in Analisi).
+  _updateChrome(name);
   await handler(root, params);
 
-  _updateChrome(name);
   window.scrollTo(0, 0);
 };
 
@@ -57,13 +59,22 @@ const _updateChrome = (name) => {
   if (back) back.style.display = ROTTE_PRINCIPALI.includes(name) ? 'none' : 'flex';
   // HEADER COMPATTO: nelle pagine principali il titolo è ridondante (c'è il tab
   // evidenziato sotto) e sparisce; resta nelle sottopagine come breadcrumb.
-  // La lente vive solo nei Movimenti, dove ha senso.
+  // La lente vive solo nei Movimenti. Il selettore periodo (head-seg) vive
+  // nell'header in Spese e Movimenti; il + si sposta a destra nelle sottopagine.
   const titolo = document.getElementById('view-title');
   if (titolo) titolo.style.display = ROTTE_PRINCIPALI.includes(name) ? 'none' : 'block';
   const lente = document.getElementById('btn-search');
   if (lente) lente.style.display = (name === 'movimenti' || name === 'ricerca') ? 'flex' : 'none';
+  const seg = document.getElementById('head-seg');
+  if (seg) {
+    const usaSeg = name === 'spese' || name === 'movimenti';
+    seg.style.display = usaSeg ? 'flex' : 'none';
+    if (!usaSeg) seg.innerHTML = '';
+  }
   const spacer = document.getElementById('head-spacer');
-  if (spacer) spacer.style.display = ROTTE_PRINCIPALI.includes(name) ? 'block' : 'none';
+  if (spacer) spacer.style.display = (ROTTE_PRINCIPALI.includes(name) && name !== 'spese' && name !== 'movimenti') ? 'block' : 'none';
+  const headerEl = document.getElementById('app-header');
+  if (headerEl) headerEl.classList.toggle('sub', !ROTTE_PRINCIPALI.includes(name));
 };
 
 export const initRouter = () => {

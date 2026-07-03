@@ -9,6 +9,7 @@ import { iconaMacro } from '../core/icons.js';
 import { navigate, buildHash } from '../core/router.js';
 import { aggregaPerLivello, soloSpese } from '../services/movimentiService.js';
 import { categoriaHaSub } from '../services/categorieService.js';
+import { abilitaSwipePeriodo } from './shared.js';
 
 const movimentiPeriodo = (periodo, mese) => {
   if (periodo === 'anno') return state.movimenti.filter(m => m.data.startsWith(mese.slice(0, 4)));
@@ -120,6 +121,8 @@ export const renderDrill = async (root, params) => {
   const dp = root.querySelector('#d-prev'), dn = root.querySelector('#d-next');
   if (dp) dp.addEventListener('click', () => sposta(-1));
   if (dn) dn.addEventListener('click', () => sposta(1));
+  // swipe sul contenuto: sinistra = periodo successivo, destra = precedente
+  if (periodo !== 'settimana') abilitaSwipePeriodo(root, () => sposta(-1), () => sposta(1));
 
   // navigazione via data-href
   root.querySelectorAll('[data-href]').forEach(el => el.addEventListener('click', (e) => {

@@ -7,7 +7,8 @@ import { fmtEUR, escapeHtml, round2, todayISO } from '../core/utils.js';
 import { iconaMacro } from '../core/icons.js';
 import { ricorrentiAttive, saveRicorrente, deleteRicorrente, FREQUENZE } from '../services/ricorrentiService.js';
 import { applicaModificaAmbito } from '../services/movimentiService.js';
-import { apriSheet, montaTastierino } from './shared.js';
+import { apriSheet, apriSelettoreCategoria, apriDataNativa } from './shared.js';
+import { navigate } from '../core/router.js';
 import { toast } from '../core/utils.js';
 
 const FREQ_LABEL = { giornaliera: 'Ogni giorno', settimanale: 'Ogni settimana', mensile: 'Ogni mese', annuale: 'Ogni anno' };
@@ -93,58 +94,110 @@ export const renderRicorrenti = async (root) => {
   root.querySelector('#nuova-regola').addEventListener('click', () => _nuovaRegola(root));
 };
 
-// Modifica ricorrente: importo col tastierino + ambito (solo questa / future / anche passate)
+// Modifica ricorrente COMPLETA (a due vie): tutti i campi editabili come una
+// normale operazione. Le ricorrenze collegate a mutuo/finanziamento rimandano
+// alla scheda del prestito (fonte di verità, protezione anti-doppioni).
 const _modificaRic = (root, id) => {
   const r = state.ricorrenti.find(x => x.id === id);
   if (!r) return;
-  let impStr = String(r.imp).replace('.', ',');
 
-  apriSheet(escapeHtml(r.nome), `
-    <p class="meta" style="margin-bottom:12px">${FREQ_LABEL[r.frequenza]} · ${fmtEUR(r.imp)}${r.modalita === 'soglia' ? ' (a soglia)' : ''}</p>
+  // ── Ricorrenza collegata a un prestito: rimando alla scheda ──
+  if (r.origineMutuo) {
+    const isMutuo = r.origineMutuo === 'mutuo-principale';
+    apriSheet(escapeHtml(r.nome), `
+      <p class="meta" style="margin-bottom:8px">🔗 Questa ricorrenza è <b>collegata al ${isMutuo ? 'Mutuo' : 'Finanziamento'}</b>: importo, date e classificazione seguono automaticamente la scheda del prestito.</p>
+      <p class="meta" style="margin-bottom:14px">Per modificarla (rata, conto, descrizione delle rate, categoria) apri la scheda: le modifiche si rifletteranno qui da sole.</p>
+      <button class="btn btn-primary" id="lr-apri">Apri la scheda del ${isMutuo ? 'Mutuo' : 'Finanziamento'}</button>
+    `, (body, chiudi) => {
+      body.querySelector('#lr-apri').addEventListener('click', () => { chiudi(); navigate(isMutuo ? 'mutuo' : 'finanziamenti'); });
+    });
+    return;
+  }
+
+  // ── Ricorrenza normale: maschera completa ──
+  const conti = state.conti.filter(c => c.attivo !== false).map(c => c.nome);
+  const tmp = { macro: r.macro || '', cat: r.cat || '', sub: r.sub || '', fineData: r.fineData || '' };
+  const fmtD = (iso) => iso ? iso.split('-').reverse().join('/') : 'Scegli data';
+
+  apriSheet('Modifica ricorrenza', `
+    <label class="meta">Nome</label>
+    <input id="mr-nome" value="${escapeHtml(r.nome || '')}" class="sheet-input">
     <label class="meta">Importo (€)</label>
-    <div class="mini-amount" id="mr-amount">${escapeHtml(impStr)} €</div>
-    <div id="mr-pad"></div>
-    ${r.modalita === 'soglia' ? `<label class="meta">Soglia (€)</label><input type="number" step="0.01" id="mr-soglia" value="${r.soglia || 0}" class="sheet-input">` : ''}
-    <label class="meta" style="margin-top:10px">Applica la modifica a</label>
+    <input type="text" inputmode="decimal" id="mr-imp" value="${String(r.imp).replace('.', ',')}" class="sheet-input">
+    ${r.modalita === 'soglia' ? `<label class="meta">Soglia (€)</label><input type="text" inputmode="decimal" id="mr-soglia" value="${String(r.soglia || 0).replace('.', ',')}" class="sheet-input">` : ''}
+    <label class="meta">Frequenza</label>
+    <select id="mr-freq" class="sheet-input">
+      ${Object.entries(FREQ_LABEL).map(([k, v]) => `<option value="${k}" ${r.frequenza === k ? 'selected' : ''}>${v}</option>`).join('')}
+    </select>
+    <label class="meta">Categoria</label>
+    <button type="button" id="mr-cat" class="sheet-input" style="text-align:left;cursor:pointer">${[tmp.macro, tmp.cat, tmp.sub].filter(Boolean).join(' › ') || 'Scegli categoria'}</button>
+    <label class="meta">Conto</label>
+    <select id="mr-conto" class="sheet-input">
+      <option value="">—</option>
+      ${conti.map(c => `<option ${c === r.conto ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+    </select>
+    <label class="meta">Descrizione dei movimenti generati</label>
+    <input id="mr-desc" value="${escapeHtml(r.desc || '')}" class="sheet-input">
+    <label class="meta">Fine</label>
+    <select id="mr-fine" class="sheet-input">
+      <option value="mai" ${!r.fineTipo || r.fineTipo === 'mai' ? 'selected' : ''}>Mai (finché non la fermi)</option>
+      <option value="data" ${r.fineTipo === 'data' ? 'selected' : ''}>A una data</option>
+      <option value="conteggio" ${r.fineTipo === 'conteggio' ? 'selected' : ''}>Dopo N volte</option>
+    </select>
+    <div id="mr-fine-data" style="display:${r.fineTipo === 'data' ? 'block' : 'none'}">
+      <button type="button" id="mr-fine-data-btn" class="sheet-input" style="text-align:left;cursor:pointer">${fmtD(tmp.fineData)}</button>
+    </div>
+    <div id="mr-fine-cont" style="display:${r.fineTipo === 'conteggio' ? 'block' : 'none'}">
+      <input type="text" inputmode="numeric" id="mr-fine-n" value="${r.fineConteggio || ''}" placeholder="Numero totale di volte" class="sheet-input">
+    </div>
+    <label class="meta" style="margin-top:6px">Applica la modifica a</label>
     <select id="mr-ambito" class="sheet-input">
-      <option value="questa">Solo questa (da ora in poi)</option>
-      <option value="future">Questa e le future</option>
-      <option value="tutte">Anche le passate (stessa descrizione e importo)</option>
+      <option value="questa">Solo da ora in poi</option>
+      <option value="tutte">Anche ai movimenti passati (stessa descrizione)</option>
     </select>
     <div class="btn-row">
       <button class="btn btn-danger" id="mr-del">Elimina</button>
       <button class="btn btn-primary" id="mr-ok">Salva</button>
     </div>
-    <button class="btn btn-ghost" id="mr-toggle" style="margin-top:10px">${r.attiva === false ? 'Riattiva' : 'Metti in pausa'}</button>
+    <button class="btn btn-ghost" id="mr-toggle" style="margin-top:10px">${r.attiva === false ? '▶ Riattiva' : '⏸ Metti in pausa'}</button>
   `, (body, chiudi) => {
-    // tastierino per l'importo (usa l'helper condiviso: inline, non sventrato)
-    const amountEl = body.querySelector('#mr-amount');
-    const pad = body.querySelector('#mr-pad');
-    amountEl.addEventListener('click', () => {
-      if (pad.innerHTML) { pad.innerHTML = ''; return; }
-      montaTastierino(pad, impStr, (s) => { impStr = s; amountEl.textContent = `${impStr} €`; }, () => {});
+    body.querySelector('#mr-cat').addEventListener('click', () => apriSelettoreCategoria(sel => {
+      tmp.macro = sel.macro; tmp.cat = sel.cat; tmp.sub = sel.sub;
+      body.querySelector('#mr-cat').textContent = [sel.macro, sel.cat, sel.sub].filter(Boolean).join(' › ');
+    }));
+    body.querySelector('#mr-fine').addEventListener('change', (e) => {
+      body.querySelector('#mr-fine-data').style.display = e.target.value === 'data' ? 'block' : 'none';
+      body.querySelector('#mr-fine-cont').style.display = e.target.value === 'conteggio' ? 'block' : 'none';
     });
+    const fdBtn = body.querySelector('#mr-fine-data-btn');
+    fdBtn.addEventListener('click', () => apriDataNativa(tmp.fineData || todayISO(), (nd) => { tmp.fineData = nd; fdBtn.textContent = fmtD(nd); }));
 
     body.querySelector('#mr-ok').addEventListener('click', async () => {
-      const nuovoImp = round2(parseFloat(impStr.replace(',', '.')) || 0);
-      const soglia = body.querySelector('#mr-soglia') ? parseFloat(body.querySelector('#mr-soglia').value) || 0 : r.soglia;
-      const ambito = body.querySelector('#mr-ambito').value;
-
-      // aggiorna la ricorrenza
-      await saveRicorrente({ ...r, imp: nuovoImp, soglia });
-
-      // applica ai movimenti passati/futuri secondo l'ambito
-      if (ambito === 'tutte') {
-        const n = await applicaModificaAmbito(r, { imp: nuovoImp }, 'tutte');
+      const num = (sel) => round2(parseFloat(String(body.querySelector(sel).value).replace(',', '.')) || 0);
+      const nuovoImp = num('#mr-imp');
+      if (nuovoImp <= 0) { toast('Inserisci un importo valido'); return; }
+      const fineTipo = body.querySelector('#mr-fine').value;
+      const patch = {
+        ...r,
+        nome: body.querySelector('#mr-nome').value.trim() || r.nome,
+        imp: nuovoImp,
+        soglia: body.querySelector('#mr-soglia') ? num('#mr-soglia') : r.soglia,
+        frequenza: body.querySelector('#mr-freq').value,
+        macro: tmp.macro, cat: tmp.cat, sub: tmp.sub,
+        conto: body.querySelector('#mr-conto').value,
+        desc: body.querySelector('#mr-desc').value.trim(),
+        fineTipo,
+        fineData: fineTipo === 'data' ? tmp.fineData : null,
+        fineConteggio: fineTipo === 'conteggio' ? (parseInt(body.querySelector('#mr-fine-n').value) || null) : null,
+      };
+      await saveRicorrente(patch);
+      if (body.querySelector('#mr-ambito').value === 'tutte') {
+        const n = await applicaModificaAmbito(r, { imp: nuovoImp, macro: tmp.macro, cat: tmp.cat, sub: tmp.sub, desc: patch.desc }, 'tutte');
         toast(`Aggiornata + ${n} movimenti passati`);
-      } else if (ambito === 'future') {
-        toast('Aggiornata per questa e le future');
-      } else {
-        toast('Aggiornata');
-      }
+      } else toast('Aggiornata (da ora in poi)');
       chiudi(); renderRicorrenti(root);
     });
-    body.querySelector('#mr-del').addEventListener('click', async () => { if (confirm('Eliminare la ricorrenza?')) { await deleteRicorrente(id); chiudi(); toast('Eliminata'); renderRicorrenti(root); } });
+    body.querySelector('#mr-del').addEventListener('click', async () => { if (confirm('Eliminare la ricorrenza? I movimenti già generati restano.')) { await deleteRicorrente(id); chiudi(); toast('Eliminata'); renderRicorrenti(root); } });
     body.querySelector('#mr-toggle').addEventListener('click', async () => { await saveRicorrente({ ...r, attiva: r.attiva === false }); chiudi(); renderRicorrenti(root); });
   });
 };

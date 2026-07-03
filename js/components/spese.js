@@ -8,7 +8,7 @@ import { navigate } from '../core/router.js';
 import {
   totaliPeriodo, aggregaPerLivello, mediaSpeseMensile, soloSpese,
 } from '../services/movimentiService.js';
-import { calcolaDelta } from './shared.js';
+import { calcolaDelta, abilitaSwipePeriodo } from './shared.js';
 
 // stato locale della schermata (periodo selezionato)
 let _periodo = 'mese';                 // 'settimana' | 'mese' | 'anno'
@@ -79,12 +79,6 @@ export const renderSpese = async (root) => {
     </div>`).join('') : '<div class="empty">Nessuna spesa in questo periodo</div>';
 
   root.innerHTML = `
-    <div class="seg">
-      <button data-p="settimana" class="${_periodo === 'settimana' ? 'on' : ''}">Settimana</button>
-      <button data-p="mese" class="${_periodo === 'mese' ? 'on' : ''}">Mese</button>
-      <button data-p="anno" class="${_periodo === 'anno' ? 'on' : ''}">Anno</button>
-    </div>
-
     ${_periodo !== 'settimana' ? `
       <div class="month-nav">
         <button class="arr" id="prev">‹</button>
@@ -107,20 +101,32 @@ export const renderSpese = async (root) => {
   `;
 
   // --- eventi ---
-  root.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => {
-    _periodo = b.dataset.p; renderSpese(root);
-  }));
+  // selettore periodo NELL'HEADER (compatto, come la vecchia app)
+  const headSeg = document.getElementById('head-seg');
+  if (headSeg) {
+    headSeg.innerHTML = `<div class="seg">
+      <button data-p="settimana" class="${_periodo === 'settimana' ? 'on' : ''}">Sett.</button>
+      <button data-p="mese" class="${_periodo === 'mese' ? 'on' : ''}">Mese</button>
+      <button data-p="anno" class="${_periodo === 'anno' ? 'on' : ''}">Anno</button>
+    </div>`;
+    headSeg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+      _periodo = b.dataset.p; renderSpese(root);
+    }));
+  }
+
+  const vaiPrec = () => {
+    _meseCorrente = _periodo === 'anno' ? `${parseInt(anno) - 1}-${mese}` : mesePrec(_meseCorrente);
+    renderSpese(root);
+  };
+  const vaiSucc = () => {
+    _meseCorrente = _periodo === 'anno' ? `${parseInt(anno) + 1}-${mese}` : meseSucc(_meseCorrente);
+    renderSpese(root);
+  };
   const prev = root.querySelector('#prev'), next = root.querySelector('#next');
-  if (prev) prev.addEventListener('click', () => {
-    _meseCorrente = _periodo === 'anno'
-      ? `${parseInt(anno) - 1}-${mese}` : mesePrec(_meseCorrente);
-    renderSpese(root);
-  });
-  if (next) next.addEventListener('click', () => {
-    _meseCorrente = _periodo === 'anno'
-      ? `${parseInt(anno) + 1}-${mese}` : meseSucc(_meseCorrente);
-    renderSpese(root);
-  });
+  if (prev) prev.addEventListener('click', vaiPrec);
+  if (next) next.addEventListener('click', vaiSucc);
+  // swipe sul contenuto: sinistra = periodo successivo, destra = precedente
+  if (_periodo !== 'settimana') abilitaSwipePeriodo(root, vaiPrec, vaiSucc);
 
   // doppio tap-target: icona -> movimenti diretti; barra/corpo -> scendi di livello
   root.querySelectorAll('[data-macro-mov]').forEach(el => el.addEventListener('click', (e) => {

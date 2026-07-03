@@ -461,3 +461,12 @@ button,.hbtn,.numpad button,.seg button,.mov,.catrow,.chip,.frow .fval,.type-swi
 .triple.quad .lbl{font-size:9.5px}
 .triple.quad .val{font-size:14.5px}
 .triple.quad .delta{font-size:9.5px}
+
+/* header v2.7: + a destra nelle sottopagine; selettore periodo compatto nell'header */
+.app-header.sub #btn-add{order:7}
+#head-seg .seg{margin:0;padding:3px;max-width:270px;width:100%}
+#head-seg .seg button{padding:5px 0;font-size:12.5px;border-radius:9px}
+
+/* breadcrumb nel titolo dell'header (drill analisi) */
+.app-header .title .crumb{display:block;font-size:10px;color:var(--txt-3);font-weight:600;letter-spacing:.03em;line-height:1.1}
+.app-header .title{line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:52vw}

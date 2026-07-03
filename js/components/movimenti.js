@@ -8,6 +8,7 @@ import { iconaMacro, iconaTipo } from '../core/icons.js';
 import { navigate } from '../core/router.js';
 import { deleteMovimento, movimentiDiVoce } from '../services/movimentiService.js';
 import { toast } from '../core/utils.js';
+import { abilitaSwipePeriodo } from './shared.js';
 
 let _mese = annomese(todayISO());
 let _periodo = 'mese';   // 'settimana' | 'mese' | 'anno'
@@ -136,14 +137,9 @@ export const renderMovimenti = async (root, params = {}) => {
     : _periodo === 'settimana' ? 'Ultimi 7 giorni'
     : `${nomeMese(parseInt(mese) - 1)} ${anno}`;
 
-  // HEADER STICKY: selettore periodo + navigatore, sempre presente e bloccato in alto
+  // HEADER STICKY: navigatore bloccato in alto (il selettore periodo vive nell'header dell'app)
   root.innerHTML = `
     <div class="mov-sticky">
-      <div class="seg" style="margin-bottom:8px">
-        <button data-p="settimana" class="${_periodo === 'settimana' ? 'on' : ''}">Settimana</button>
-        <button data-p="mese" class="${_periodo === 'mese' ? 'on' : ''}">Mese</button>
-        <button data-p="anno" class="${_periodo === 'anno' ? 'on' : ''}">Anno</button>
-      </div>
       ${_periodo !== 'settimana' ? `
         <div class="month-nav" style="margin:6px 0">
           <button class="arr" id="prev">‹</button>
@@ -160,23 +156,37 @@ export const renderMovimenti = async (root, params = {}) => {
   // altrimenti il re-render rileggerebbe quelli vecchi e la navigazione resterebbe bloccata.
   const vaiA = (nuovi) => renderMovimenti(root, { ...params, ...nuovi });
 
-  // selettore periodo
-  root.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => vaiA({ periodo: b.dataset.p, mese: _mese })));
+  // selettore periodo NELL'HEADER (compatto)
+  const headSeg = document.getElementById('head-seg');
+  if (headSeg) {
+    headSeg.innerHTML = `<div class="seg">
+      <button data-p="settimana" class="${_periodo === 'settimana' ? 'on' : ''}">Sett.</button>
+      <button data-p="mese" class="${_periodo === 'mese' ? 'on' : ''}">Mese</button>
+      <button data-p="anno" class="${_periodo === 'anno' ? 'on' : ''}">Anno</button>
+    </div>`;
+    headSeg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => vaiA({ periodo: b.dataset.p, mese: _mese })));
+  }
 
   // navigazione periodo (mese o anno)
-  const prev = root.querySelector('#prev'), next = root.querySelector('#next');
-  if (prev) prev.addEventListener('click', () => {
+  const vaiPrec = () => {
     let nuovoMese;
     if (_periodo === 'anno') nuovoMese = `${parseInt(anno) - 1}-${mese}`;
     else { const d = new Date(parseInt(anno), parseInt(mese) - 2, 1); nuovoMese = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
     vaiA({ mese: nuovoMese, periodo: _periodo });
-  });
-  if (next) next.addEventListener('click', () => {
+  };
+  const vaiSucc = () => {
     let nuovoMese;
     if (_periodo === 'anno') nuovoMese = `${parseInt(anno) + 1}-${mese}`;
     else { const d = new Date(parseInt(anno), parseInt(mese), 1); nuovoMese = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
     vaiA({ mese: nuovoMese, periodo: _periodo });
-  });
+  };
+  const prev = root.querySelector('#prev'), next = root.querySelector('#next');
+  if (prev) prev.addEventListener('click', vaiPrec);
+  if (next) next.addEventListener('click', vaiSucc);
+  // swipe SOLO sul navigatore sticky: nella lista lo swipe orizzontale elimina i
+  // movimenti, quindi il cambio-mese via gesto è confinato qui (scelta esplicita).
+  const stickyEl = root.querySelector('.mov-sticky');
+  if (stickyEl && _periodo !== 'settimana') abilitaSwipePeriodo(stickyEl, vaiPrec, vaiSucc);
 
   // rimuovi filtro (torna a tutti i movimenti del periodo)
   const cf = root.querySelector('#clear-filtro');

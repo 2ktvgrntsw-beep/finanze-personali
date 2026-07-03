@@ -153,3 +153,24 @@ export const montaTastierino = (container, valoreIniziale, onChange, onDone) => 
     onChange(str);
   }));
 };
+
+// --- Swipe orizzontale per cambiare periodo (mese prec/succ) ---
+// IDEMPOTENTE: i listener si attaccano UNA sola volta per elemento; i re-render
+// aggiornano solo le callback (altrimenti si accumulano e uno swipe salta N mesi).
+export const abilitaSwipePeriodo = (el, onPrev, onNext) => {
+  el._swipeCb = { onPrev, onNext };
+  if (el._swipeAttivo) return;
+  el._swipeAttivo = true;
+  let x0 = null, y0 = null;
+  el.addEventListener('touchstart', (e) => {
+    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY;
+  }, { passive: true });
+  el.addEventListener('touchend', (e) => {
+    if (x0 === null) return;
+    const dx = e.changedTouches[0].clientX - x0;
+    const dy = e.changedTouches[0].clientY - y0;
+    x0 = y0 = null;
+    if (Math.abs(dx) < 70 || Math.abs(dy) > Math.abs(dx) * 0.6) return;   // troppo corto o verticale
+    if (dx < 0) el._swipeCb.onNext(); else el._swipeCb.onPrev();
+  }, { passive: true });
+};
