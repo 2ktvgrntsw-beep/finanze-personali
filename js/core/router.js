@@ -55,14 +55,21 @@ const ROTTE_PRINCIPALI = ['spese', 'movimenti', 'patrimonio', 'ricorrenti', 'ana
 const _updateChrome = (name) => {
   document.querySelectorAll('.bottom-nav a').forEach(a =>
     a.classList.toggle('active', a.dataset.route === name));
+  // pagine di inserimento/modifica: 'nuovo' (nuova operazione), 'modifica' (spesa
+  // o ricorrenza). Header uniforme: niente + né freccia, solo "Annulla" a sinistra
+  // e il titolo CENTRATO. Per il nuovo inserimento il titolo è nascosto del tutto.
+  const isInserimento = name === 'nuovo' || name === 'modifica';
   const back = document.getElementById('btn-back');
-  if (back) back.style.display = (ROTTE_PRINCIPALI.includes(name) || name === 'inserimento' || name === 'modifica') ? 'none' : 'flex';
+  if (back) back.style.display = (ROTTE_PRINCIPALI.includes(name) || isInserimento) ? 'none' : 'flex';
   // HEADER COMPATTO: nelle pagine principali il titolo è ridondante (c'è il tab
   // evidenziato sotto) e sparisce; resta nelle sottopagine come breadcrumb.
   // La lente vive solo nei Movimenti. Il selettore periodo (head-seg) vive
   // nell'header in Spese e Movimenti; il + si sposta a destra nelle sottopagine.
   const titolo = document.getElementById('view-title');
-  if (titolo) titolo.style.display = (ROTTE_PRINCIPALI.includes(name) || name === 'inserimento') ? 'none' : 'block';
+  if (titolo) {
+    titolo.style.display = (ROTTE_PRINCIPALI.includes(name) || name === 'nuovo') ? 'none' : 'block';
+    titolo.classList.toggle('center', name === 'modifica');
+  }
   // lente: VISIBILE solo nei Movimenti; nelle altre principali resta invisibile ma
   // occupa il suo spazio (il selettore centrale rimane perfettamente centrato).
   const lente = document.getElementById('btn-search');
@@ -75,8 +82,7 @@ const _updateChrome = (name) => {
       lente.style.display = 'none';
     }
   }
-  // pagina inserimento/modifica: niente + né freccia — solo il tasto Annulla
-  const isInserimento = name === 'inserimento' || name === 'modifica';
+  // + e Annulla: gestiti con isInserimento dichiarato sopra
   const addBtn = document.getElementById('btn-add');
   if (addBtn) addBtn.style.display = isInserimento ? 'none' : 'flex';
   const annulla = document.getElementById('btn-annulla');

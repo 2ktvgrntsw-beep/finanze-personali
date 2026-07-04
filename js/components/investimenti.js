@@ -42,7 +42,7 @@ export const renderInvestimenti = async (root) => {
         <div class="icon" style="background:rgba(61,182,255,.18)">💠</div>
         <div class="body" data-conto="${c.id}">
           <div class="row1"><span class="name">${escapeHtml(c.nome)}</span><span class="amt num">${fmtEUR(saldoStimato(c))}</span></div>
-          <div class="bar"><span style="width:${Math.max(3, saldoStimato(c) / maxC * 100)}%;background:var(--transfer)"></span></div>
+          <div class="bar"><span style="width:${Math.max(1.5, saldoStimato(c) / maxC * 100)}%;background:var(--transfer)"></span></div>
         </div>
       </div>`).join('') || '<div class="empty">Nessuna piattaforma di investimento</div>'}
 
@@ -53,7 +53,7 @@ export const renderInvestimenti = async (root) => {
           <div class="icon" style="background:rgba(61,182,255,.12)">📈</div>
           <div class="body" data-strumento="${escapeHtml(s.nome)}">
             <div class="row1"><span class="name">${escapeHtml(s.nome)}</span><span class="amt num">${fmtEUR(s.tot)}</span></div>
-            <div class="bar"><span style="width:${Math.max(3, s.tot / maxS * 100)}%;background:var(--transfer)"></span></div>
+            <div class="bar"><span style="width:${Math.max(1.5, s.tot / maxS * 100)}%;background:var(--transfer)"></span></div>
           </div>
         </div>`).join('')}` : ''}
 

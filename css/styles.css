@@ -517,3 +517,6 @@ input[type=date].sheet-input{-webkit-appearance:none;appearance:none}
 .card-crumb-center .cc-up{position:absolute;left:14px;top:50%;transform:translateY(-50%);font-size:22px;color:var(--txt-2)}
 .card-crumb-center .cc-nome{display:block;font-size:17px;font-weight:750;line-height:1.1}
 .card-crumb-center .cc-ctx{display:block;font-size:10.5px;color:var(--txt-3);margin-top:1px}
+
+/* titolo header centrato (pagine di modifica) */
+.app-header .title.center{position:absolute;left:0;right:0;text-align:center;pointer-events:none;margin:0}

@@ -84,7 +84,7 @@ export const renderDrill = async (root, params) => {
             <span class="name">${escapeHtml(r.chiave)}</span>
             <span class="right"><span class="amt num">${fmtEUR(r.totale)}</span><span class="pct num">${fmtPct(r.pct)}</span></span>
           </div>
-          <div class="bar"><span style="width:${Math.max(3, r.totale / maxTot * 100)}%"></span></div>
+          <div class="bar"><span style="width:${Math.max(1.5, r.totale / maxTot * 100)}%"></span></div>
         </div>
         <div class="chev" data-href="${drillTarget}">›</div>
       </div>`;

@@ -19,6 +19,7 @@ let _annoSel = String(new Date().getFullYear());
 let _cMacro = '', _cCat = '', _cSub = '', _cAnno = '';
 let _tagSel = new Set();   // tag selezionati per l'analisi incrociata
 let _tagQuery = '';       // testo digitato nella barra tag
+let _tagAnno = '';        // anno selezionato nel grafico a barre dell'analisi tag
 const _norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
 export const renderAnalisi = async (root, params = {}) => {
@@ -171,7 +172,7 @@ const _renderCategoriaTempo = (body, root) => {
     <div class="yearchart">
       <div class="yc-bars">${anni.map(a => `
         <div class="yb ${a === _cAnno ? 'on' : ''}" data-anno-bar="${a}" title="${a}: ${fmtEUR(perAnno[a])}">
-          <div class="col" style="height:${Math.max(3, perAnno[a] / maxVal * 100)}%${a === _cAnno && tipoMacro !== 'spesa' ? ';background:' + colTipo : ''}"></div>
+          <div class="col" style="height:${Math.max(1.5, perAnno[a] / maxVal * 100)}%${a === _cAnno && tipoMacro !== 'spesa' ? ';background:' + colTipo : ''}"></div>
           <span>'${a.slice(2)}</span>
         </div>`).join('')}</div>
       <div id="cat-tip" class="meta" style="text-align:center;margin-top:10px;min-height:16px;color:${colTipo};font-weight:600">${_cAnno}: ${fmtEUR(totaleAnno)}</div>
@@ -184,7 +185,7 @@ const _renderCategoriaTempo = (body, root) => {
           <div class="icon" data-drill="${escapeHtml(s.nome)}">${iconaMacro(_cMacro)}</div>
           <div class="body" data-drill="${escapeHtml(s.nome)}">
             <div class="row1"><span class="name">${escapeHtml(s.nome)}</span><span class="amt num">${fmtEUR(s.tot)}</span></div>
-            <div class="bar"><span style="width:${Math.max(3, s.tot / maxSotto * 100)}%"></span></div>
+            <div class="bar"><span style="width:${Math.max(1.5, s.tot / maxSotto * 100)}%"></span></div>
           </div>
           <div class="chev">›</div>
         </div>`).join('')}` : ''}
@@ -249,14 +250,14 @@ const _renderAnno = (body, root) => {
       <div class="cell"><div class="lbl">Movimenti</div><div class="val sa num">${soloSpese(movAnno).length}</div></div>
     </div>
     <div class="yearchart"><div class="yc-bars">${dati.map(d => `
-      <div class="yb ${d.anno === _annoSel ? 'on' : ''}" data-anno="${d.anno}"><div class="col" style="height:${Math.max(3, d.totale / max * 100)}%"></div><span>'${d.anno.slice(2)}</span></div>`).join('')}</div></div>
+      <div class="yb ${d.anno === _annoSel ? 'on' : ''}" data-anno="${d.anno}"><div class="col" style="height:${Math.max(1.5, d.totale / max * 100)}%"></div><span>'${d.anno.slice(2)}</span></div>`).join('')}</div></div>
     <div class="section-lbl"><span>Categorie ${_annoSel}</span></div>
     ${righe.map(r => `
       <div class="catrow">
         <div class="icon" data-href="${buildHash('movimenti', { macro: r.chiave, periodo: 'anno', mese: _annoSel + '-01' })}">${iconaMacro(r.chiave)}</div>
         <div class="body" data-href="${buildHash('drill', { macro: r.chiave, periodo: 'anno', mese: _annoSel + '-01' })}">
           <div class="row1"><span class="name">${escapeHtml(r.chiave)}</span><span class="amt num">${fmtEUR(r.totale)}</span></div>
-          <div class="bar"><span style="width:${Math.max(3, r.totale / maxCat * 100)}%"></span></div>
+          <div class="bar"><span style="width:${Math.max(1.5, r.totale / maxCat * 100)}%"></span></div>
         </div>
         <div class="chev" data-href="${buildHash('drill', { macro: r.chiave, periodo: 'anno', mese: _annoSel + '-01' })}">›</div>
       </div>`).join('')}
@@ -296,33 +297,49 @@ const _renderTag = (body, root) => {
     for (const m of spese) { const a = m.data.slice(0, 4); perAnno[a] = (perAnno[a] || 0) + m.imp; }
     const anni = Object.keys(perAnno).sort();
     const maxA = anni.length ? Math.max(...anni.map(a => perAnno[a])) : 1;
-    // per categoria
+    const multiAnno = anni.length > 1;
+
+    // anno selezionato per il grafico navigabile (default: l'ultimo)
+    if (multiAnno && (!_tagAnno || !anni.includes(_tagAnno))) _tagAnno = anni[anni.length - 1];
+    // con più anni il dettaglio (categorie + movimenti) segue l'anno evidenziato;
+    // con un solo anno mostra tutto
+    const annoAttivo = multiAnno ? _tagAnno : null;
+    const speseVista = annoAttivo ? spese.filter(m => m.data.slice(0, 4) === annoAttivo) : spese;
+    const movVista = annoAttivo ? movSet.filter(m => m.data.slice(0, 4) === annoAttivo) : movSet;
+    const totVista = speseVista.reduce((s, m) => s + m.imp, 0);
+
+    // per categoria (sulla vista)
     const perMacro = {};
-    for (const m of spese) { const k = m.macro || '(senza)'; perMacro[k] = (perMacro[k] || 0) + m.imp; }
+    for (const m of speseVista) { const k = m.macro || '(senza)'; perMacro[k] = (perMacro[k] || 0) + m.imp; }
     const cats = Object.entries(perMacro).sort((a, b) => b[1] - a[1]);
     const maxC = cats.length ? cats[0][1] : 1;
 
     dettaglio = `
       <div class="triple">
-        <div class="cell"><div class="lbl">Spese ${sel.length > 1 ? 'incrociate' : ''}</div><div class="val sp num">${fmtEUR(totSpese)}</div></div>
-        <div class="cell"><div class="lbl">Movimenti</div><div class="val sa num">${movSet.length}</div></div>
-        <div class="cell"><div class="lbl">Anni</div><div class="val sa num">${anni.length}</div></div>
+        <div class="cell"><div class="lbl">Spese ${sel.length > 1 ? 'incrociate' : ''}${annoAttivo ? ' ' + annoAttivo : ''}</div><div class="val sp num">${fmtEUR(annoAttivo ? totVista : totSpese)}</div></div>
+        <div class="cell"><div class="lbl">Movimenti</div><div class="val sa num">${annoAttivo ? movVista.length : movSet.length}</div></div>
+        <div class="cell"><div class="lbl">${annoAttivo ? 'Totale ' + anni.length + ' anni' : 'Anni'}</div><div class="val sa num">${annoAttivo ? fmtEUR0(totSpese) : anni.length}</div></div>
       </div>
-      ${anni.length > 1 ? `<div class="yearchart"><div class="yc-bars">${anni.map(a => `
-        <div class="yb"><div class="col" style="height:${Math.max(3, perAnno[a] / maxA * 100)}%"></div><span>'${a.slice(2)}</span></div>`).join('')}</div></div>` : ''}
-      <div class="section-lbl"><span>Per categoria</span></div>
+      ${multiAnno ? `<div class="yearchart">
+        <div class="yc-bars">${anni.map(a => `
+          <div class="yb ${a === _tagAnno ? 'on' : ''}" data-tag-anno="${a}" title="${a}: ${fmtEUR(perAnno[a])}">
+            <div class="col" style="height:${Math.max(1.5, perAnno[a] / maxA * 100)}%"></div><span>'${a.slice(2)}</span>
+          </div>`).join('')}</div>
+        <div class="meta" style="text-align:center;margin-top:10px;font-weight:600;color:var(--accent)">${_tagAnno}: ${fmtEUR(perAnno[_tagAnno] || 0)}</div>
+      </div>` : ''}
+      <div class="section-lbl"><span>Per categoria${annoAttivo ? ' · ' + annoAttivo : ''}</span></div>
       ${cats.map(([nome, tot]) => `
         <div class="catrow"><div class="icon">${iconaMacro(nome)}</div>
           <div class="body"><div class="row1"><span class="name">${escapeHtml(nome)}</span><span class="amt num">${fmtEUR(tot)}</span></div>
-          <div class="bar"><span style="width:${Math.max(3, tot / maxC * 100)}%"></span></div></div>
+          <div class="bar"><span style="width:${Math.max(1.5, tot / maxC * 100)}%"></span></div></div>
         </div>`).join('')}
-      <div class="section-lbl"><span>Movimenti (${movSet.length})</span></div>
-      ${movSet.slice(0, 40).map(m => `
+      <div class="section-lbl"><span>Movimenti (${movVista.length})${annoAttivo ? ' · ' + annoAttivo : ''}</span></div>
+      ${movVista.slice(0, 40).map(m => `
         <div class="mov" style="cursor:default"><div class="ic">${iconaMacro(m.macro || '')}</div>
           <div class="body"><div class="d1">${escapeHtml(m.desc || m.macro)}</div><div class="d2">${m.data.split('-').reverse().join('/')} · ${escapeHtml(m.macro || '')}</div></div>
           <div class="amt ${m.tipo === 'spesa' ? 'sp' : m.tipo === 'entrata' ? 'en' : 'tr'} num">${m.tipo === 'spesa' ? '−' : m.tipo === 'entrata' ? '+' : '⇄ '}${fmtEUR(m.imp)}</div>
         </div>`).join('')}
-      ${movSet.length > 40 ? `<p class="meta" style="text-align:center">…e altri ${movSet.length - 40}</p>` : ''}`;
+      ${movVista.length > 40 ? `<p class="meta" style="text-align:center">…e altri ${movVista.length - 40}</p>` : ''}`;
   }
 
   body.innerHTML = `
@@ -357,6 +374,10 @@ const _renderTag = (body, root) => {
 
   body.querySelectorAll('[data-tsel]').forEach(el => el.addEventListener('click', () => {
     _tagSel.delete(el.dataset.tsel); renderAnalisi(root);
+  }));
+  // barre anno cliccabili: seleziona l'anno, il dettaglio sotto lo segue
+  body.querySelectorAll('[data-tag-anno]').forEach(el => el.addEventListener('click', () => {
+    _tagAnno = el.dataset.tagAnno; renderAnalisi(root);
   }));
   const tr = body.querySelector('#tag-reset');
   if (tr) tr.addEventListener('click', () => { _tagSel.clear(); _tagQuery = ''; renderAnalisi(root); });

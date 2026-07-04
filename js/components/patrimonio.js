@@ -67,7 +67,7 @@ export const renderPatrimonio = async (root) => {
           <div class="icon" style="background:rgba(255,107,94,.15)">${x.icona}</div>
           <div class="body" data-debito="${escapeHtml(x.nome)}">
             <div class="row1"><span class="name">${escapeHtml(x.nome)}</span><span class="amt neg num">−${fmtEUR(x.residuo)}</span></div>
-            <div class="bar red"><span style="width:${Math.max(3, x.residuo / maxDeb * 100)}%"></span></div>
+            <div class="bar red"><span style="width:${Math.max(1.5, x.residuo / maxDeb * 100)}%"></span></div>
           </div>
         </div>`).join('')}` : ''}
 
