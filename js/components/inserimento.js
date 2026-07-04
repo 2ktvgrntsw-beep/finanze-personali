@@ -226,13 +226,18 @@ const _pickTag = (root) => {
   const render = (body, chiudi) => {
     const esistenti = suggerisciTag('', 20);
     body.innerHTML = `
-      <input id="tag-inp" placeholder="Nuovo tag o cerca..." class="sheet-input" autocomplete="off">
+      <input id="tag-inp" placeholder="Uno o più tag, separati da virgola..." class="sheet-input" autocomplete="off">
       <div class="chip-row" style="flex-wrap:wrap" id="tag-chips">
         ${esistenti.map(t => `<div class="chip ${d.tag.includes(t) ? 'on' : ''}" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</div>`).join('')}
       </div>
       <button class="btn btn-primary" id="tag-ok" style="margin-top:16px">Fatto</button>`;
     const inp = body.querySelector('#tag-inp');
-    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && inp.value.trim()) { d.tag = Array.from(new Set([...d.tag, inp.value.trim()])); inp.value = ''; render(body, chiudi); } });
+    // più tag in un colpo: separali con la VIRGOLA ("mare, famiglia, vacanza26")
+    const aggiungi = (testo) => {
+      const nuovi = testo.split(',').map(t => t.trim()).filter(Boolean);
+      if (nuovi.length) d.tag = Array.from(new Set([...d.tag, ...nuovi]));
+    };
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && inp.value.trim()) { aggiungi(inp.value); inp.value = ''; render(body, chiudi); } });
     // filtro live dei suggerimenti mentre scrivi
     inp.addEventListener('input', () => {
       const filtrati = suggerisciTag(inp.value, 20);
@@ -243,7 +248,7 @@ const _pickTag = (root) => {
     // "Fatto" raccoglie ANCHE il tag ancora scritto nell'input (senza Invio):
     // prima si perdeva in silenzio — era il "tag non tenuto" segnalato.
     body.querySelector('#tag-ok').addEventListener('click', () => {
-      if (inp.value.trim()) d.tag = Array.from(new Set([...d.tag, inp.value.trim()]));
+      if (inp.value.trim()) aggiungi(inp.value);
       chiudi(); _render(root);
     });
   };

@@ -8,7 +8,7 @@ import { navigate } from '../core/router.js';
 import {
   totaliPeriodo, aggregaPerLivello, mediaSpeseMensile, soloSpese,
 } from '../services/movimentiService.js';
-import { calcolaDelta, abilitaSwipePeriodo } from './shared.js';
+import { calcolaDelta } from './shared.js';
 
 // stato locale della schermata (periodo selezionato)
 let _periodo = 'mese';                 // 'settimana' | 'mese' | 'anno'
@@ -125,8 +125,6 @@ export const renderSpese = async (root) => {
   const prev = root.querySelector('#prev'), next = root.querySelector('#next');
   if (prev) prev.addEventListener('click', vaiPrec);
   if (next) next.addEventListener('click', vaiSucc);
-  // swipe sul contenuto: sinistra = periodo successivo, destra = precedente
-  if (_periodo !== 'settimana') abilitaSwipePeriodo(root, vaiPrec, vaiSucc);
 
   // doppio tap-target: icona -> movimenti diretti; barra/corpo -> scendi di livello
   root.querySelectorAll('[data-macro-mov]').forEach(el => el.addEventListener('click', (e) => {

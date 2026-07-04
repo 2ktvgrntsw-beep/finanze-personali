@@ -66,6 +66,7 @@ const costruisciChrome = () => {
       <svg viewBox="0 0 24 24" style="width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
     </button>
     <button class="hbtn back" id="btn-back" style="display:none;order:1">‹</button>
+    <button id="btn-annulla" style="display:none;order:1;background:none;border:0;color:var(--down);font-size:15px;font-weight:600;padding:6px 4px;cursor:pointer">Annulla</button>
     <div class="title" id="view-title" style="order:2">Spese</div>
     <div id="head-spacer" style="flex:1;display:none;order:3"></div>
     <div id="head-seg" style="order:4;flex:1;display:flex;justify-content:center"></div>
@@ -74,6 +75,7 @@ const costruisciChrome = () => {
   `;
 
   document.getElementById('btn-back').addEventListener('click', () => history.back());
+  document.getElementById('btn-annulla').addEventListener('click', () => { if (history.length > 1) history.back(); else navigate('spese'); });
   document.getElementById('btn-add').addEventListener('click', () => navigate('nuovo'));
   document.getElementById('btn-search').addEventListener('click', () => navigate('ricerca'));
 

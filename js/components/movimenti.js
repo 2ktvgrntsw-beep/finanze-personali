@@ -8,7 +8,6 @@ import { iconaMacro, iconaTipo } from '../core/icons.js';
 import { navigate } from '../core/router.js';
 import { deleteMovimento, movimentiDiVoce } from '../services/movimentiService.js';
 import { toast } from '../core/utils.js';
-import { abilitaSwipePeriodo } from './shared.js';
 
 let _mese = annomese(todayISO());
 let _periodo = 'mese';   // 'settimana' | 'mese' | 'anno'
@@ -183,10 +182,6 @@ export const renderMovimenti = async (root, params = {}) => {
   const prev = root.querySelector('#prev'), next = root.querySelector('#next');
   if (prev) prev.addEventListener('click', vaiPrec);
   if (next) next.addEventListener('click', vaiSucc);
-  // swipe SOLO sul navigatore sticky: nella lista lo swipe orizzontale elimina i
-  // movimenti, quindi il cambio-mese via gesto è confinato qui (scelta esplicita).
-  const stickyEl = root.querySelector('.mov-sticky');
-  if (stickyEl && _periodo !== 'settimana') abilitaSwipePeriodo(stickyEl, vaiPrec, vaiSucc);
 
   // rimuovi filtro (torna a tutti i movimenti del periodo)
   const cf = root.querySelector('#clear-filtro');

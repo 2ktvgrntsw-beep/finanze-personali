@@ -9,6 +9,7 @@ import { state } from '../core/store.js';
 import { fmtEUR, fmtEUR0, escapeHtml, nomeMese, annoDi } from '../core/utils.js';
 import { iconaMacro } from '../core/icons.js';
 import { navigate, buildHash } from '../core/router.js';
+import { abilitaSwipeIndietro } from './shared.js';
 import { spesePerAnno, aggregaPerLivello, soloSpese } from '../services/movimentiService.js';
 import { listaMacro, categoriaHaSub } from '../services/categorieService.js';
 
@@ -16,6 +17,7 @@ let _tab = 'categoria';   // 'categoria' | 'anno' | 'tag'
 let _annoSel = String(new Date().getFullYear());
 // stato drill per la vista "categoria nel tempo"
 let _cMacro = '', _cCat = '', _cSub = '', _cAnno = '';
+let _tagSel = new Set();   // tag selezionati per l'analisi incrociata
 
 export const renderAnalisi = async (root, params = {}) => {
   // Il drill di categoria viaggia nell'HASH: così il breadcrumb sta nell'header
@@ -132,21 +134,17 @@ const _renderCategoriaTempo = (body, root) => {
   }
   const maxSotto = sottoVoci.length ? sottoVoci[0].tot : 1;
 
-  // breadcrumb NELL'HEADER: niente freccia (come chiesto) — il TOCCO sul breadcrumb
-  // risale di un livello; lo swipe dal bordo iOS fa lo stesso via cronologia.
+  // header PULITO (solo i tab centrati): il nome della categoria vive DENTRO
+  // la card delle statistiche, col percorso cliccabile per risalire di livello.
   const vt = document.getElementById('view-title');
   const bb = document.getElementById('btn-back');
+  if (vt) { vt.style.display = 'none'; vt.onclick = null; }
   if (bb) bb.style.display = 'none';
-  if (vt) {
-    vt.style.display = 'block';
-    vt.style.cursor = 'pointer';
-    vt.innerHTML = `${_cCat ? `<span class="crumb">‹ ${escapeHtml(_cMacro)}${_cSub ? ' › ' + escapeHtml(_cCat) : ''}</span>` : '<span class="crumb">‹ Analisi</span>'}${escapeHtml(_cSub || _cCat || _cMacro)}`;
-    vt.onclick = () => {
-      if (_cSub) location.hash = buildHash('analisi', { macro: _cMacro, cat: _cCat });
-      else if (_cCat) location.hash = buildHash('analisi', { macro: _cMacro });
-      else location.hash = buildHash('analisi', {});
-    };
-  }
+  const suDiLivello = () => {
+    if (_cSub) location.hash = buildHash('analisi', { macro: _cMacro, cat: _cCat });
+    else if (_cCat) location.hash = buildHash('analisi', { macro: _cMacro });
+    else location.hash = buildHash('analisi', {});
+  };
 
   body.innerHTML = `
     <div class="month-nav" style="margin:8px 0 4px">
@@ -155,10 +153,16 @@ const _renderCategoriaTempo = (body, root) => {
       <button class="arr" id="ca-next" ${nextAnno ? '' : 'disabled'}>›</button>
     </div>
 
-    <div class="triple">
+    <div class="triple" style="flex-direction:column;padding:0">
+      <div class="card-crumb" id="card-crumb">
+        <span class="cc-path">‹ ${_cCat ? escapeHtml(_cMacro) + (_cSub ? ' › ' + escapeHtml(_cCat) : '') : 'Analisi'}</span>
+        <span class="cc-nome">${escapeHtml(_cSub || _cCat || _cMacro)}</span>
+      </div>
+      <div style="display:flex;width:100%">
       <div class="cell"><div class="lbl">${lblTipo} ${_cAnno}</div><div class="val ${clsTipo} num">${fmtEUR(totaleAnno)}</div>${deltaAnno}</div>
       <div class="cell"><div class="lbl">Media/anno</div><div class="val sa num">${fmtEUR0(mediaAnnua)}</div></div>
       <div class="cell"><div class="lbl">Totale ${anni.length} anni</div><div class="val sa num">${fmtEUR0(totale)}</div></div>
+      </div>
     </div>
 
     <div class="yearchart">
@@ -191,7 +195,9 @@ const _renderCategoriaTempo = (body, root) => {
   if (cap && prevAnno) cap.addEventListener('click', () => { _cAnno = prevAnno; renderAnalisi(root, ancora); });
   if (can && nextAnno) can.addEventListener('click', () => { _cAnno = nextAnno; renderAnalisi(root, ancora); });
 
-  // (il back vive nell'header: history.back() risale il drill via hash)
+  // percorso nella card: TAP per risalire di livello; SWIPE destro fa lo stesso
+  body.querySelector('#card-crumb').addEventListener('click', suDiLivello);
+  abilitaSwipeIndietro(body, suDiLivello);
   // tocco barra anno -> seleziona quell'anno
   body.querySelectorAll('[data-anno-bar]').forEach(el => el.addEventListener('click', () => { _cAnno = el.dataset.annoBar; renderAnalisi(root, ancora); }));
   // drill nelle sotto-voci: naviga via hash (cronologia + swipe-back iOS)
@@ -261,22 +267,76 @@ const _renderAnno = (body, root) => {
 
 // ---- VISTA: tag ----
 const _renderTag = (body, root) => {
+  // ANALISI PER TAG POTENZIATA: selezioni uno o PIÙ tag (incrocio in AND) e vedi
+  // totale, andamento per anno, spaccato per categoria e i movimenti del set.
+  // I tag attraversano le categorie: aggregano quello che le categorie separano.
   const perTag = {};
   for (const m of state.movimenti) {
-    if (m.tipo !== 'spesa') continue;
-    for (const t of (m.tag || [])) { perTag[t] = perTag[t] || { tag: t, totale: 0, count: 0 }; perTag[t].totale += m.imp; perTag[t].count++; }
+    for (const t of (m.tag || [])) { perTag[t] = perTag[t] || { tag: t, count: 0 }; perTag[t].count++; }
   }
-  const righe = Object.values(perTag).sort((a, b) => b.totale - a.totale);
-  if (!righe.length) { body.innerHTML = `<div class="empty"><div class="big-ic">#️⃣</div>Non hai ancora usato i tag.<br><br>Aggiungi un tag quando inserisci una spesa, o applica tag in blocco dalla Ricerca (Seleziona → Modifica). Poi qui vedrai quanto spendi per ogni tag: viaggi, progetti, persone…</div>`; return; }
-  const max = righe[0].totale;
-  body.innerHTML = `<div class="section-lbl" style="margin-top:8px"><span>Spese per tag</span></div>
-    ${righe.map(r => `
-      <div class="catrow">
-        <div class="icon" data-href="${buildHash('ricerca', { q: r.tag })}">#</div>
-        <div class="body" data-href="${buildHash('ricerca', { q: r.tag })}">
-          <div class="row1"><span class="name">${escapeHtml(r.tag)}</span><span class="right"><span class="amt num">${fmtEUR(r.totale)}</span><span class="pct num">${r.count}</span></span></div>
-          <div class="bar"><span style="width:${Math.max(3, r.totale / max * 100)}%"></span></div>
-        </div>
-      </div>`).join('')}`;
-  body.querySelectorAll('[data-href]').forEach(el => el.addEventListener('click', () => location.hash = el.dataset.href));
+  const tuttiTag = Object.values(perTag).sort((a, b) => b.count - a.count);
+  if (!tuttiTag.length) { body.innerHTML = `<div class="empty"><div class="big-ic">#️⃣</div>Non hai ancora usato i tag.<br><br>Aggiungi un tag quando inserisci una spesa (anche più di uno, separati da virgola), o applica tag in blocco dalla Ricerca. Poi qui potrai incrociarli: viaggi, progetti, persone…</div>`; return; }
+
+  // rimuovi dalla selezione eventuali tag scomparsi
+  for (const t of [..._tagSel]) if (!perTag[t]) _tagSel.delete(t);
+
+  // movimenti del set: TUTTI i tag selezionati presenti (AND)
+  const sel = [..._tagSel];
+  const movSet = sel.length ? state.movimenti.filter(m => sel.every(t => (m.tag || []).includes(t))) : [];
+  const spese = movSet.filter(m => m.tipo === 'spesa');
+  const totSpese = spese.reduce((s, m) => s + m.imp, 0);
+
+  let dettaglio = '';
+  if (sel.length) {
+    // per anno
+    const perAnno = {};
+    for (const m of spese) { const a = m.data.slice(0, 4); perAnno[a] = (perAnno[a] || 0) + m.imp; }
+    const anni = Object.keys(perAnno).sort();
+    const maxA = anni.length ? Math.max(...anni.map(a => perAnno[a])) : 1;
+    // per categoria
+    const perMacro = {};
+    for (const m of spese) { const k = m.macro || '(senza)'; perMacro[k] = (perMacro[k] || 0) + m.imp; }
+    const cats = Object.entries(perMacro).sort((a, b) => b[1] - a[1]);
+    const maxC = cats.length ? cats[0][1] : 1;
+
+    dettaglio = `
+      <div class="triple">
+        <div class="cell"><div class="lbl">Spese ${sel.length > 1 ? 'incrociate' : ''}</div><div class="val sp num">${fmtEUR(totSpese)}</div></div>
+        <div class="cell"><div class="lbl">Movimenti</div><div class="val sa num">${movSet.length}</div></div>
+        <div class="cell"><div class="lbl">Anni</div><div class="val sa num">${anni.length}</div></div>
+      </div>
+      ${anni.length > 1 ? `<div class="yearchart"><div class="yc-bars">${anni.map(a => `
+        <div class="yb"><div class="col" style="height:${Math.max(3, perAnno[a] / maxA * 100)}%"></div><span>'${a.slice(2)}</span></div>`).join('')}</div></div>` : ''}
+      <div class="section-lbl"><span>Per categoria</span></div>
+      ${cats.map(([nome, tot]) => `
+        <div class="catrow"><div class="icon">${iconaMacro(nome)}</div>
+          <div class="body"><div class="row1"><span class="name">${escapeHtml(nome)}</span><span class="amt num">${fmtEUR(tot)}</span></div>
+          <div class="bar"><span style="width:${Math.max(3, tot / maxC * 100)}%"></span></div></div>
+        </div>`).join('')}
+      <div class="section-lbl"><span>Movimenti (${movSet.length})</span></div>
+      ${movSet.slice(0, 40).map(m => `
+        <div class="mov" style="cursor:default"><div class="ic">${iconaMacro(m.macro || '')}</div>
+          <div class="body"><div class="d1">${escapeHtml(m.desc || m.macro)}</div><div class="d2">${m.data.split('-').reverse().join('/')} · ${escapeHtml(m.macro || '')}</div></div>
+          <div class="amt ${m.tipo === 'spesa' ? 'sp' : m.tipo === 'entrata' ? 'en' : 'tr'} num">${m.tipo === 'spesa' ? '−' : m.tipo === 'entrata' ? '+' : '⇄ '}${fmtEUR(m.imp)}</div>
+        </div>`).join('')}
+      ${movSet.length > 40 ? `<p class="meta" style="text-align:center">…e altri ${movSet.length - 40}</p>` : ''}`;
+  }
+
+  body.innerHTML = `
+    <p class="meta" style="margin:10px 4px 8px">Tocca uno o più tag per incrociarli: vedrai solo i movimenti che li hanno <b>tutti</b>.</p>
+    <div class="chip-row" style="flex-wrap:wrap;margin-bottom:6px">
+      ${tuttiTag.map(t => `<div class="chip ${_tagSel.has(t.tag) ? 'on' : ''}" data-tsel="${escapeHtml(t.tag)}">#${escapeHtml(t.tag)} <span style="opacity:.6">${t.count}</span></div>`).join('')}
+    </div>
+    ${sel.length ? `<div style="text-align:right;margin-bottom:4px"><span class="meta" id="tag-reset" style="color:var(--down);cursor:pointer">✕ azzera selezione</span></div>` : ''}
+    ${dettaglio || '<div class="empty" style="padding:30px 20px">Seleziona un tag per vedere l\'analisi</div>'}
+  `;
+
+  body.querySelectorAll('[data-tsel]').forEach(el => el.addEventListener('click', () => {
+    const t = el.dataset.tsel;
+    if (_tagSel.has(t)) _tagSel.delete(t); else _tagSel.add(t);
+    renderAnalisi(root);
+  }));
+  const tr = body.querySelector('#tag-reset');
+  if (tr) tr.addEventListener('click', () => { _tagSel.clear(); renderAnalisi(root); });
 };
+

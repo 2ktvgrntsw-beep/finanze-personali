@@ -5,6 +5,7 @@ import asyncio, http.server, socketserver, threading, os, sys, re
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(BASE)
 PORT = 8899
+socketserver.TCPServer.allow_reuse_address = True
 httpd = socketserver.TCPServer(("", PORT), http.server.SimpleHTTPRequestHandler)
 threading.Thread(target=httpd.serve_forever, daemon=True).start()
 
@@ -16,13 +17,20 @@ def check(nome, cond, dettaglio=''):
     if not cond: falliti.append(nome)
 
 async def conta_movimenti(pg):
-    return await pg.evaluate("""async () => {
-      const req = indexedDB.open('FinanzePersonaliDB');
-      return new Promise(res => { req.onsuccess = e => {
-        const tx = e.target.result.transaction('movimenti','readonly').objectStore('movimenti').count();
-        tx.onsuccess = () => res(tx.result);
-      };});
-    }""")
+    # resiliente: durante il boot l'app fa redirect via location.hash, che può
+    # distruggere il contesto di evaluate. Riprovo dopo un piccolo settle.
+    for tentativo in range(4):
+        try:
+            return await pg.evaluate("""async () => {
+              const req = indexedDB.open('FinanzePersonaliDB');
+              return new Promise(res => { req.onsuccess = e => {
+                const tx = e.target.result.transaction('movimenti','readonly').objectStore('movimenti').count();
+                tx.onsuccess = () => res(tx.result);
+              };});
+            }""")
+        except Exception:
+            await pg.wait_for_timeout(1000)
+    return 0
 
 async def main():
     async with async_playwright() as p:
@@ -77,8 +85,14 @@ async def main():
         for rotta in ['spese','movimenti','patrimonio','ricorrenti','analisi','impostazioni','mutuo','finanziamenti','categorie']:
             errs.clear()
             await pg.goto(f'http://localhost:{PORT}/index.html#/{rotta}', wait_until='domcontentloaded')
-            await pg.wait_for_timeout(1200)
-            vuota = await pg.evaluate("document.getElementById('app-root').innerHTML.trim().length < 10")
+            await pg.wait_for_timeout(1500)
+            # settle: alcune schermate riscrivono l'header via location.hash durante il
+            # render; attendo che il contesto sia stabile prima di interrogarlo
+            try:
+                vuota = await pg.evaluate("document.getElementById('app-root').innerHTML.trim().length < 10")
+            except Exception:
+                await pg.wait_for_timeout(800)
+                vuota = await pg.evaluate("document.getElementById('app-root').innerHTML.trim().length < 10")
             check(f'{rotta}: renderizza senza errori', len(errs) == 0 and not vuota, str(errs[:2]))
 
         print('— VERSIONE IN IMPOSTAZIONI —')

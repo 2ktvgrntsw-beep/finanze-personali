@@ -9,7 +9,7 @@ import { iconaMacro } from '../core/icons.js';
 import { navigate, buildHash } from '../core/router.js';
 import { aggregaPerLivello, soloSpese } from '../services/movimentiService.js';
 import { categoriaHaSub } from '../services/categorieService.js';
-import { abilitaSwipePeriodo } from './shared.js';
+import { abilitaSwipeIndietro } from './shared.js';
 
 const movimentiPeriodo = (periodo, mese) => {
   if (periodo === 'anno') return state.movimenti.filter(m => m.data.startsWith(mese.slice(0, 4)));
@@ -58,10 +58,12 @@ export const renderDrill = async (root, params) => {
     return `<div class="cell"><div class="lbl">${lbl}</div><div class="val num ${pct <= 0 ? 'en' : 'sp'}">${pct > 0 ? '+' : ''}${pct}%</div><div class="delta num" style="color:var(--txt-2)">${diff > 0 ? '+' : '−'}${fmtEUR(Math.abs(diff))}</div></div>`;
   };
 
-  // percorso per il titolo
-  const percorso = cat ? `${macro} ›` : '';
-  const titolo = cat || macro;
-  document.getElementById('view-title').innerHTML = `${percorso ? `<span class="crumb">${escapeHtml(percorso)}</span>` : ''}${escapeHtml(titolo)}`;
+  // il nome del ramo vive DENTRO la card statistiche (header pulito col solo back)
+  document.getElementById('view-title').textContent = '';
+  const suDiLivello = () => {
+    if (cat) location.hash = buildHash('drill', { macro, periodo, mese });
+    else history.back();
+  };
 
   const maxTot = righe.length ? righe[0].totale : 1;
 
@@ -98,10 +100,16 @@ export const renderDrill = async (root, params) => {
           <div class="m">${labelPeriodo}</div>
           <button class="arr" id="d-next">›</button>
         </div>` : `<div class="month-nav" style="margin:4px 0"><div class="m">${labelPeriodo}</div></div>`}
-      <div class="triple" style="margin:6px 0 4px">
+      <div class="triple" style="flex-direction:column;padding:0;margin:6px 0 4px">
+        <div class="card-crumb" id="d-crumb">
+          <span class="cc-path">‹ ${cat ? escapeHtml(macro) : 'Spese'}</span>
+          <span class="cc-nome">${escapeHtml(cat || macro)}</span>
+        </div>
+        <div style="display:flex;width:100%">
         <div class="cell"><div class="lbl">Spese</div><div class="val sp num">${fmtEUR(totRamo)}</div></div>
         ${deltaCell(media, 'vs media')}
         ${deltaCell(valPrec, periodo === 'anno' ? 'vs anno prec.' : 'vs mese prec.')}
+        </div>
       </div>
     </div>
     <div class="section-lbl"><span>${cat ? 'Sottocategorie di ' + escapeHtml(cat) : 'Categorie di ' + escapeHtml(macro)}</span></div>
@@ -121,8 +129,9 @@ export const renderDrill = async (root, params) => {
   const dp = root.querySelector('#d-prev'), dn = root.querySelector('#d-next');
   if (dp) dp.addEventListener('click', () => sposta(-1));
   if (dn) dn.addEventListener('click', () => sposta(1));
-  // swipe sul contenuto: sinistra = periodo successivo, destra = precedente
-  if (periodo !== 'settimana') abilitaSwipePeriodo(root, () => sposta(-1), () => sposta(1));
+  // percorso nella card: TAP per risalire; SWIPE destro fa lo stesso
+  root.querySelector('#d-crumb').addEventListener('click', suDiLivello);
+  abilitaSwipeIndietro(root, suDiLivello);
 
   // navigazione via data-href
   root.querySelectorAll('[data-href]').forEach(el => el.addEventListener('click', (e) => {

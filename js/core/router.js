@@ -56,16 +56,31 @@ const _updateChrome = (name) => {
   document.querySelectorAll('.bottom-nav a').forEach(a =>
     a.classList.toggle('active', a.dataset.route === name));
   const back = document.getElementById('btn-back');
-  if (back) back.style.display = ROTTE_PRINCIPALI.includes(name) ? 'none' : 'flex';
+  if (back) back.style.display = (ROTTE_PRINCIPALI.includes(name) || name === 'inserimento' || name === 'modifica') ? 'none' : 'flex';
   // HEADER COMPATTO: nelle pagine principali il titolo è ridondante (c'è il tab
   // evidenziato sotto) e sparisce; resta nelle sottopagine come breadcrumb.
   // La lente vive solo nei Movimenti. Il selettore periodo (head-seg) vive
   // nell'header in Spese e Movimenti; il + si sposta a destra nelle sottopagine.
   const titolo = document.getElementById('view-title');
   if (titolo) titolo.style.display = ROTTE_PRINCIPALI.includes(name) ? 'none' : 'block';
-  // lente sempre a sinistra nelle pagine principali; nelle sottopagine lascia il posto al back
+  // lente: VISIBILE solo nei Movimenti; nelle altre principali resta invisibile ma
+  // occupa il suo spazio (il selettore centrale rimane perfettamente centrato).
   const lente = document.getElementById('btn-search');
-  if (lente) lente.style.display = ROTTE_PRINCIPALI.includes(name) ? 'flex' : 'none';
+  if (lente) {
+    if (ROTTE_PRINCIPALI.includes(name)) {
+      lente.style.display = 'flex';
+      lente.style.visibility = name === 'movimenti' ? 'visible' : 'hidden';
+      lente.style.pointerEvents = name === 'movimenti' ? 'auto' : 'none';
+    } else {
+      lente.style.display = 'none';
+    }
+  }
+  // pagina inserimento/modifica: niente + né freccia — solo il tasto Annulla
+  const isInserimento = name === 'inserimento' || name === 'modifica';
+  const addBtn = document.getElementById('btn-add');
+  if (addBtn) addBtn.style.display = isInserimento ? 'none' : 'flex';
+  const annulla = document.getElementById('btn-annulla');
+  if (annulla) annulla.style.display = isInserimento ? 'flex' : 'none';
   const seg = document.getElementById('head-seg');
   if (seg) {
     const usaSeg = name === 'spese' || name === 'movimenti' || name === 'analisi';
