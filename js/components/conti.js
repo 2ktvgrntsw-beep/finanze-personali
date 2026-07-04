@@ -12,7 +12,8 @@ export const renderConti = async (root, params = {}) => {
   const tipi = params.tipo ? [params.tipo] : TIPI_CONTO;
   let html = '';
   for (const tipo of tipi) {
-    const conti = state.conti.filter(c => c.attivo !== false && c.tipo === tipo);
+    const conti = state.conti.filter(c => c.attivo !== false && c.tipo === tipo)
+      .sort((a, b) => (a.ordine ?? 999) - (b.ordine ?? 999));
     if (!conti.length) continue;
     const tot = conti.reduce((s, c) => s + saldoStimato(c), 0);
     html += `<div class="section-lbl"><span>${LABEL_TIPO[tipo]}</span><span class="num">${fmtEUR(tot)}</span></div>`;

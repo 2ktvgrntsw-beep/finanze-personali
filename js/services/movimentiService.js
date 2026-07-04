@@ -192,21 +192,42 @@ export const investitoPerMese = () => {
 };
 
 // --- Ricerca full-text con totale aggregato ---
-export const cercaMovimenti = (query) => {
-  const q = query.trim().toLowerCase();
-  if (!q) return { risultati: [], totale: 0, count: 0 };
-  const num = parseFloat(q.replace(',', '.'));
+// Ricerca potenziata: testo libero + FILTRI (tipo, macro, conto, intervallo date,
+// intervallo importi). Ritorna totali SEPARATI per tipo, così la somma è sempre
+// leggibile anche con risultati misti (spese+entrate insieme confondevano).
+// Il confronto testuale IGNORA GLI ACCENTI: "caffe" trova "Caffè".
+const _norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+export const cercaMovimenti = (query, filtri = {}) => {
+  const q = _norm((query || '').trim());
+  const haFiltri = filtri.tipo || filtri.macro || filtri.conto || filtri.da || filtri.a || filtri.min != null || filtri.max != null;
+  if (!q && !haFiltri) return { risultati: [], totali: { spese: 0, entrate: 0, trasf: 0 }, count: 0 };
+  const num = q ? parseFloat(q.replace(',', '.')) : NaN;
+
   const risultati = state.movimenti.filter(m => {
-    if (m.desc && m.desc.toLowerCase().includes(q)) return true;
-    if (m.macro && m.macro.toLowerCase().includes(q)) return true;
-    if (m.cat && m.cat.toLowerCase().includes(q)) return true;
-    if (m.sub && m.sub.toLowerCase().includes(q)) return true;
-    if (m.conto && m.conto.toLowerCase().includes(q)) return true;
-    if (m.tag && m.tag.some(t => t.toLowerCase().includes(q))) return true;
+    // filtri strutturati (tutti in AND)
+    if (filtri.tipo && m.tipo !== filtri.tipo) return false;
+    if (filtri.macro && m.macro !== filtri.macro) return false;
+    if (filtri.conto && m.conto !== filtri.conto) return false;
+    if (filtri.da && m.data < filtri.da) return false;
+    if (filtri.a && m.data > filtri.a) return false;
+    if (filtri.min != null && m.imp < filtri.min) return false;
+    if (filtri.max != null && m.imp > filtri.max) return false;
+    // testo libero (se presente), senza accenti
+    if (!q) return true;
+    if (m.desc && _norm(m.desc).includes(q)) return true;
+    if (m.macro && _norm(m.macro).includes(q)) return true;
+    if (m.cat && _norm(m.cat).includes(q)) return true;
+    if (m.sub && _norm(m.sub).includes(q)) return true;
+    if (m.conto && _norm(m.conto).includes(q)) return true;
+    if (m.tag && m.tag.some(t => _norm(t).includes(q))) return true;
     if (!isNaN(num) && Math.abs(m.imp - num) < 0.005) return true;
     return false;
   }).sort((a, b) => b.data.localeCompare(a.data));
 
-  const totale = round2(risultati.filter(m => m.tipo === 'spesa').reduce((s, m) => s + m.imp, 0));
-  return { risultati, totale, count: risultati.length };
+  const totali = {
+    spese: round2(risultati.filter(m => m.tipo === 'spesa').reduce((s, m) => s + m.imp, 0)),
+    entrate: round2(risultati.filter(m => m.tipo === 'entrata').reduce((s, m) => s + m.imp, 0)),
+    trasf: round2(risultati.filter(m => m.tipo === 'trasferimento').reduce((s, m) => s + m.imp, 0)),
+  };
+  return { risultati, totali, count: risultati.length };
 };

@@ -470,3 +470,25 @@ button,.hbtn,.numpad button,.seg button,.mov,.catrow,.chip,.frow .fval,.type-swi
 /* breadcrumb nel titolo dell'header (drill analisi) */
 .app-header .title .crumb{display:block;font-size:10px;color:var(--txt-3);font-weight:600;letter-spacing:.03em;line-height:1.1}
 .app-header .title{line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:52vw}
+
+/* ricerca potenziata: bottone filtri e pannello */
+.searchbar{position:relative}
+.filtri-btn{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:var(--surface-3);border:0;color:var(--txt-2);font-size:11.5px;padding:6px 10px;border-radius:9px;cursor:pointer}
+.filtri-btn.on{background:var(--accent);color:#fff}
+.searchbar input{padding-right:84px}
+.filtri-card{margin:8px 0;padding:12px 14px}
+.filtri-riga{margin-bottom:10px}
+.filtri-2col{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.filtri-card .sheet-input{margin-bottom:0}
+
+/* card ricorrenti: etichette allineate anche se una va su due righe */
+.ric-tot .lbl{min-height:28px;display:flex;align-items:flex-end;justify-content:flex-start}
+
+/* riordino conti col drag */
+.rio-riga{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:8px}
+.rio-riga .ic{font-size:20px}
+.rio-riga .body{flex:1}
+.rio-riga .d1{font-size:14.5px;font-weight:600}
+.rio-riga .d2{font-size:11.5px;color:var(--txt-3)}
+.rio-handle{font-size:20px;color:var(--txt-3);padding:6px 10px;cursor:grab;touch-action:none;user-select:none}
+.rio-riga.dragging{opacity:.6;border-color:var(--accent);background:var(--surface-2)}

@@ -50,7 +50,15 @@ export const suggerisciPerTesto = (testo, limite = 5) => {
 // --- Suggerimento tag (auto-completamento) ---
 export const suggerisciTag = (testo, limite = 8) => {
   const q = (testo || '').trim().toLowerCase();
-  const nomi = state.tag.map(t => t.nome);
+  // unione: anagrafica tag + tag REALMENTE USATI nei movimenti (ordinati per frequenza).
+  // Prima pescava solo dall'anagrafica (popolata solo dall'inserimento massivo):
+  // i tag inseriti a mano nei movimenti non venivano mai suggeriti.
+  const freq = {};
+  for (const t of state.tag) freq[t.nome] = (freq[t.nome] || 0) + 1;
+  for (const m of state.movimenti) {
+    if (Array.isArray(m.tag)) for (const t of m.tag) if (t) freq[t] = (freq[t] || 0) + 1;
+  }
+  const nomi = Object.keys(freq).sort((a, b) => freq[b] - freq[a]);
   if (!q) return nomi.slice(0, limite);
   return nomi.filter(n => n.toLowerCase().includes(q)).slice(0, limite);
 };

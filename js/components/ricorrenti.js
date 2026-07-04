@@ -69,12 +69,12 @@ export const renderRicorrenti = async (root) => {
   root.innerHTML = `
     <div class="rec-hero" style="display:flex;gap:0;padding:0;overflow:hidden">
       <div style="flex:1;padding:20px 16px;border-right:1px solid rgba(255,255,255,.08)">
-        <div class="lbl" style="color:var(--txt-2);font-size:11px;text-transform:uppercase;letter-spacing:.05em">Spese questo mese</div>
+        <div class="lbl" style="color:var(--txt-2);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;min-height:26px;display:flex;align-items:flex-end">Spese questo mese</div>
         <div class="num" style="font-size:24px;font-weight:850;margin-top:4px;color:var(--down)">${fmtEUR(totSpese)}</div>
         <div class="sub" style="font-size:11.5px;color:var(--txt-2);margin-top:2px">${spese.length} ricorrenze</div>
       </div>
       <div style="flex:1;padding:20px 16px">
-        <div class="lbl" style="color:var(--txt-2);font-size:11px;text-transform:uppercase;letter-spacing:.05em">Accantonato questo mese</div>
+        <div class="lbl" style="color:var(--txt-2);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;min-height:26px;display:flex;align-items:flex-end">Accantonato questo mese</div>
         <div class="num" style="font-size:24px;font-weight:850;margin-top:4px;color:var(--transfer)">${fmtEUR(totTrasf)}</div>
         <div class="sub" style="font-size:11.5px;color:var(--txt-2);margin-top:2px">${trasf.length} trasferimenti</div>
       </div>
@@ -114,93 +114,10 @@ const _modificaRic = (root, id) => {
     return;
   }
 
-  // ── Ricorrenza normale: maschera completa ──
-  const conti = state.conti.filter(c => c.attivo !== false).map(c => c.nome);
-  const tmp = { macro: r.macro || '', cat: r.cat || '', sub: r.sub || '', fineData: r.fineData || '' };
-  const fmtD = (iso) => iso ? iso.split('-').reverse().join('/') : 'Scegli data';
-
-  apriSheet('Modifica ricorrenza', `
-    <label class="meta">Nome</label>
-    <input id="mr-nome" value="${escapeHtml(r.nome || '')}" class="sheet-input">
-    <label class="meta">Importo (€)</label>
-    <input type="text" inputmode="decimal" id="mr-imp" value="${String(r.imp).replace('.', ',')}" class="sheet-input">
-    ${r.modalita === 'soglia' ? `<label class="meta">Soglia (€)</label><input type="text" inputmode="decimal" id="mr-soglia" value="${String(r.soglia || 0).replace('.', ',')}" class="sheet-input">` : ''}
-    <label class="meta">Frequenza</label>
-    <select id="mr-freq" class="sheet-input">
-      ${Object.entries(FREQ_LABEL).map(([k, v]) => `<option value="${k}" ${r.frequenza === k ? 'selected' : ''}>${v}</option>`).join('')}
-    </select>
-    <label class="meta">Categoria</label>
-    <button type="button" id="mr-cat" class="sheet-input" style="text-align:left;cursor:pointer">${[tmp.macro, tmp.cat, tmp.sub].filter(Boolean).join(' › ') || 'Scegli categoria'}</button>
-    <label class="meta">Conto</label>
-    <select id="mr-conto" class="sheet-input">
-      <option value="">—</option>
-      ${conti.map(c => `<option ${c === r.conto ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
-    </select>
-    <label class="meta">Descrizione dei movimenti generati</label>
-    <input id="mr-desc" value="${escapeHtml(r.desc || '')}" class="sheet-input">
-    <label class="meta">Fine</label>
-    <select id="mr-fine" class="sheet-input">
-      <option value="mai" ${!r.fineTipo || r.fineTipo === 'mai' ? 'selected' : ''}>Mai (finché non la fermi)</option>
-      <option value="data" ${r.fineTipo === 'data' ? 'selected' : ''}>A una data</option>
-      <option value="conteggio" ${r.fineTipo === 'conteggio' ? 'selected' : ''}>Dopo N volte</option>
-    </select>
-    <div id="mr-fine-data" style="display:${r.fineTipo === 'data' ? 'block' : 'none'}">
-      <button type="button" id="mr-fine-data-btn" class="sheet-input" style="text-align:left;cursor:pointer">${fmtD(tmp.fineData)}</button>
-    </div>
-    <div id="mr-fine-cont" style="display:${r.fineTipo === 'conteggio' ? 'block' : 'none'}">
-      <input type="text" inputmode="numeric" id="mr-fine-n" value="${r.fineConteggio || ''}" placeholder="Numero totale di volte" class="sheet-input">
-    </div>
-    <label class="meta" style="margin-top:6px">Applica la modifica a</label>
-    <select id="mr-ambito" class="sheet-input">
-      <option value="questa">Solo da ora in poi</option>
-      <option value="tutte">Anche ai movimenti passati (stessa descrizione)</option>
-    </select>
-    <div class="btn-row">
-      <button class="btn btn-danger" id="mr-del">Elimina</button>
-      <button class="btn btn-primary" id="mr-ok">Salva</button>
-    </div>
-    <button class="btn btn-ghost" id="mr-toggle" style="margin-top:10px">${r.attiva === false ? '▶ Riattiva' : '⏸ Metti in pausa'}</button>
-  `, (body, chiudi) => {
-    body.querySelector('#mr-cat').addEventListener('click', () => apriSelettoreCategoria(sel => {
-      tmp.macro = sel.macro; tmp.cat = sel.cat; tmp.sub = sel.sub;
-      body.querySelector('#mr-cat').textContent = [sel.macro, sel.cat, sel.sub].filter(Boolean).join(' › ');
-    }));
-    body.querySelector('#mr-fine').addEventListener('change', (e) => {
-      body.querySelector('#mr-fine-data').style.display = e.target.value === 'data' ? 'block' : 'none';
-      body.querySelector('#mr-fine-cont').style.display = e.target.value === 'conteggio' ? 'block' : 'none';
-    });
-    const fdBtn = body.querySelector('#mr-fine-data-btn');
-    fdBtn.addEventListener('click', () => apriDataNativa(tmp.fineData || todayISO(), (nd) => { tmp.fineData = nd; fdBtn.textContent = fmtD(nd); }));
-
-    body.querySelector('#mr-ok').addEventListener('click', async () => {
-      const num = (sel) => round2(parseFloat(String(body.querySelector(sel).value).replace(',', '.')) || 0);
-      const nuovoImp = num('#mr-imp');
-      if (nuovoImp <= 0) { toast('Inserisci un importo valido'); return; }
-      const fineTipo = body.querySelector('#mr-fine').value;
-      const patch = {
-        ...r,
-        nome: body.querySelector('#mr-nome').value.trim() || r.nome,
-        imp: nuovoImp,
-        soglia: body.querySelector('#mr-soglia') ? num('#mr-soglia') : r.soglia,
-        frequenza: body.querySelector('#mr-freq').value,
-        macro: tmp.macro, cat: tmp.cat, sub: tmp.sub,
-        conto: body.querySelector('#mr-conto').value,
-        desc: body.querySelector('#mr-desc').value.trim(),
-        fineTipo,
-        fineData: fineTipo === 'data' ? tmp.fineData : null,
-        fineConteggio: fineTipo === 'conteggio' ? (parseInt(body.querySelector('#mr-fine-n').value) || null) : null,
-      };
-      await saveRicorrente(patch);
-      if (body.querySelector('#mr-ambito').value === 'tutte') {
-        const n = await applicaModificaAmbito(r, { imp: nuovoImp, macro: tmp.macro, cat: tmp.cat, sub: tmp.sub, desc: patch.desc }, 'tutte');
-        toast(`Aggiornata + ${n} movimenti passati`);
-      } else toast('Aggiornata (da ora in poi)');
-      chiudi(); renderRicorrenti(root);
-    });
-    body.querySelector('#mr-del').addEventListener('click', async () => { if (confirm('Eliminare la ricorrenza? I movimenti già generati restano.')) { await deleteRicorrente(id); chiudi(); toast('Eliminata'); renderRicorrenti(root); } });
-    body.querySelector('#mr-toggle').addEventListener('click', async () => { await saveRicorrente({ ...r, attiva: r.attiva === false }); chiudi(); renderRicorrenti(root); });
-  });
+  // ── Ricorrenza normale: STESSA UI dell'inserimento (coerenza visiva) ──
+  navigate('modifica', { ric: id });
 };
+
 
 const _nuovaRicorrenza = (root) => {
   const conti = state.conti.filter(c => c.attivo !== false).map(c => c.nome);

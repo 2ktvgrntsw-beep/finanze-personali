@@ -28,11 +28,6 @@ export const renderPatrimonio = async (root) => {
   const netto = patrimonioNetto();
   const att = totaleAttivita();
   const pass = totalePassivita();
-  // accantonato questo mese: trasferimenti reali del mese corrente
-  const meseCorr = new Date().toISOString().slice(0, 7);
-  const accMese = state.movimenti
-    .filter(m => m.tipo === 'trasferimento' && (m.annomese || m.data.slice(0, 7)) === meseCorr)
-    .reduce((s, m) => s + m.imp, 0);
 
   // conti per lo strip orizzontale
   const contiAttivi = state.conti.filter(c => c.attivo !== false);
@@ -54,7 +49,6 @@ export const renderPatrimonio = async (root) => {
     <div class="net-card">
       <div class="lbl">Patrimonio netto</div>
       <div class="big num">${fmtEUR(netto)}</div>
-      <div class="delta" style="color:var(--transfer)">💠 Accantonato questo mese: ${fmtEUR(accMese)}</div>
       <div class="sub">
         <div><span class="lbl2">Attività</span><b class="num">${fmtEUR(att)}</b></div>
         <div><span class="lbl2">Passività</span><b class="neg num">${pass > 0 ? '−' : ''}${fmtEUR(pass)}</b></div>
@@ -122,42 +116,63 @@ export const renderPatrimonio = async (root) => {
   });
 };
 
-// Riordino conti: sheet con frecce su/giù per ogni conto (salva il campo 'ordine')
+// Riordino conti col TRASCINAMENTO: tieni premuto sul ≡ e sposta la riga.
+// Al rilascio la riga si sistema; "Fatto" salva l'ordine reale delle righe.
 const _riordinaConti = (root) => {
   const conti = state.conti.filter(c => c.attivo !== false)
     .slice().sort((a, b) => (a.ordine ?? 999) - (b.ordine ?? 999));
-  let lista = conti.map(c => c.id);
 
-  const render = (body, chiudi) => {
-    const byId = (id) => state.conti.find(c => c.id === id);
+  apriSheet('Riordina conti', '', (body, chiudi) => {
     body.innerHTML = `
-      <p class="meta" style="margin-bottom:12px">Usa le frecce per cambiare l'ordine dei conti.</p>
-      <div>${lista.map((id, i) => {
-        const c = byId(id);
-        return `<div class="mov" style="cursor:default"><div class="ic">${ICONA_TIPO_ATT[c.tipo] || '💳'}</div>
+      <p class="meta" style="margin-bottom:12px">Tieni premuto su ≡ e trascina per riordinare.</p>
+      <div id="rio-lista">${conti.map(c => `
+        <div class="rio-riga" data-id="${c.id}">
+          <div class="ic">${ICONA_TIPO_ATT[c.tipo] || '💳'}</div>
           <div class="body"><div class="d1">${escapeHtml(c.nome)}</div><div class="d2">${LABEL_TIPO[c.tipo] || c.tipo}</div></div>
-          <div style="display:flex;gap:4px">
-            <button class="hbtn" data-up="${i}" ${i === 0 ? 'disabled' : ''} style="width:32px;height:32px">↑</button>
-            <button class="hbtn" data-down="${i}" ${i === lista.length - 1 ? 'disabled' : ''} style="width:32px;height:32px">↓</button>
-          </div></div>`;
-      }).join('')}</div>
-      <button class="btn btn-primary" id="rio-ok" style="margin-top:16px">Salva ordine</button>`;
+          <div class="rio-handle">≡</div>
+        </div>`).join('')}</div>
+      <button class="btn btn-primary" id="rio-ok" style="margin-top:16px">Fatto</button>`;
 
-    body.querySelectorAll('[data-up]').forEach(b => b.addEventListener('click', () => {
-      const i = parseInt(b.dataset.up); [lista[i - 1], lista[i]] = [lista[i], lista[i - 1]]; render(body, chiudi);
-    }));
-    body.querySelectorAll('[data-down]').forEach(b => b.addEventListener('click', () => {
-      const i = parseInt(b.dataset.down); [lista[i + 1], lista[i]] = [lista[i], lista[i + 1]]; render(body, chiudi);
-    }));
+    const lista = body.querySelector('#rio-lista');
+    let dragging = null;
+
+    lista.querySelectorAll('.rio-handle').forEach(h => {
+      h.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        dragging = h.closest('.rio-riga');
+        dragging.classList.add('dragging');
+        h.setPointerCapture(e.pointerId);
+      });
+      h.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        e.preventDefault();
+        // trova la riga sotto il dito e sposta la riga trascinata prima/dopo
+        const righe = [...lista.querySelectorAll('.rio-riga:not(.dragging)')];
+        const sotto = righe.find(r => {
+          const b = r.getBoundingClientRect();
+          return e.clientY >= b.top && e.clientY <= b.bottom;
+        });
+        if (sotto) {
+          const b = sotto.getBoundingClientRect();
+          if (e.clientY < b.top + b.height / 2) lista.insertBefore(dragging, sotto);
+          else lista.insertBefore(dragging, sotto.nextSibling);
+        }
+      });
+      const fine = () => { if (dragging) { dragging.classList.remove('dragging'); dragging = null; } };
+      h.addEventListener('pointerup', fine);
+      h.addEventListener('pointercancel', fine);
+    });
+
     body.querySelector('#rio-ok').addEventListener('click', async () => {
-      for (let i = 0; i < lista.length; i++) {
-        const c = state.conti.find(x => x.id === lista[i]);
+      // l'ordine è quello REALE delle righe nel DOM al momento del tocco
+      const ids = [...lista.querySelectorAll('.rio-riga')].map(el => el.dataset.id);
+      for (let i = 0; i < ids.length; i++) {
+        const c = state.conti.find(x => x.id === ids[i]);
         if (c) await saveConto({ ...c, ordine: i });
       }
       chiudi(); toast('Ordine salvato'); renderPatrimonio(root);
     });
-  };
-  apriSheet('Riordina conti', '', render);
+  });
 };
 
 // Bottom sheet per modificare un conto (saldo/valore) — sostituisce l'icona matita

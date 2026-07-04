@@ -62,29 +62,27 @@ const costruisciChrome = () => {
   // · lente (solo Movimenti) · ⚙️ a destra. Nelle sottopagine: [‹][titolo]…[+][⚙️].
   const header = document.getElementById('app-header');
   header.innerHTML = `
-    <button class="hbtn back" id="btn-back" style="display:none;order:1">‹</button>
-    <button class="hbtn add" id="btn-add" title="Aggiungi" style="order:2">+</button>
-    <div class="title" id="view-title" style="order:3">Spese</div>
-    <div id="head-seg" style="order:4;flex:1;display:flex;justify-content:center"></div>
-    <div id="head-spacer" style="flex:1;display:none;order:5"></div>
-    <button class="hbtn" id="btn-search" title="Cerca" style="order:6">
+    <button class="hbtn" id="btn-search" title="Cerca" style="order:1">
       <svg viewBox="0 0 24 24" style="width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
     </button>
-    <button class="hbtn" id="btn-settings" title="Impostazioni" style="order:9">
-      <svg viewBox="0 0 24 24" style="width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-    </button>
+    <button class="hbtn back" id="btn-back" style="display:none;order:1">‹</button>
+    <div class="title" id="view-title" style="order:2">Spese</div>
+    <div id="head-spacer" style="flex:1;display:none;order:3"></div>
+    <div id="head-seg" style="order:4;flex:1;display:flex;justify-content:center"></div>
+    <div id="head-spacer2" style="flex:0;order:5"></div>
+    <button class="hbtn add" id="btn-add" title="Aggiungi" style="order:9">+</button>
   `;
 
   document.getElementById('btn-back').addEventListener('click', () => history.back());
   document.getElementById('btn-add').addEventListener('click', () => navigate('nuovo'));
   document.getElementById('btn-search').addEventListener('click', () => navigate('ricerca'));
-  document.getElementById('btn-settings').addEventListener('click', () => navigate('impostazioni'));
+
 
   // Bottom nav (5 icone uniformi)
   const nav = document.getElementById('bottom-nav');
   const voci = [
     ['spese', 'Spese'], ['movimenti', 'Movimenti'], ['patrimonio', 'Patrimonio'],
-    ['ricorrenti', 'Ricorrenti'], ['analisi', 'Analisi'],
+    ['ricorrenti', 'Ricorrenti'], ['analisi', 'Analisi'], ['impostazioni', 'Altro'],
   ];
   nav.innerHTML = voci.map(([r, label]) =>
     `<a data-route="${r}"><span class="ni">${NAV_SVG[r]}</span>${label}</a>`).join('');

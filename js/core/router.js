@@ -51,7 +51,7 @@ export const renderCurrent = async () => {
 };
 
 // Aggiorna barra di navigazione attiva e visibilità del tasto indietro
-const ROTTE_PRINCIPALI = ['spese', 'movimenti', 'patrimonio', 'ricorrenti', 'analisi'];
+const ROTTE_PRINCIPALI = ['spese', 'movimenti', 'patrimonio', 'ricorrenti', 'analisi', 'impostazioni'];
 const _updateChrome = (name) => {
   document.querySelectorAll('.bottom-nav a').forEach(a =>
     a.classList.toggle('active', a.dataset.route === name));
@@ -63,16 +63,17 @@ const _updateChrome = (name) => {
   // nell'header in Spese e Movimenti; il + si sposta a destra nelle sottopagine.
   const titolo = document.getElementById('view-title');
   if (titolo) titolo.style.display = ROTTE_PRINCIPALI.includes(name) ? 'none' : 'block';
+  // lente sempre a sinistra nelle pagine principali; nelle sottopagine lascia il posto al back
   const lente = document.getElementById('btn-search');
-  if (lente) lente.style.display = (name === 'movimenti' || name === 'ricerca') ? 'flex' : 'none';
+  if (lente) lente.style.display = ROTTE_PRINCIPALI.includes(name) ? 'flex' : 'none';
   const seg = document.getElementById('head-seg');
   if (seg) {
-    const usaSeg = name === 'spese' || name === 'movimenti';
+    const usaSeg = name === 'spese' || name === 'movimenti' || name === 'analisi';
     seg.style.display = usaSeg ? 'flex' : 'none';
     if (!usaSeg) seg.innerHTML = '';
   }
   const spacer = document.getElementById('head-spacer');
-  if (spacer) spacer.style.display = (ROTTE_PRINCIPALI.includes(name) && name !== 'spese' && name !== 'movimenti') ? 'block' : 'none';
+  if (spacer) spacer.style.display = (ROTTE_PRINCIPALI.includes(name) && !['spese', 'movimenti', 'analisi'].includes(name)) ? 'block' : 'none';
   const headerEl = document.getElementById('app-header');
   if (headerEl) headerEl.classList.toggle('sub', !ROTTE_PRINCIPALI.includes(name));
 };

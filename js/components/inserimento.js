@@ -21,7 +21,27 @@ const nuovaBozza = () => ({
 });
 
 export const renderInserimento = async (root, params = {}) => {
-  if (params.id) {
+  if (params.ric) {
+    // MODIFICA RICORRENZA nella stessa UI dell'inserimento (coerenza visiva):
+    // precompila tutto dalla ricorrenza; al salvataggio aggiorna la ricorrenza
+    // (nessun nuovo movimento viene creato).
+    const r = state.ricorrenti.find(x => x.id === params.ric);
+    if (r) {
+      d = {
+        ...nuovaBozza(),
+        ricEdit: r.id,
+        tipo: r.tipo || 'spesa', imp: r.imp, impStr: String(r.imp).replace('.', ','),
+        macro: r.macro || '', cat: r.cat || '', sub: r.sub || '',
+        conto: r.conto || '', contoDest: r.contoDest || '',
+        desc: r.desc || r.nome || '', tag: Array.isArray(r.tag) ? r.tag : [],
+        data: r.prossima || todayISO(),
+        ripeti: {
+          frequenza: r.frequenza, dataInizio: r.dataInizio || r.prossima,
+          fineTipo: r.fineTipo || 'mai', fineData: r.fineData || null, fineConteggio: r.fineConteggio || null,
+        },
+      };
+    } else d = nuovaBozza();
+  } else if (params.id) {
     const m = state.movimenti.find(x => x.id === params.id);
     d = m ? { ...nuovaBozza(), ...m, impStr: String(m.imp).replace('.', ','), id: m.id } : nuovaBozza();
   } else {
@@ -29,7 +49,7 @@ export const renderInserimento = async (root, params = {}) => {
     const liq = state.conti.find(c => c.tipo === 'liquidita');
     if (liq) d.conto = liq.nome;
   }
-  document.getElementById('view-title').textContent = params.id ? 'Modifica' : 'Nuova operazione';
+  document.getElementById('view-title').textContent = d.ricEdit ? 'Modifica ricorrenza' : params.id ? 'Modifica' : 'Nuova operazione';
   _render(root);
 };
 
@@ -68,7 +88,7 @@ const _render = (root) => {
     </div>
 
     <div class="ins-actions">
-      ${d.id ? '<button class="btn btn-danger" id="del-mov">Elimina</button>' : ''}
+      ${d.id ? '<button class="btn btn-danger" id="del-mov">Elimina</button>' : ''}${d.ricEdit ? '<button class="btn btn-danger" id="del-ric">Elimina ricorrenza</button>' : ''}
       <button class="btn btn-primary" id="salva">${d.id ? 'Salva modifiche' : 'Salva'}</button>
     </div>
 
@@ -116,6 +136,13 @@ const _render = (root) => {
 
   // salva / elimina
   root.querySelector('#salva').addEventListener('click', () => _salva());
+  const dr = root.querySelector('#del-ric');
+  if (dr) dr.addEventListener('click', async () => {
+    if (confirm('Eliminare la ricorrenza? I movimenti già generati restano.')) {
+      const { deleteRicorrente } = await import('../services/ricorrentiService.js');
+      await deleteRicorrente(d.ricEdit); toast('Eliminata'); d = null; navigate('ricorrenti');
+    }
+  });
   const dm = root.querySelector('#del-mov');
   if (dm) dm.addEventListener('click', async () => { if (confirm('Eliminare?')) { await deleteMovimento(d.id); toast('Eliminato'); navigate('movimenti'); } });
 };
@@ -206,8 +233,19 @@ const _pickTag = (root) => {
       <button class="btn btn-primary" id="tag-ok" style="margin-top:16px">Fatto</button>`;
     const inp = body.querySelector('#tag-inp');
     inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && inp.value.trim()) { d.tag = Array.from(new Set([...d.tag, inp.value.trim()])); inp.value = ''; render(body, chiudi); } });
+    // filtro live dei suggerimenti mentre scrivi
+    inp.addEventListener('input', () => {
+      const filtrati = suggerisciTag(inp.value, 20);
+      body.querySelector('#tag-chips').innerHTML = filtrati.map(t => `<div class="chip ${d.tag.includes(t) ? 'on' : ''}" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</div>`).join('');
+      body.querySelectorAll('[data-tag]').forEach(el => el.addEventListener('click', () => { const t = el.dataset.tag; d.tag = d.tag.includes(t) ? d.tag.filter(x => x !== t) : [...d.tag, t]; render(body, chiudi); }));
+    });
     body.querySelectorAll('[data-tag]').forEach(el => el.addEventListener('click', () => { const t = el.dataset.tag; d.tag = d.tag.includes(t) ? d.tag.filter(x => x !== t) : [...d.tag, t]; render(body, chiudi); }));
-    body.querySelector('#tag-ok').addEventListener('click', () => { chiudi(); _render(root); });
+    // "Fatto" raccoglie ANCHE il tag ancora scritto nell'input (senza Invio):
+    // prima si perdeva in silenzio — era il "tag non tenuto" segnalato.
+    body.querySelector('#tag-ok').addEventListener('click', () => {
+      if (inp.value.trim()) d.tag = Array.from(new Set([...d.tag, inp.value.trim()]));
+      chiudi(); _render(root);
+    });
   };
   apriSheet('Tag', '', render);
 };
@@ -241,6 +279,27 @@ const _salva = async () => {
   if (d.tipo === 'trasferimento' && (!d.conto || !d.contoDest)) { toast('Scegli i conti'); return; }
   if (d.tipo !== 'trasferimento' && !d.macro) { toast('Scegli una categoria'); return; }
 
+  // ── MODIFICA RICORRENZA: aggiorna solo la ricorrenza, nessun movimento nuovo ──
+  if (d.ricEdit) {
+    const r = state.ricorrenti.find(x => x.id === d.ricEdit);
+    if (r) {
+      await saveRicorrente({
+        ...r,
+        nome: d.desc || r.nome, tipo: d.tipo, imp: d.imp,
+        macro: d.macro, cat: d.cat, sub: d.sub,
+        conto: d.conto, contoDest: d.contoDest, tag: d.tag, desc: d.desc,
+        frequenza: d.ripeti ? d.ripeti.frequenza : r.frequenza,
+        fineTipo: d.ripeti ? d.ripeti.fineTipo : r.fineTipo,
+        fineData: d.ripeti ? d.ripeti.fineData : r.fineData,
+        fineConteggio: d.ripeti ? d.ripeti.fineConteggio : r.fineConteggio,
+      });
+    }
+    toast('Ricorrenza aggiornata');
+    d = null;
+    if (history.length > 1) history.back(); else navigate('ricorrenti');
+    return;
+  }
+
   const wasTrasf = d.tipo === 'trasferimento';
   const eraModifica = !!d.id;
   await saveMovimento({
@@ -271,7 +330,10 @@ const _salva = async () => {
   }
 
   d = null;
-  navigate(wasTrasf ? 'movimenti' : 'spese');
+  // se era una MODIFICA, torna da dove sei venuto (es. la ricerca coi risultati);
+  // se era un nuovo inserimento, vai alla pagina naturale.
+  if (eraModifica && history.length > 1) history.back();
+  else navigate(wasTrasf ? 'movimenti' : 'spese');
 };
 
 // Occorrenza successiva a una data, per frequenza (fine mese gestito: 31 gen -> 28 feb)

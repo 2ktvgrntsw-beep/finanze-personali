@@ -18,8 +18,8 @@ let _annoSel = String(new Date().getFullYear());
 let _cMacro = '', _cCat = '', _cSub = '', _cAnno = '';
 
 export const renderAnalisi = async (root, params = {}) => {
-  // Il drill di categoria viaggia nell'HASH: così il breadcrumb sta nell'header,
-  // il tasto ‹ usa la cronologia e lo swipe-back dal bordo di iOS funziona.
+  // Il drill di categoria viaggia nell'HASH: così il breadcrumb sta nell'header
+  // e lo swipe-back dal bordo di iOS funziona.
   _cMacro = params.macro || '';
   _cCat = params.cat || '';
   _cSub = params.sub || '';
@@ -30,15 +30,22 @@ export const renderAnalisi = async (root, params = {}) => {
     if (vt0) vt0.style.display = 'none';
     if (bb0) bb0.style.display = 'none';
   }
-  root.innerHTML = `
-    <div class="seg">
+  // tab Categoria/Anno/Tag NELL'HEADER (come Settimana/Mese/Anno nelle altre pagine)
+  const headSeg = document.getElementById('head-seg');
+  if (headSeg) {
+    headSeg.innerHTML = `<div class="seg">
       <button data-t="categoria" class="${_tab === 'categoria' ? 'on' : ''}">Categoria</button>
       <button data-t="anno" class="${_tab === 'anno' ? 'on' : ''}">Anno</button>
       <button data-t="tag" class="${_tab === 'tag' ? 'on' : ''}">Tag</button>
-    </div>
-    <div id="analisi-body"></div>
-  `;
-  root.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => { _tab = b.dataset.t; renderAnalisi(root); }));
+    </div>`;
+    headSeg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+      _tab = b.dataset.t;
+      // il cambio tab esce dall'eventuale drill (hash pulito)
+      if (_cMacro) { location.hash = buildHash('analisi', {}); return; }
+      renderAnalisi(root);
+    }));
+  }
+  root.innerHTML = `<div id="analisi-body"></div>`;
   const body = root.querySelector('#analisi-body');
   if (_tab === 'categoria') _renderCategoriaTempo(body, root);
   else if (_tab === 'anno') _renderAnno(body, root);
@@ -125,14 +132,21 @@ const _renderCategoriaTempo = (body, root) => {
   }
   const maxSotto = sottoVoci.length ? sottoVoci[0].tot : 1;
 
-  // breadcrumb NELL'HEADER dell'app (titolo + back), come chiesto: niente riga sprecata
+  // breadcrumb NELL'HEADER: niente freccia (come chiesto) — il TOCCO sul breadcrumb
+  // risale di un livello; lo swipe dal bordo iOS fa lo stesso via cronologia.
   const vt = document.getElementById('view-title');
   const bb = document.getElementById('btn-back');
+  if (bb) bb.style.display = 'none';
   if (vt) {
     vt.style.display = 'block';
-    vt.innerHTML = `${_cCat ? `<span class="crumb">${escapeHtml(_cMacro)}${_cSub ? ' › ' + escapeHtml(_cCat) : ''}</span>` : ''}${escapeHtml(_cSub || _cCat || _cMacro)}`;
+    vt.style.cursor = 'pointer';
+    vt.innerHTML = `${_cCat ? `<span class="crumb">‹ ${escapeHtml(_cMacro)}${_cSub ? ' › ' + escapeHtml(_cCat) : ''}</span>` : '<span class="crumb">‹ Analisi</span>'}${escapeHtml(_cSub || _cCat || _cMacro)}`;
+    vt.onclick = () => {
+      if (_cSub) location.hash = buildHash('analisi', { macro: _cMacro, cat: _cCat });
+      else if (_cCat) location.hash = buildHash('analisi', { macro: _cMacro });
+      else location.hash = buildHash('analisi', {});
+    };
   }
-  if (bb) bb.style.display = 'flex';
 
   body.innerHTML = `
     <div class="month-nav" style="margin:8px 0 4px">

@@ -12,16 +12,57 @@ import { toast } from '../core/utils.js';
 let _selezione = new Set();
 let _modoSelezione = false;
 let _ultimiRisultati = [];
+// STATO PERSISTENTE: query e filtri sopravvivono alla navigazione — tornando
+// dalla modifica di un movimento ritrovi la ricerca esattamente com'era.
+let _q = '';
+let _filtri = { tipo: '', macro: '', conto: '', da: '', a: '', min: '', max: '' };
+let _filtriAperti = false;
 
 export const renderRicerca = async (root, params = {}) => {
   document.getElementById('view-title').textContent = 'Cerca';
   _selezione = new Set();
   _modoSelezione = false;
+  if (params.q) _q = params.q;
+
+  const nFiltri = Object.values(_filtri).filter(v => v !== '').length;
+  const macros = [...new Set(state.movimenti.map(m => m.macro).filter(Boolean))].sort();
+  const conti = state.conti.filter(c => c.attivo !== false).map(c => c.nome);
 
   root.innerHTML = `
     <div class="searchbar">
       <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-      <input id="q" placeholder="Descrizione, importo, categoria, tag, conto..." value="${escapeHtml(params.q || '')}" autocomplete="off">
+      <input id="q" placeholder="Descrizione, importo, categoria, tag, conto..." value="${escapeHtml(_q)}" autocomplete="off">
+      <button id="toggle-filtri" class="filtri-btn ${nFiltri ? 'on' : ''}">Filtri${nFiltri ? ' · ' + nFiltri : ''}</button>
+    </div>
+    <div id="pannello-filtri" style="display:${_filtriAperti ? 'block' : 'none'}" class="card filtri-card">
+      <div class="filtri-riga">
+        <label class="meta">Tipo</label>
+        <div class="chip-row">
+          ${[['', 'Tutti'], ['spesa', 'Spese'], ['entrata', 'Entrate'], ['trasferimento', 'Accant.']].map(([v, l]) =>
+            `<div class="chip ${_filtri.tipo === v ? 'on' : ''}" data-ftipo="${v}">${l}</div>`).join('')}
+        </div>
+      </div>
+      <div class="filtri-riga filtri-2col">
+        <div><label class="meta">Categoria</label>
+          <select id="f-macro" class="sheet-input">
+            <option value="">Tutte</option>
+            ${macros.map(m => `<option ${_filtri.macro === m ? 'selected' : ''}>${escapeHtml(m)}</option>`).join('')}
+          </select></div>
+        <div><label class="meta">Conto</label>
+          <select id="f-conto" class="sheet-input">
+            <option value="">Tutti</option>
+            ${conti.map(c => `<option ${_filtri.conto === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+          </select></div>
+      </div>
+      <div class="filtri-riga filtri-2col">
+        <div><label class="meta">Dal</label><input type="date" id="f-da" value="${_filtri.da}" class="sheet-input"></div>
+        <div><label class="meta">Al</label><input type="date" id="f-a" value="${_filtri.a}" class="sheet-input"></div>
+      </div>
+      <div class="filtri-riga filtri-2col">
+        <div><label class="meta">Importo min €</label><input type="text" inputmode="decimal" id="f-min" value="${_filtri.min}" class="sheet-input" placeholder="—"></div>
+        <div><label class="meta">Importo max €</label><input type="text" inputmode="decimal" id="f-max" value="${_filtri.max}" class="sheet-input" placeholder="—"></div>
+      </div>
+      <button class="btn btn-ghost" id="f-reset" style="margin-top:6px;font-size:13px">Azzera filtri</button>
     </div>
     <div id="ris"></div>
   `;
@@ -29,11 +70,25 @@ export const renderRicerca = async (root, params = {}) => {
   const inp = root.querySelector('#q');
   const box = root.querySelector('#ris');
 
+  const filtriNumerici = () => ({
+    ..._filtri,
+    min: _filtri.min !== '' ? parseFloat(String(_filtri.min).replace(',', '.')) : null,
+    max: _filtri.max !== '' ? parseFloat(String(_filtri.max).replace(',', '.')) : null,
+  });
+
   const esegui = () => {
-    const { risultati, totale, count } = cercaMovimenti(inp.value);
+    _q = inp.value;
+    const { risultati, totali, count } = cercaMovimenti(_q, filtriNumerici());
     _ultimiRisultati = risultati;
-    if (!inp.value.trim()) { box.innerHTML = '<div class="empty">Scrivi qualcosa per cercare tra tutti i tuoi movimenti</div>'; return; }
+    const attivi = Object.values(_filtri).some(v => v !== '');
+    if (!_q.trim() && !attivi) { box.innerHTML = '<div class="empty">Scrivi qualcosa o apri i Filtri per cercare tra tutti i tuoi movimenti</div>'; return; }
     if (!count) { box.innerHTML = '<div class="empty"><div class="big-ic">🔍</div>Nessun risultato</div>'; return; }
+
+    // totali SEPARATI per tipo: la somma è sempre leggibile anche con risultati misti
+    const pezzi = [];
+    if (totali.spese > 0) pezzi.push(`<span class="sp num">−${fmtEUR(totali.spese)}</span> spese`);
+    if (totali.entrate > 0) pezzi.push(`<span class="en num">+${fmtEUR(totali.entrate)}</span> entrate`);
+    if (totali.trasf > 0) pezzi.push(`<span class="tr num">⇄ ${fmtEUR(totali.trasf)}</span> accantonati`);
 
     const toolbar = _modoSelezione ? `
       <div class="sel-toolbar">
@@ -43,7 +98,7 @@ export const renderRicerca = async (root, params = {}) => {
           <button class="sel-modifica" id="sel-modifica">Modifica</button>
         </div>
       </div>` : `
-      <div class="search-summary"><div class="n">${count} movimenti · totale spese</div><div class="big num">${fmtEUR(totale)}</div></div>
+      <div class="search-summary"><div class="n">${count} movimenti trovati</div><div style="font-size:14.5px;line-height:1.7">${pezzi.join(' · ') || '—'}</div></div>
       <div style="text-align:right;margin:8px 0"><button class="btn btn-secondary" id="attiva-sel" style="width:auto;display:inline-flex;padding:8px 14px;font-size:13px">Seleziona</button></div>`;
 
     box.innerHTML = toolbar + '<div>' + risultati.slice(0, 300).map(m => {
@@ -87,8 +142,32 @@ export const renderRicerca = async (root, params = {}) => {
   };
 
   inp.addEventListener('input', esegui);
+
+  // pannello filtri
+  root.querySelector('#toggle-filtri').addEventListener('click', () => {
+    _filtriAperti = !_filtriAperti;
+    root.querySelector('#pannello-filtri').style.display = _filtriAperti ? 'block' : 'none';
+  });
+  root.querySelectorAll('[data-ftipo]').forEach(el => el.addEventListener('click', () => {
+    _filtri.tipo = el.dataset.ftipo;
+    root.querySelectorAll('[data-ftipo]').forEach(x => x.classList.toggle('on', x.dataset.ftipo === _filtri.tipo));
+    esegui();
+  }));
+  const bindFiltro = (sel, campo) => {
+    const el = root.querySelector(sel);
+    if (el) el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => { _filtri[campo] = el.value; esegui(); });
+  };
+  bindFiltro('#f-macro', 'macro'); bindFiltro('#f-conto', 'conto');
+  bindFiltro('#f-da', 'da'); bindFiltro('#f-a', 'a');
+  bindFiltro('#f-min', 'min'); bindFiltro('#f-max', 'max');
+  root.querySelector('#f-reset').addEventListener('click', () => {
+    _filtri = { tipo: '', macro: '', conto: '', da: '', a: '', min: '', max: '' };
+    renderRicerca(root);
+  });
+
   esegui();
-  if (!params.q) setTimeout(() => inp.focus(), 100);
+  // il focus solo quando parti da zero: tornando dalla modifica NON ruba la vista dei risultati
+  if (!_q && !Object.values(_filtri).some(v => v !== '')) setTimeout(() => inp.focus(), 100);
 };
 
 // Sheet per scegliere QUALE campo modificare in blocco
