@@ -101,9 +101,10 @@ export const renderDrill = async (root, params) => {
           <button class="arr" id="d-next">›</button>
         </div>` : `<div class="month-nav" style="margin:4px 0"><div class="m">${labelPeriodo}</div></div>`}
       <div class="triple" style="flex-direction:column;padding:0;margin:6px 0 4px">
-        <div class="card-crumb" id="d-crumb">
-          <span class="cc-path">‹ ${cat ? escapeHtml(macro) : 'Spese'}</span>
+        <div class="card-crumb card-crumb-center" id="d-crumb">
+          ${cat ? '<span class="cc-up">‹</span>' : ''}
           <span class="cc-nome">${escapeHtml(cat || macro)}</span>
+          ${cat ? `<span class="cc-ctx">${escapeHtml(macro)}</span>` : ''}
         </div>
         <div style="display:flex;width:100%">
         <div class="cell"><div class="lbl">Spese</div><div class="val sp num">${fmtEUR(totRamo)}</div></div>

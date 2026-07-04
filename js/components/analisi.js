@@ -18,6 +18,8 @@ let _annoSel = String(new Date().getFullYear());
 // stato drill per la vista "categoria nel tempo"
 let _cMacro = '', _cCat = '', _cSub = '', _cAnno = '';
 let _tagSel = new Set();   // tag selezionati per l'analisi incrociata
+let _tagQuery = '';       // testo digitato nella barra tag
+const _norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
 export const renderAnalisi = async (root, params = {}) => {
   // Il drill di categoria viaggia nell'HASH: così il breadcrumb sta nell'header
@@ -154,9 +156,10 @@ const _renderCategoriaTempo = (body, root) => {
     </div>
 
     <div class="triple" style="flex-direction:column;padding:0">
-      <div class="card-crumb" id="card-crumb">
-        <span class="cc-path">‹ ${_cCat ? escapeHtml(_cMacro) + (_cSub ? ' › ' + escapeHtml(_cCat) : '') : 'Analisi'}</span>
+      <div class="card-crumb card-crumb-center" id="card-crumb">
+        ${_cCat || _cSub ? '<span class="cc-up">‹</span>' : ''}
         <span class="cc-nome">${escapeHtml(_cSub || _cCat || _cMacro)}</span>
+        ${_cCat ? `<span class="cc-ctx">${escapeHtml(_cMacro)}${_cSub ? ' › ' + escapeHtml(_cCat) : ''}</span>` : ''}
       </div>
       <div style="display:flex;width:100%">
       <div class="cell"><div class="lbl">${lblTipo} ${_cAnno}</div><div class="val ${clsTipo} num">${fmtEUR(totaleAnno)}</div>${deltaAnno}</div>
@@ -323,20 +326,39 @@ const _renderTag = (body, root) => {
   }
 
   body.innerHTML = `
-    <p class="meta" style="margin:10px 4px 8px">Tocca uno o più tag per incrociarli: vedrai solo i movimenti che li hanno <b>tutti</b>.</p>
-    <div class="chip-row" style="flex-wrap:wrap;margin-bottom:6px">
-      ${tuttiTag.map(t => `<div class="chip ${_tagSel.has(t.tag) ? 'on' : ''}" data-tsel="${escapeHtml(t.tag)}">#${escapeHtml(t.tag)} <span style="opacity:.6">${t.count}</span></div>`).join('')}
+    <div class="searchbar" style="margin-top:10px">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input id="tag-q" placeholder="Cerca un tag da incrociare..." value="${escapeHtml(_tagQuery)}" autocomplete="off">
     </div>
-    ${sel.length ? `<div style="text-align:right;margin-bottom:4px"><span class="meta" id="tag-reset" style="color:var(--down);cursor:pointer">✕ azzera selezione</span></div>` : ''}
-    ${dettaglio || '<div class="empty" style="padding:30px 20px">Seleziona un tag per vedere l\'analisi</div>'}
+    <div id="tag-sugg" class="tag-sugg"></div>
+    ${sel.length ? `
+      <div class="tag-sel-row">
+        ${sel.map(t => `<div class="chip on" data-tsel="${escapeHtml(t)}">#${escapeHtml(t)} ✕</div>`).join('')}
+        <span class="meta" id="tag-reset" style="color:var(--down);cursor:pointer;margin-left:auto;white-space:nowrap">azzera</span>
+      </div>` : '<p class="meta" style="margin:10px 4px">Cerca e tocca un tag per iniziare. Puoi aggiungerne altri: vedrai solo i movimenti che li hanno <b>tutti</b>.</p>'}
+    ${dettaglio}
   `;
 
+  const inp = body.querySelector('#tag-q');
+  const suggBox = body.querySelector('#tag-sugg');
+  const mostraSugg = () => {
+    const q = _norm(inp.value.trim());
+    if (!q) { suggBox.innerHTML = ''; return; }
+    const cand = tuttiTag.filter(t => !_tagSel.has(t.tag) && _norm(t.tag).includes(q)).slice(0, 8);
+    suggBox.innerHTML = cand.length
+      ? cand.map(t => `<div class="tag-sugg-item" data-add="${escapeHtml(t.tag)}"><span>#${escapeHtml(t.tag)}</span><span class="meta">${t.count} mov</span></div>`).join('')
+      : '<div class="tag-sugg-item meta" style="cursor:default">Nessun tag trovato</div>';
+    suggBox.querySelectorAll('[data-add]').forEach(el => el.addEventListener('click', () => {
+      _tagSel.add(el.dataset.add); _tagQuery = ''; renderAnalisi(root);
+    }));
+  };
+  inp.addEventListener('input', () => { _tagQuery = inp.value; mostraSugg(); });
+  mostraSugg();
+
   body.querySelectorAll('[data-tsel]').forEach(el => el.addEventListener('click', () => {
-    const t = el.dataset.tsel;
-    if (_tagSel.has(t)) _tagSel.delete(t); else _tagSel.add(t);
-    renderAnalisi(root);
+    _tagSel.delete(el.dataset.tsel); renderAnalisi(root);
   }));
   const tr = body.querySelector('#tag-reset');
-  if (tr) tr.addEventListener('click', () => { _tagSel.clear(); renderAnalisi(root); });
+  if (tr) tr.addEventListener('click', () => { _tagSel.clear(); _tagQuery = ''; renderAnalisi(root); });
 };
 

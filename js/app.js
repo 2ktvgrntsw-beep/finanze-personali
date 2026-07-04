@@ -70,7 +70,6 @@ const costruisciChrome = () => {
     <div class="title" id="view-title" style="order:2">Spese</div>
     <div id="head-spacer" style="flex:1;display:none;order:3"></div>
     <div id="head-seg" style="order:4;flex:1;display:flex;justify-content:center"></div>
-    <div id="head-spacer2" style="flex:0;order:5"></div>
     <button class="hbtn add" id="btn-add" title="Aggiungi" style="order:9">+</button>
   `;
 

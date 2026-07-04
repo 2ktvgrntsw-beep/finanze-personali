@@ -62,7 +62,7 @@ const _updateChrome = (name) => {
   // La lente vive solo nei Movimenti. Il selettore periodo (head-seg) vive
   // nell'header in Spese e Movimenti; il + si sposta a destra nelle sottopagine.
   const titolo = document.getElementById('view-title');
-  if (titolo) titolo.style.display = ROTTE_PRINCIPALI.includes(name) ? 'none' : 'block';
+  if (titolo) titolo.style.display = (ROTTE_PRINCIPALI.includes(name) || name === 'inserimento') ? 'none' : 'block';
   // lente: VISIBILE solo nei Movimenti; nelle altre principali resta invisibile ma
   // occupa il suo spazio (il selettore centrale rimane perfettamente centrato).
   const lente = document.getElementById('btn-search');
