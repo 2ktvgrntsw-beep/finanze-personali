@@ -24,6 +24,7 @@ import { renderConti } from './components/conti.js';
 import { renderMutuo } from './components/mutuo.js';
 import { renderFinanziamenti } from './components/finanziamenti.js';
 import { renderInvestimenti } from './components/investimenti.js';
+import { renderDettaglioInvestimento } from './components/dettaglioInvestimento.js';
 import { renderCategorie } from './components/categorie.js';
 import { renderImpostazioni } from './components/impostazioni.js';
 
@@ -53,6 +54,7 @@ const registraRotte = () => {
   registerRoute('mutuo', renderMutuo);
   registerRoute('finanziamenti', renderFinanziamenti);
   registerRoute('investimenti', renderInvestimenti);
+  registerRoute('dettaglio-investimento', renderDettaglioInvestimento);
   registerRoute('categorie', renderCategorie);
   registerRoute('impostazioni', wrap(renderImpostazioni, 'Impostazioni'));
 };

@@ -30,7 +30,7 @@ export const renderRicerca = async (root, params = {}) => {
       tipo: params.tipo || '', macro: params.macro || '', cat: params.cat || '', sub: params.sub || '',
       conto: params.conto || '', da: params.da || '', a: params.a || '', min: '', max: '',
     };
-    _filtriAperti = true;
+    _filtriAperti = false;
   }
 
   const nFiltri = Object.values(_filtri).filter(v => v !== '').length;

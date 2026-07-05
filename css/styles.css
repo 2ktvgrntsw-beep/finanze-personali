@@ -657,11 +657,7 @@ input[type=date].sheet-input{-webkit-appearance:none;appearance:none}
   border:1px solid var(--line);border-radius:20px;padding:18px 20px 16px;margin:8px 0 4px;overflow:hidden}
 .hero-spese::before{content:'';position:absolute;inset:0;border-radius:20px;pointer-events:none;
   background:linear-gradient(160deg,rgba(255,255,255,.045),transparent 42%);z-index:0}
-/* sparkline: piccolo, in alto a destra, NON scende sotto il numero. Proporzione ~2.4:1 */
-.hero-spese .spark{position:absolute;top:15px;right:16px;width:34%;max-width:130px;height:38px;z-index:1;pointer-events:auto}
-.hero-spese .spark svg{width:100%;height:100%;display:block}
-/* il numero e la caption non invadono mai la zona sparkline (le metriche sotto restano piene) */
-.hero-spese .cap, .hero-spese .big-spese{max-width:60%}
+
 .cell-spese-main{position:relative;z-index:2}
 .hero-spese .cap{font-size:11px;font-weight:600;color:var(--blue-2);text-transform:uppercase;letter-spacing:.1em}
 .hero-spese .big-spese{font-family:var(--font-inst);font-size:26px;font-weight:700;color:var(--txt);line-height:1;margin:6px 0 6px;text-shadow:0 0 22px rgba(46,155,255,.2)}
@@ -677,10 +673,8 @@ input[type=date].sheet-input{-webkit-appearance:none;appearance:none}
 .metrics-row .lbl{font-size:9.5px;font-weight:600;color:var(--txt-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
 .metrics-row .val{font-family:var(--font-inst);font-size:18px;font-weight:600;line-height:1}
 .metrics-row .val.en{color:var(--up)} .metrics-row .val.sa{color:var(--txt)} .metrics-row .val.tr{color:var(--blue)}
-.hero-spese .spark-tip{position:absolute;top:2px;transform:translateX(-50%);background:rgba(8,11,18,.94);
-  border:1px solid var(--line);border-radius:7px;padding:3px 8px;font-family:var(--font-inst);font-size:12px;
-  font-weight:600;color:var(--blue-2);white-space:nowrap;opacity:0;transition:opacity .12s;pointer-events:none;z-index:5}
-.hero-spese .spark-tip.on{opacity:1}
+
+
 
 /* barre categoria a INTENSITÀ (∝ percentuale) */
 .catrow .bar.hi > span{background:linear-gradient(90deg,var(--blue),var(--blue-2));box-shadow:0 0 8px rgba(46,155,255,.45)}
@@ -701,3 +695,39 @@ input[type=date].sheet-input{-webkit-appearance:none;appearance:none}
 /* net-card: archi concentrici centrati in alto (già ha ::after glow, aggiungo gli archi) */
 .net-card{position:relative}
 .net-card .big, .net-card .lbl, .net-card .sub{position:relative;z-index:2}
+
+
+/* ═══ COCKPIT — card sparkline dedicata (andamento spese 6 mesi, centrata, interattiva) ═══ */
+.spark-card{margin:10px 0 4px;padding:14px 14px 8px;position:relative}
+.spark-title{font-size:10.5px;font-weight:700;color:var(--txt-2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
+.spark-card .spark{position:relative;width:100%;height:auto}
+.spark-card .spark svg{width:100%;height:auto;display:block;overflow:visible}
+.spark-card .spark-vline{position:absolute;top:6px;bottom:26px;width:1px;background:rgba(95,195,255,.45);opacity:0;transition:opacity .1s;pointer-events:none;transform:translateX(-.5px)}
+.spark-card .spark-vline.on{opacity:1}
+.spark-card .spark-tip{position:absolute;top:-6px;transform:translateX(-50%);background:rgba(8,11,18,.95);
+  border:1px solid var(--line);border-radius:8px;padding:4px 9px;font-family:var(--font-inst);font-size:13px;
+  font-weight:600;color:var(--blue-2);white-space:nowrap;opacity:0;transition:opacity .12s;pointer-events:none;z-index:5;
+  box-shadow:0 6px 18px rgba(0,0,0,.5)}
+.spark-card .spark-tip.on{opacity:1}
+
+/* ═══ COCKPIT — archetti strumento sulle net-card (patrimonio, mutuo, finanziamenti) ═══ */
+.net-card::before{
+  content:'';position:absolute;top:-50px;right:-40px;width:200px;height:200px;pointer-events:none;z-index:0;
+  background-image:
+    radial-gradient(circle at 100% 0%, transparent 78px, rgba(46,155,255,.16) 79px, rgba(46,155,255,.16) 80px, transparent 81px),
+    radial-gradient(circle at 100% 0%, transparent 108px, rgba(123,108,255,.12) 109px, rgba(123,108,255,.12) 110px, transparent 111px),
+    radial-gradient(circle at 100% 0%, transparent 138px, rgba(46,155,255,.08) 139px, rgba(46,155,255,.08) 140px, transparent 141px);
+}
+.net-card > *{position:relative;z-index:1}
+
+/* ═══ COCKPIT — strumenti investimento annidati sotto il conto ═══ */
+.strumenti-annidati{margin:0 0 4px 0;padding-left:14px;border-left:2px solid var(--line);margin-left:16px}
+.strumenti-annidati .strumento-riga{padding-top:8px;padding-bottom:8px;opacity:.92}
+.strumenti-annidati .strumento-riga .conto-nome{font-size:13px;color:var(--txt-2)}
+.strumenti-annidati .strumento-riga .conto-saldo{color:var(--transfer);font-size:13px}
+
+/* ═══ COCKPIT — riordino gruppi con frecce ═══ */
+.rio-frecce{display:flex;gap:6px;margin-left:auto}
+.rio-frecce button{width:34px;height:34px;border-radius:9px;background:var(--surface-2);border:1px solid var(--line);color:var(--blue-2);font-size:13px;cursor:pointer;display:grid;place-items:center}
+.rio-frecce button:disabled{opacity:.3;color:var(--txt-3)}
+.rio-frecce button:active:not(:disabled){background:var(--surface-3)}

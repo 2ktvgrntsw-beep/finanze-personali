@@ -3,6 +3,7 @@
 // I valori (casa, saldi conti) si modificano toccandoli direttamente (no icone matita).
 
 import { state } from '../core/store.js';
+import { dbGet, dbAdd } from '../core/db.js';
 import { fmtEUR, fmtEUR0, escapeHtml, todayISO } from '../core/utils.js';
 import { iconaMacro, UI_SVG } from '../core/icons.js';
 import { navigate } from '../core/router.js';
@@ -23,8 +24,17 @@ const COLORE_ICONA = {
 
 // stato dei gruppi conti aperti (default: tutti chiusi per compattezza)
 const _gruppiAperti = new Set();
+// ordine dei 4 gruppi patrimoniali (persistito in meta); default sotto
+const ORDINE_DEFAULT = ['liquidita', 'risparmio', 'investimenti', 'asset'];
+let _ordineGruppi = ORDINE_DEFAULT.slice();
+const CHIAVE_ORDINE = 'ordine_gruppi_patrimonio';
 
 export const renderPatrimonio = async (root) => {
+  // carico l'ordine gruppi salvato (una volta)
+  try {
+    const rec = await dbGet('meta', CHIAVE_ORDINE);
+    if (rec && Array.isArray(rec.valore) && rec.valore.length === 4) _ordineGruppi = rec.valore;
+  } catch { /* default */ }
   const netto = patrimonioNetto();
   const att = totaleAttivita();
   const pass = totalePassivita();
@@ -91,10 +101,16 @@ export const renderPatrimonio = async (root) => {
     renderPatrimonio(root);
   }));
   // tap su singolo conto -> modifica
-  root.querySelectorAll('[data-conto]').forEach(el => el.addEventListener('click', (e) => { e.stopPropagation(); _modificaConto(root, el.dataset.conto); }));
+  root.querySelectorAll('[data-conto]').forEach(el => el.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const c = state.conti.find(x => x.id === el.dataset.conto);
+    // conti di investimento -> pagina dettaglio con grafico; altri -> modifica saldo
+    if (c && c.tipo === 'investimenti') navigate('dettaglio-investimento', { conto: c.nome });
+    else _modificaConto(root, el.dataset.conto);
+  }));
 
-  // tap su strumento di investimento -> movimenti di quello strumento
-  root.querySelectorAll('[data-strumento]').forEach(el => el.addEventListener('click', (e) => { e.stopPropagation(); navigate('movimenti', { tipo: 'trasferimento', sub: el.dataset.strumento, periodo: 'anno', mese: new Date().toISOString().slice(0, 7) }); }));
+  // tap su strumento di investimento -> pagina dettaglio con grafico andamento
+  root.querySelectorAll('[data-strumento]').forEach(el => el.addEventListener('click', (e) => { e.stopPropagation(); navigate('dettaglio-investimento', { strumento: el.dataset.strumento }); }));
 
   // riordino conti
   const rio = root.querySelector('#riordina-conti');
@@ -116,62 +132,40 @@ export const renderPatrimonio = async (root) => {
   });
 };
 
-// Riordino conti col TRASCINAMENTO: tieni premuto sul ≡ e sposta la riga.
-// Al rilascio la riga si sistema; "Fatto" salva l'ordine reale delle righe.
+// Riordino dei 4 GRUPPI patrimoniali (liquidità, risparmio, investimenti, asset).
+// Frecce su/giù: affidabili su mobile, salvate in meta.
 const _riordinaConti = (root) => {
-  const conti = state.conti.filter(c => c.attivo !== false)
-    .slice().sort((a, b) => (a.ordine ?? 999) - (b.ordine ?? 999));
+  const NOMI = { liquidita: 'Liquidità', risparmio: 'Risparmio', investimenti: 'Investimenti', asset: 'Beni / Asset' };
+  let ordine = _ordineGruppi.slice();
 
-  apriSheet('Riordina conti', '', (body, chiudi) => {
-    body.innerHTML = `
-      <p class="meta" style="margin-bottom:12px">Tieni premuto su ≡ e trascina per riordinare.</p>
-      <div id="rio-lista">${conti.map(c => `
-        <div class="rio-riga" data-id="${c.id}">
-          <div class="ic">${ICONA_TIPO_ATT[c.tipo] || UI_SVG.conto}</div>
-          <div class="body"><div class="d1">${escapeHtml(c.nome)}</div><div class="d2">${LABEL_TIPO[c.tipo] || c.tipo}</div></div>
-          <div class="rio-handle">≡</div>
-        </div>`).join('')}</div>
-      <button class="btn btn-primary" id="rio-ok" style="margin-top:16px">Fatto</button>`;
+  apriSheet('Riordina gruppi', '', (body, chiudi) => {
+    const disegna = () => {
+      body.innerHTML = `
+        <p class="meta" style="margin-bottom:12px">Usa le frecce per cambiare l'ordine dei gruppi in Patrimonio.</p>
+        <div id="rio-lista">${ordine.map((tipo, i) => `
+          <div class="rio-riga">
+            <div class="ic">${ICONA_TIPO_ATT[tipo] || UI_SVG.conto}</div>
+            <div class="body"><div class="d1">${NOMI[tipo]}</div></div>
+            <div class="rio-frecce">
+              <button class="rio-su" data-i="${i}" ${i === 0 ? 'disabled' : ''}>▲</button>
+              <button class="rio-giu" data-i="${i}" ${i === ordine.length - 1 ? 'disabled' : ''}>▼</button>
+            </div>
+          </div>`).join('')}</div>
+        <button class="btn btn-primary" id="rio-ok" style="margin-top:16px">Fatto</button>`;
 
-    const lista = body.querySelector('#rio-lista');
-    let dragging = null;
-
-    lista.querySelectorAll('.rio-handle').forEach(h => {
-      h.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        dragging = h.closest('.rio-riga');
-        dragging.classList.add('dragging');
-        h.setPointerCapture(e.pointerId);
+      body.querySelectorAll('.rio-su').forEach(b => b.addEventListener('click', () => {
+        const i = +b.dataset.i; if (i > 0) { [ordine[i - 1], ordine[i]] = [ordine[i], ordine[i - 1]]; disegna(); }
+      }));
+      body.querySelectorAll('.rio-giu').forEach(b => b.addEventListener('click', () => {
+        const i = +b.dataset.i; if (i < ordine.length - 1) { [ordine[i + 1], ordine[i]] = [ordine[i], ordine[i + 1]]; disegna(); }
+      }));
+      body.querySelector('#rio-ok').addEventListener('click', async () => {
+        _ordineGruppi = ordine.slice();
+        try { await dbAdd('meta', { chiave: CHIAVE_ORDINE, valore: _ordineGruppi }); } catch { /* ignore */ }
+        chiudi(); toast('Ordine salvato'); renderPatrimonio(root);
       });
-      h.addEventListener('pointermove', (e) => {
-        if (!dragging) return;
-        e.preventDefault();
-        // trova la riga sotto il dito e sposta la riga trascinata prima/dopo
-        const righe = [...lista.querySelectorAll('.rio-riga:not(.dragging)')];
-        const sotto = righe.find(r => {
-          const b = r.getBoundingClientRect();
-          return e.clientY >= b.top && e.clientY <= b.bottom;
-        });
-        if (sotto) {
-          const b = sotto.getBoundingClientRect();
-          if (e.clientY < b.top + b.height / 2) lista.insertBefore(dragging, sotto);
-          else lista.insertBefore(dragging, sotto.nextSibling);
-        }
-      });
-      const fine = () => { if (dragging) { dragging.classList.remove('dragging'); dragging = null; } };
-      h.addEventListener('pointerup', fine);
-      h.addEventListener('pointercancel', fine);
-    });
-
-    body.querySelector('#rio-ok').addEventListener('click', async () => {
-      // l'ordine è quello REALE delle righe nel DOM al momento del tocco
-      const ids = [...lista.querySelectorAll('.rio-riga')].map(el => el.dataset.id);
-      for (let i = 0; i < ids.length; i++) {
-        const c = state.conti.find(x => x.id === ids[i]);
-        if (c) await saveConto({ ...c, ordine: i });
-      }
-      chiudi(); toast('Ordine salvato'); renderPatrimonio(root);
-    });
+    };
+    disegna();
   });
 };
 
@@ -203,7 +197,7 @@ const _modificaConto = (root, contoId) => {
 // riordinabili (campo 'ordine').
 function _contiCollassabiliHTML() {
   const perTipo = contiPerTipoLocale();
-  const ordine = ['liquidita', 'risparmio', 'investimenti', 'asset'];
+  const ordine = _ordineGruppi;
   const LABEL = { liquidita: 'Liquidità', risparmio: 'Risparmio', investimenti: 'Investimenti', asset: 'Beni / Asset' };
   let html = '<div class="section-lbl"><span>I tuoi conti</span><span style="color:var(--accent);font-size:11px;cursor:pointer" id="riordina-conti">Riordina</span></div>';
   for (const tipo of ordine) {
@@ -214,29 +208,49 @@ function _contiCollassabiliHTML() {
     const tot = conti.reduce((s, c) => s + saldoStimato(c), 0);
     const aperto = _gruppiAperti.has(tipo);
 
-    // per gli investimenti: strumenti dai trasferimenti (sub), incluse le azioni sciolte
-    let strumentiHTML = '';
+    // per gli investimenti: strumenti annidati SOTTO il conto di riferimento.
+    // I dati storici non hanno contoDest popolato, quindi inferiamo il conto dal
+    // sub/cat/descrizione (es. "PAC Fideuram" -> Fideuram, "Crypto" -> Binance).
+    let strumentiPerConto = {};
     if (tipo === 'investimenti' && aperto) {
-      const perStrumento = {};
+      const nomiConti = conti.map(c => c.nome);
+      const inferisciConto = (m) => {
+        const testo = `${m.sub || ''} ${m.cat || ''} ${m.desc || ''}`.toLowerCase();
+        // match diretto col nome di un conto (o una sua parola chiave)
+        for (const nome of nomiConti) {
+          const chiave = nome.replace(/investimenti/i, '').trim().toLowerCase();
+          if (chiave && testo.includes(chiave)) return nome;
+        }
+        // crypto -> Binance se esiste
+        if (/crypto|binance|bitcoin|btc/.test(testo)) {
+          const binance = nomiConti.find(n => /binance/i.test(n));
+          if (binance) return binance;
+        }
+        return null;
+      };
       for (const m of state.movimenti) {
         if (m.tipo !== 'trasferimento') continue;
-        const dest = state.conti.find(c => c.nome === m.contoDest);
-        const isInv = dest ? dest.tipo === 'investimenti' : m.macro === 'Investimenti';
+        const isInv = m.macro === 'Investimenti' || (state.conti.find(c => c.nome === m.contoDest)?.tipo === 'investimenti');
         if (!isInv) continue;
-        const k = m.sub || 'Altro';
-        perStrumento[k] = (perStrumento[k] || 0) + m.imp;
-      }
-      const strumenti = Object.entries(perStrumento).sort((a, b) => b[1] - a[1]);
-      if (strumenti.length) {
-        strumentiHTML = `<div class="strumenti-sub"><div class="strumenti-lbl">Strumenti (versato)</div>` +
-          strumenti.map(([nome, tot]) => `
-            <div class="conto-riga" data-strumento="${escapeHtml(nome)}">
-              <div class="conto-nome" style="font-size:13.5px;color:var(--txt-2)">📈 ${escapeHtml(nome)}</div>
-              <div class="conto-saldo num" style="color:var(--transfer)">${fmtEUR(tot)}</div>
-              <div class="conto-chev">›</div>
-            </div>`).join('') + `</div>`;
+        const conto = (m.contoDest && nomiConti.includes(m.contoDest)) ? m.contoDest : inferisciConto(m);
+        if (!conto) continue;  // non attribuibile: lo salto (evita "Altro" rumoroso)
+        const strum = m.sub || m.cat || m.desc || conto;
+        strumentiPerConto[conto] = strumentiPerConto[conto] || {};
+        strumentiPerConto[conto][strum] = (strumentiPerConto[conto][strum] || 0) + m.imp;
       }
     }
+    const strumentiDi = (contoNome) => {
+      const s = strumentiPerConto[contoNome];
+      if (!s) return '';
+      const lista = Object.entries(s).sort((a, b) => b[1] - a[1]);
+      if (!lista.length) return '';
+      return `<div class="strumenti-annidati">` + lista.map(([nome, v]) => `
+        <div class="conto-riga strumento-riga" data-strumento="${escapeHtml(nome)}">
+          <div class="conto-nome">${escapeHtml(nome)}</div>
+          <div class="conto-saldo num">${fmtEUR(v)}</div>
+          <div class="conto-chev">›</div>
+        </div>`).join('') + `</div>`;
+    };
 
     html += `
       <div class="gruppo-conti">
@@ -251,8 +265,8 @@ function _contiCollassabiliHTML() {
             <div class="conto-nome">${escapeHtml(c.nome)}</div>
             <div class="conto-saldo num">${fmtEUR(saldoStimato(c))}</div>
             <div class="conto-chev">›</div>
-          </div>`).join('') : ''}
-        ${strumentiHTML}
+          </div>
+          ${tipo === 'investimenti' ? strumentiDi(c.nome) : ''}`).join('') : ''}
       </div>`;
   }
   return html;
