@@ -87,7 +87,7 @@ export const renderSpese = async (root) => {
       </div>` : `<div class="month-nav"><div class="m">${labelPeriodo}</div></div>`}
 
     <div class="triple quad">
-      <div class="cell" data-tot="spesa" style="cursor:pointer"><div class="lbl">Spese</div><div class="val sp num">${fmtEUR(tot.spese)}</div>${deltaHTML}</div>
+      <div class="cell cell-spese" data-tot="spesa" style="cursor:pointer">${_periodo === 'mese' ? _sparklineHTML(_meseCorrente) : ''}<div class="lbl">Spese</div><div class="val sp num">${fmtEUR(tot.spese)}</div>${deltaHTML}</div>
       <div class="cell" data-tot="entrata" style="cursor:pointer"><div class="lbl">Entrate</div><div class="val en num">${fmtEUR(tot.entrate)}</div></div>
       <div class="cell"><div class="lbl">Saldo</div><div class="val sa num">${tot.saldo < 0 ? '−' : ''}${fmtEUR(Math.abs(tot.saldo))}</div></div>
       <div class="cell" data-tot="trasferimento" style="cursor:pointer"><div class="lbl">Accant.</div><div class="val tr num">${fmtEUR(tot.investito || 0)}</div></div>
@@ -140,6 +140,83 @@ export const renderSpese = async (root) => {
     navigate('movimenti', { tipo: el.dataset.tot, periodo: _periodo, mese: _meseCorrente });
   }));
 
+  // sparkline interattivo: attacca il tocco (solo se presente, cioè in vista mese)
+  _agganciaSparkline(root);
+
+};
+
+// ═══ SPARKLINE spese ultimi 6 mesi (additivo, puramente visivo) ═══
+// Ritorna { mesi:[{label,mese,val}], min, max } per gli ultimi 6 mesi fino a quello dato.
+const _datiSparkline = (meseRif) => {
+  const [y, m] = meseRif.split('-').map(Number);
+  const out = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(y, m - 1 - i, 1);
+    const am = annomese(d.toISOString().slice(0, 10));
+    const t = totaliPeriodo(movimentiDelMese(am));
+    const idxMese = parseInt(am.slice(5, 7), 10) - 1;
+    out.push({ label: nomeMese(idxMese).slice(0, 3), mese: am, val: t.spese || 0 });
+  }
+  const vals = out.map(o => o.val);
+  return { mesi: out, min: Math.min(...vals), max: Math.max(...vals) };
+};
+
+const _sparklineHTML = (meseRif) => {
+  const d = _datiSparkline(meseRif);
+  if (d.max <= 0) return '';   // niente dati, niente grafico
+  const VW = 120, VH = 46, pad = 5;
+  const range = d.max - d.min || 1;
+  const nx = i => (i / (d.mesi.length - 1)) * VW;
+  const ny = v => VH - pad - ((v - d.min) / range) * (VH - pad * 2);
+  const pts = d.mesi.map((o, i) => [nx(i), ny(o.val)]);
+  // smoothing catmull-rom -> bezier
+  let line = 'M' + pts[0][0].toFixed(1) + ' ' + pts[0][1].toFixed(1);
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i > 0 ? i - 1 : 0], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+    const c1x = p1[0] + (p2[0] - p0[0]) / 6, c1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const c2x = p2[0] - (p3[0] - p1[0]) / 6, c2y = p2[1] - (p3[1] - p1[1]) / 6;
+    line += ` C${c1x.toFixed(1)} ${c1y.toFixed(1)} ${c2x.toFixed(1)} ${c2y.toFixed(1)} ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
+  }
+  const area = line + ` L${VW} ${VH} L0 ${VH} Z`;
+  const last = pts[pts.length - 1];
+  const dataJson = escapeHtml(JSON.stringify(d.mesi.map(o => ({ l: o.label, v: o.val }))));
+  return `<div class="spark" data-spark='${dataJson}'>
+    <svg viewBox="0 0 ${VW} ${VH}" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="spkl" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2E9BFF"/><stop offset="1" stop-color="#7B6CFF"/></linearGradient>
+        <linearGradient id="spka" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba(46,155,255,.28)"/><stop offset="1" stop-color="rgba(46,155,255,0)"/></linearGradient>
+      </defs>
+      <path d="${area}" fill="url(#spka)"/>
+      <path d="${line}" fill="none" stroke="url(#spkl)" stroke-width="1.6" vector-effect="non-scaling-stroke"/>
+      <circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="2.4" fill="#5FC3FF"/>
+    </svg>
+    <div class="spark-tip"></div>
+  </div>`;
+};
+
+// interattività: tocco/trascinamento sul grafico mostra mese + spesa
+const _agganciaSparkline = (root) => {
+  const spark = root.querySelector('.spark');
+  if (!spark) return;
+  let dati;
+  try { dati = JSON.parse(spark.dataset.spark); } catch { return; }
+  const tip = spark.querySelector('.spark-tip');
+  const show = (clientX) => {
+    const r = spark.getBoundingClientRect();
+    let rel = (clientX - r.left) / r.width;
+    rel = Math.max(0, Math.min(1, rel));
+    const idx = Math.round(rel * (dati.length - 1));
+    const o = dati[idx];
+    tip.textContent = `${o.l} · ${fmtEUR(o.v)}`;
+    tip.style.left = ((idx / (dati.length - 1)) * 100) + '%';
+    tip.classList.add('on');
+  };
+  const hide = () => tip.classList.remove('on');
+  spark.addEventListener('touchstart', (e) => { show(e.touches[0].clientX); }, { passive: true });
+  spark.addEventListener('touchmove', (e) => { show(e.touches[0].clientX); }, { passive: true });
+  spark.addEventListener('touchend', hide, { passive: true });
+  spark.addEventListener('mousemove', (e) => show(e.clientX));
+  spark.addEventListener('mouseleave', hide);
 };
 
 // esportati per il drill-down (condivide il periodo corrente)

@@ -1,35 +1,46 @@
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Rajdhani:wght@500;600;700&display=swap');
+
 /* ============================================================================
    Finanze PWA v2 — Design System (scuro, stile Revolut)
    Nero profondo OLED, accento viola unico, numeri tabulari, molto respiro.
    ============================================================================ */
 
 :root{
-  --bg:#08080C;
-  --surface:#131319;
-  --surface-2:#1C1C24;
-  --surface-3:#24242E;
-  --line:#26262F;
+  /* ═══ COCKPIT BMW — palette strumentale: blu/viola base, neon verde/rosso sport ═══ */
+  --bg:#080B12;
+  --surface:#0F1420;
+  --surface-2:#151B29;
+  --surface-3:#1D2536;
+  --line:#232C3D;
 
-  --txt:#FFFFFF;
-  --txt-2:#9A9AAB;
-  --txt-3:#5E5E6E;
+  --txt:#EAEEF5;
+  --txt-2:#8B96AB;
+  --txt-3:#535E72;
 
-  --accent:#6E5BFF;
-  --accent-2:#8B7BFF;
-  --accent-glow:rgba(110,91,255,.35);
+  /* accent = blu strumentale (era viola); le classi che usano --accent diventano blu */
+  --accent:#2E9BFF;
+  --accent-2:#5FC3FF;
+  --accent-deep:#1C7BE0;
+  --accent-glow:rgba(46,155,255,.35);
+  --blue:#2E9BFF; --blue-2:#5FC3FF; --blue-deep:#1C7BE0;
+  --violet:#7B6CFF; --violet-2:#9D8FFF;
 
-  --up:#2FD08A;         /* entrate / positivo */
-  --up-bg:rgba(47,208,138,.14);
-  --down:#FF6B5E;       /* spese / negativo */
-  --down-bg:rgba(255,107,94,.14);
-  --transfer:#3DB6FF;   /* trasferimenti / investimenti */
-  --transfer-bg:rgba(61,182,255,.16);
+  /* neon sport */
+  --up:#22E39A;         /* entrate / positivo — verde neon */
+  --up-bg:rgba(34,227,154,.12);
+  --down:#FF3B5C;       /* spese / negativo — rosso neon */
+  --down-bg:rgba(255,59,92,.10);
+  --transfer:#2E9BFF;   /* trasferimenti / investimenti — blu */
+  --transfer-bg:rgba(46,155,255,.14);
   --warn:#F5A623;
 
   --r:22px; --r-md:16px; --r-sm:12px;
   --safe-top:env(safe-area-inset-top);
   --safe-bottom:env(safe-area-inset-bottom);
-  --font:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",Roboto,system-ui,sans-serif;
+  /* font: Inter body, Sora display/titoli, Rajdhani numeri-strumento */
+  --font:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;
+  --font-disp:'Sora',var(--font);
+  --font-inst:'Rajdhani',var(--font);
 }
 
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0}
@@ -41,7 +52,7 @@ body{
   max-width:480px; margin:0 auto;
   min-height:100vh;
 }
-.num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+.num{font-family:var(--font-inst);font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1;letter-spacing:.01em}
 
 /* ----------------------------------------------------------------- Header */
 .app-header{
@@ -520,3 +531,121 @@ input[type=date].sheet-input{-webkit-appearance:none;appearance:none}
 
 /* titolo header centrato (pagine di modifica) */
 .app-header .title.center{position:absolute;left:0;right:0;text-align:center;pointer-events:none;margin:0}
+
+/* ═══ COCKPIT — tipografia display (titoli/header/mesi) ═══ */
+.app-header .title, .view-title, #view-title, .m, .month-nav .m, .net-card .lbl, .section-lbl span, .day-head span{font-family:var(--font-disp)}
+.big, .big.num, .net-card .big, .val, .amt, .hero .big, .gauge .big{font-family:var(--font-inst)}
+
+/* ═══ COCKPIT — icone SVG a linea nei contenitori categoria/movimento ═══ */
+/* i box icona ora ospitano SVG invece di emoji: centraggio a griglia + bordo */
+.mov .ic, .recrow .ic, .catrow .icon, .patrow .icon, .cat-cell .ci, .frow .fic{
+  display:grid;place-items:center;border:1px solid var(--line)}
+.mov .ic > svg, .recrow .ic > svg, .catrow .icon > svg, .patrow .icon > svg,
+.cat-cell .ci > svg, .frow .fic > svg{
+  width:52%;height:52%;color:var(--blue-2);stroke:var(--blue-2)}
+/* icone leggermente più grandi nelle celle categoria grandi */
+.cat-cell .ci > svg{width:44%;height:44%}
+/* colore per tipo sulle righe movimento (icona viva) */
+.mov.tipo-spesa .ic, .recrow.tipo-spesa .ic{background:rgba(255,59,92,.08);border-color:rgba(255,59,92,.25)}
+.mov.tipo-spesa .ic > svg, .recrow.tipo-spesa .ic > svg{color:var(--down);stroke:var(--down)}
+.mov.tipo-entrata .ic, .recrow.tipo-entrata .ic{background:rgba(34,227,154,.08);border-color:rgba(34,227,154,.25)}
+.mov.tipo-entrata .ic > svg, .recrow.tipo-entrata .ic > svg{color:var(--up);stroke:var(--up)}
+.mov.tipo-trasferimento .ic, .recrow.tipo-trasferimento .ic{background:rgba(46,155,255,.08);border-color:rgba(46,155,255,.25)}
+.mov.tipo-trasferimento .ic > svg, .recrow.tipo-trasferimento .ic > svg{color:var(--blue-2);stroke:var(--blue-2)}
+
+/* ═══ COCKPIT — classificazione completa nelle righe movimento (mai troncata) ═══ */
+.mov .d2{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.35}
+.mov .d2 .cls{color:var(--blue-2);font-weight:500}
+.mov .d2 .cnt{color:var(--txt-3)}
+.mov{align-items:flex-start}
+.mov .ic{margin-top:1px}
+.mov .amt{align-self:flex-start;margin-top:8px}
+.mov .body{min-width:0;flex:1}
+.mov .d1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ═══════════════════════════════════════════════════════════════
+   COCKPIT BMW — rifinitura strutturale (in coda: vince sulle regole sopra)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* header + pulsanti: da tondi a squadrati con bordo strumento */
+.hbtn{width:36px;height:36px;border-radius:11px;background:var(--surface-2);border:1px solid var(--line);color:var(--txt-2);display:grid;place-items:center}
+.hbtn.add{background:linear-gradient(135deg,var(--blue),var(--blue-deep));border:0;color:#fff;
+  box-shadow:0 0 18px rgba(46,155,255,.35),0 4px 14px rgba(28,123,224,.3)}
+.hbtn svg{stroke-width:1.8}
+#btn-search{background:var(--surface-2)}
+#btn-search.on, .app-header .hbtn.on{background:rgba(46,155,255,.14);border-color:rgba(46,155,255,.4);color:var(--blue-2)}
+
+/* selettore segmentato: attivo con gradiente blu→viola */
+.seg{background:var(--surface);border:1px solid var(--line)}
+.seg button.on{background:linear-gradient(135deg,var(--blue),var(--violet));color:#fff;box-shadow:0 2px 12px rgba(46,155,255,.35)}
+
+/* card e triple: gradiente strumento + bordo */
+.card{background:linear-gradient(160deg,var(--surface-2),var(--surface));border:1px solid var(--line)}
+.triple{background:linear-gradient(160deg,var(--surface-2),var(--surface));border:1px solid var(--line)}
+.triple .cell + .cell{border-left:1px solid var(--line)}
+
+/* net-card = quadrante strumento: fondo blu-grafite, non più viola */
+.net-card{background:linear-gradient(160deg,var(--surface-2) 0%,var(--surface) 100%);border:1px solid var(--line);position:relative;overflow:hidden}
+.net-card::after{content:'';position:absolute;top:-60px;right:-40px;width:180px;height:180px;
+  background:radial-gradient(circle,rgba(46,155,255,.14),transparent 70%);pointer-events:none}
+.net-card .big{font-family:var(--font-inst);font-weight:700;letter-spacing:.01em;text-shadow:0 0 24px rgba(46,155,255,.25)}
+.net-card .lbl{color:var(--blue-2)}
+
+/* barre categoria/patrimonio: gradiente blu con glow */
+.catrow .bar > span, .patrow .bar > span{background:linear-gradient(90deg,var(--blue),var(--blue-2));box-shadow:0 0 8px rgba(46,155,255,.35)}
+.catrow .bar, .patrow .bar{background:var(--bg)}
+.progress-big span{background:linear-gradient(90deg,var(--up),var(--blue-2))}
+
+/* grafico barre anno: attivo blu, resto grafite */
+.yc-bars .yb .col{background:#233247}
+.yc-bars .yb.on .col{background:linear-gradient(180deg,var(--blue-2),var(--blue))}
+.yc-bars .yb.on span{color:var(--blue-2)}
+
+/* dock: indicatore attivo blu con glow */
+.bottom-nav{background:linear-gradient(0deg,var(--bg) 55%,rgba(8,11,18,.9));border-top:1px solid var(--line)}
+.bottom-nav a.active{color:var(--blue)}
+.bottom-nav a.active::before{background:linear-gradient(90deg,var(--blue),var(--blue-2));box-shadow:0 0 8px var(--blue)}
+
+/* pulsanti primari: gradiente blu */
+.btn-primary{background:linear-gradient(135deg,var(--blue),var(--blue-deep));box-shadow:0 4px 14px rgba(46,155,255,.28)}
+.btn-secondary{background:var(--bg);border:1px solid var(--line)}
+
+/* tastierino numerico: coerente, cifre Rajdhani */
+.numpad{background:var(--surface);border-top:1px solid var(--line)}
+.numpad button{background:var(--surface-2);color:var(--txt);font-family:var(--font-inst);font-weight:600;font-size:24px;border:1px solid var(--line);border-radius:12px;margin:3px}
+.numpad button:active{background:var(--surface-3)}
+.numpad button.sub{background:var(--bg);color:var(--txt-2);font-size:16px}
+.numpad button.ok, .numpad .ok{background:linear-gradient(135deg,var(--blue),var(--blue-deep));color:#fff;border:0}
+
+/* selettore tipo (inserimento): colori per tipo */
+.type-switch button.on{background:rgba(255,59,92,.14);color:var(--down);box-shadow:inset 0 0 0 1px rgba(255,59,92,.4)}
+.type-switch button.on.en{background:rgba(34,227,154,.14);color:var(--up);box-shadow:inset 0 0 0 1px rgba(34,227,154,.4)}
+.type-switch button.on.tr{background:rgba(46,155,255,.14);color:var(--blue-2);box-shadow:inset 0 0 0 1px rgba(46,155,255,.4)}
+
+/* form inserimento: icone box con bordo */
+.frow .fic{background:var(--bg);border:1px solid var(--line)}
+.frow .fic.act{background:rgba(46,155,255,.12);border-color:rgba(46,155,255,.4)}
+.frow .fic.act > svg{color:var(--blue-2);stroke:var(--blue-2)}
+
+/* titoli sezione + header */
+.app-header .title{font-family:var(--font-disp);font-weight:600}
+.section-lbl{color:var(--txt-2);letter-spacing:.08em}
+
+/* celle categoria (analisi): selezionata blu */
+.cat-cell.on, .cat-cell.sel{border-color:rgba(46,155,255,.5);background:linear-gradient(160deg,rgba(46,155,255,.1),var(--surface))}
+.cat-cell{border:1px solid var(--line);background:linear-gradient(160deg,var(--surface-2),var(--surface))}
+
+/* ═══ COCKPIT — sparkline nella cella Spese (piccolo, in alto a dx, non invade il numero) ═══ */
+.cell-spese{position:relative;overflow:hidden}
+.cell-spese .spark{position:absolute;top:8px;right:8px;width:46%;height:34px;z-index:0;pointer-events:auto}
+.cell-spese .spark svg{width:100%;height:100%;display:block}
+.cell-spese .lbl, .cell-spese .val, .cell-spese .delta{position:relative;z-index:1}
+.cell-spese .spark-tip{position:absolute;top:-2px;transform:translateX(-50%);background:rgba(8,11,18,.94);
+  border:1px solid var(--line);border-radius:7px;padding:3px 7px;font-family:var(--font-inst);font-size:11px;
+  font-weight:600;color:var(--blue-2);white-space:nowrap;opacity:0;transition:opacity .12s;pointer-events:none;z-index:2}
+.cell-spese .spark-tip.on{opacity:1}
+
+/* ═══ COCKPIT — icone SVG dentro i bottoni (impostazioni) e box UI form ═══ */
+.btn > svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.8;vertical-align:-3px;margin-right:7px;display:inline-block}
+.frow .fic > svg{width:52%;height:52%;color:var(--blue-2);stroke:var(--blue-2)}
+.frow .fic{display:grid;place-items:center}

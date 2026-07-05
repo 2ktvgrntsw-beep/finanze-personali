@@ -113,15 +113,17 @@ export const renderMovimenti = async (root, params = {}) => {
       const segno = m.tipo === 'spesa' ? '−' : m.tipo === 'entrata' ? '+' : '⇄ ';
       const cls = m.tipo === 'spesa' ? 'sp' : m.tipo === 'entrata' ? 'en' : 'tr';
       const icona = m.macro ? iconaMacro(m.macro) : iconaTipo(m.tipo);
-      const sotto = [m.macro, m.cat].filter(Boolean).join(' · ') || m.tipo;
+      // classificazione COMPLETA fino alla sottocategoria (per modifiche massive a colpo d'occhio)
+      const classif = [m.macro, m.cat, m.sub].filter(Boolean).join(' › ') || m.tipo;
+      const sotto = classif;
       return `
         <div class="mov-wrap" data-id="${m.id}">
           <div class="del-bg">Elimina</div>
-          <div class="mov" data-mov="${m.id}">
+          <div class="mov tipo-${m.tipo}" data-mov="${m.id}">
             <div class="ic">${icona}</div>
             <div class="body">
-              <div class="d1">${escapeHtml(m.desc || sotto)}</div>
-              <div class="d2">${escapeHtml(sotto)}${m.conto ? ' · ' + escapeHtml(m.conto) : ''}</div>
+              <div class="d1">${escapeHtml(m.desc || classif)}</div>
+              <div class="d2"><span class="cls">${escapeHtml(classif)}</span>${m.conto ? ' <span class="cnt">· ' + escapeHtml(m.conto) + '</span>' : ''}</div>
             </div>
             <div class="amt ${cls} num">${segno}${fmtEUR(m.imp)}</div>
           </div>

@@ -3,6 +3,7 @@
 // native). Le piattaforme sono i conti di tipo 'investimenti'; gli strumenti sono le
 // sottocategorie usate nei trasferimenti di investimento.
 
+import { UI_SVG } from '../core/icons.js';
 import { state } from '../core/store.js';
 import { fmtEUR, escapeHtml } from '../core/utils.js';
 import { navigate } from '../core/router.js';
@@ -39,7 +40,7 @@ export const renderInvestimenti = async (root) => {
     <div class="section-lbl"><span>Per piattaforma</span></div>
     ${contiInv.map(c => `
       <div class="patrow">
-        <div class="icon" style="background:rgba(61,182,255,.18)">💠</div>
+        <div class="icon">${UI_SVG.investimento}</div>
         <div class="body" data-conto="${c.id}">
           <div class="row1"><span class="name">${escapeHtml(c.nome)}</span><span class="amt num">${fmtEUR(saldoStimato(c))}</span></div>
           <div class="bar"><span style="width:${Math.max(1.5, saldoStimato(c) / maxC * 100)}%;background:var(--transfer)"></span></div>

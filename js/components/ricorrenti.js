@@ -59,8 +59,8 @@ export const renderRicorrenti = async (root) => {
     const segno = r.tipo === 'trasferimento' ? '⇄ ' : r.tipo === 'entrata' ? '+' : '−';
     const dest = r.contoDest ? ' → ' + escapeHtml(r.contoDest) : '';
     return `
-      <div class="recrow" data-ric="${r.id}">
-        <div class="ic" style="background:${bg}">${icona}</div>
+      <div class="recrow tipo-${r.tipo}" data-ric="${r.id}">
+        <div class="ic">${icona}</div>
         <div class="body"><div class="d1">${escapeHtml(r.nome)}</div><div class="d2">${freq}${extra}${dest}</div></div>
         <div class="amt ${cls} num">${segno}${fmtEUR(r.imp)}</div>
       </div>`;

@@ -1,5 +1,6 @@
 // conti.js — Elenco e gestione conti (raggruppati per tipologia).
 
+import { UI_SVG } from '../core/icons.js';
 import { state } from '../core/store.js';
 import { fmtEUR, escapeHtml, todayISO } from '../core/utils.js';
 import { saldoStimato, saveConto, deleteConto, TIPI_CONTO, LABEL_TIPO } from '../services/contiService.js';
@@ -19,7 +20,7 @@ export const renderConti = async (root, params = {}) => {
     html += `<div class="section-lbl"><span>${LABEL_TIPO[tipo]}</span><span class="num">${fmtEUR(tot)}</span></div>`;
     html += conti.map(c => `
       <div class="patrow" data-conto="${c.id}">
-        <div class="icon" style="background:var(--surface-2)">💳</div>
+        <div class="icon">${UI_SVG.conto}</div>
         <div class="body">
           <div class="row1"><span class="name">${escapeHtml(c.nome)}</span><span class="amt num">${fmtEUR(saldoStimato(c))}</span></div>
           <div class="sub">${c.tipo === 'asset' ? 'Valore manuale' : 'Saldo iniziale ' + fmtEUR(c.saldo_iniziale)} · tocca per modificare</div>

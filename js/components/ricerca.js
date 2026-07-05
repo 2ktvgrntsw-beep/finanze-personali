@@ -105,12 +105,13 @@ export const renderRicerca = async (root, params = {}) => {
       const segno = m.tipo === 'spesa' ? '−' : m.tipo === 'entrata' ? '+' : '⇄ ';
       const cls = m.tipo === 'spesa' ? 'sp' : m.tipo === 'entrata' ? 'en' : 'tr';
       const icona = m.macro ? iconaMacro(m.macro) : iconaTipo(m.tipo);
-      const sotto = [m.macro, m.cat].filter(Boolean).join(' · ') || m.tipo;
+      const classif = [m.macro, m.cat, m.sub].filter(Boolean).join(' › ') || m.tipo;
+      const sotto = classif;
       const sel = _selezione.has(m.id);
-      return `<div class="mov ${_modoSelezione ? 'selectable' : ''} ${sel ? 'sel' : ''}" data-mov="${m.id}">
+      return `<div class="mov tipo-${m.tipo} ${_modoSelezione ? 'selectable' : ''} ${sel ? 'sel' : ''}" data-mov="${m.id}">
         ${_modoSelezione ? `<div class="selbox">${sel ? '✓' : ''}</div>` : ''}
         <div class="ic">${icona}</div>
-        <div class="body"><div class="d1">${escapeHtml(m.desc || sotto)}</div><div class="d2">${fmtDataEstesa(m.data)} · ${escapeHtml(sotto)}</div></div>
+        <div class="body"><div class="d1">${escapeHtml(m.desc || classif)}</div><div class="d2"><span class="cls">${escapeHtml(classif)}</span> <span class="cnt">· ${fmtDataEstesa(m.data)}${m.conto ? ' · ' + escapeHtml(m.conto) : ''}</span></div></div>
         <div class="amt ${cls} num">${segno}${fmtEUR(m.imp)}</div>
       </div>`;
     }).join('') + '</div>';
