@@ -206,12 +206,24 @@ const _renderCategoriaTempo = (body, root) => {
   body.querySelectorAll('[data-anno-bar]').forEach(el => el.addEventListener('click', () => { _cAnno = el.dataset.annoBar; renderAnalisi(root, ancora); }));
   // drill nelle sotto-voci: naviga via hash (cronologia + swipe-back iOS)
   body.querySelectorAll('[data-drill]').forEach(el => el.addEventListener('click', () => {
-    const v = el.dataset.drill === '(senza)' ? '' : el.dataset.drill;
+    const raw = el.dataset.drill;
+    const isSenza = raw === '(senza)';
+    const v = isSenza ? '' : raw;
     if (livello === 'cat') location.hash = buildHash('analisi', { macro: _cMacro, cat: v });
-    else if (livello === 'sub') location.hash = buildHash('analisi', { macro: _cMacro, cat: _cCat, sub: v });
+    else if (livello === 'sub') {
+      // ultimo livello: vai alla RICERCA filtrata (così puoi modificare le spese)
+      navigate('ricerca', {
+        tipo: 'spesa', macro: _cMacro, cat: _cCat,
+        sub: isSenza ? '__vuota__' : v,
+        da: _cAnno + '-01-01', a: _cAnno + '-12-31',
+      });
+    }
   }));
-  // vedi movimenti dell'anno selezionato
-  body.querySelector('#vedi-mov').addEventListener('click', () => navigate('movimenti', { macro: _cMacro, cat: _cCat, sub: _cSub, periodo: 'anno', mese: _cAnno + '-01' }));
+  // vedi movimenti dell'anno selezionato -> apre la RICERCA filtrata (così puoi modificare da lì)
+  body.querySelector('#vedi-mov').addEventListener('click', () => navigate('ricerca', {
+    tipo: 'spesa', macro: _cMacro, cat: _cCat || '', sub: _cSub || '',
+    da: _cAnno + '-01-01', a: _cAnno + '-12-31',
+  }));
 };
 
 // ---- VISTA: un anno, tutte le categorie ----

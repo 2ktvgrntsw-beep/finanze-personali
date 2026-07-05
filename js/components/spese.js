@@ -65,6 +65,7 @@ export const renderSpese = async (root) => {
   // lista categorie a barre
   const righe = aggregaPerLivello(movs, 'macro');
   const maxTot = righe.length ? righe[0].totale : 1;
+  const _intensita = (pct) => pct >= 30 ? 'hi' : pct >= 15 ? 'md' : pct >= 7 ? 'lo' : 'xlo';
   const righeHTML = righe.length ? righe.map(r => `
     <div class="catrow">
       <div class="icon" data-macro-mov="${escapeHtml(r.chiave)}">${iconaMacro(r.chiave)}</div>
@@ -73,7 +74,7 @@ export const renderSpese = async (root) => {
           <span class="name">${escapeHtml(r.chiave)}</span>
           <span class="right"><span class="amt num">${fmtEUR(r.totale)}</span><span class="pct num">${fmtPct(r.pct)}</span></span>
         </div>
-        <div class="bar"><span style="width:${Math.max(1.5, r.totale / maxTot * 100)}%"></span></div>
+        <div class="bar ${_intensita(r.pct)}"><span style="width:${Math.max(1.5, r.totale / maxTot * 100)}%"></span></div>
       </div>
       <div class="chev" data-macro-drill="${escapeHtml(r.chiave)}">›</div>
     </div>`).join('') : '<div class="empty">Nessuna spesa in questo periodo</div>';
@@ -86,11 +87,18 @@ export const renderSpese = async (root) => {
         <button class="arr" id="next">›</button>
       </div>` : `<div class="month-nav"><div class="m">${labelPeriodo}</div></div>`}
 
-    <div class="triple quad">
-      <div class="cell cell-spese" data-tot="spesa" style="cursor:pointer">${_periodo === 'mese' ? _sparklineHTML(_meseCorrente) : ''}<div class="lbl">Spese</div><div class="val sp num">${fmtEUR(tot.spese)}</div>${deltaHTML}</div>
-      <div class="cell" data-tot="entrata" style="cursor:pointer"><div class="lbl">Entrate</div><div class="val en num">${fmtEUR(tot.entrate)}</div></div>
-      <div class="cell"><div class="lbl">Saldo</div><div class="val sa num">${tot.saldo < 0 ? '−' : ''}${fmtEUR(Math.abs(tot.saldo))}</div></div>
-      <div class="cell" data-tot="trasferimento" style="cursor:pointer"><div class="lbl">Accant.</div><div class="val tr num">${fmtEUR(tot.investito || 0)}</div></div>
+    <div class="hero-spese">
+      ${_periodo === 'mese' ? _sparklineHTML(_meseCorrente) : ''}
+      <div class="cell-spese-main" data-tot="spesa" style="cursor:pointer">
+        <div class="cap">${_periodo === 'anno' ? 'Spese ' + anno : _periodo === 'mese' ? 'Spese di ' + nomeMese(parseInt(mese) - 1).toLowerCase() : 'Spese'}</div>
+        <div class="big-spese num">${fmtEUR(tot.spese)}</div>
+        ${deltaHTML}
+      </div>
+      <div class="metrics-row">
+        <div class="metric" data-tot="entrata" style="cursor:pointer"><div class="lbl">Entrate</div><div class="val en num">${fmtEUR(tot.entrate)}</div></div>
+        <div class="metric"><div class="lbl">Saldo</div><div class="val sa num">${tot.saldo < 0 ? '−' : ''}${fmtEUR(Math.abs(tot.saldo))}</div></div>
+        <div class="metric" data-tot="trasferimento" style="cursor:pointer"><div class="lbl">Accant.</div><div class="val tr num">${fmtEUR(tot.investito || 0)}</div></div>
+      </div>
     </div>
 
     ${paceHTML}
@@ -164,7 +172,7 @@ const _datiSparkline = (meseRif) => {
 const _sparklineHTML = (meseRif) => {
   const d = _datiSparkline(meseRif);
   if (d.max <= 0) return '';   // niente dati, niente grafico
-  const VW = 120, VH = 46, pad = 5;
+  const VW = 120, VH = 50, pad = 6;
   const range = d.max - d.min || 1;
   const nx = i => (i / (d.mesi.length - 1)) * VW;
   const ny = v => VH - pad - ((v - d.min) / range) * (VH - pad * 2);

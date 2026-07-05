@@ -59,8 +59,9 @@ const _updateChrome = (name) => {
   // o ricorrenza). Header uniforme: niente + né freccia, solo "Annulla" a sinistra
   // e il titolo CENTRATO. Per il nuovo inserimento il titolo è nascosto del tutto.
   const isInserimento = name === 'nuovo' || name === 'modifica';
+  const isRicerca = name === 'ricerca';
   const back = document.getElementById('btn-back');
-  if (back) back.style.display = (ROTTE_PRINCIPALI.includes(name) || isInserimento) ? 'none' : 'flex';
+  if (back) back.style.display = (ROTTE_PRINCIPALI.includes(name) || isInserimento || isRicerca) ? 'none' : 'flex';
   // HEADER COMPATTO: nelle pagine principali il titolo è ridondante (c'è il tab
   // evidenziato sotto) e sparisce; resta nelle sottopagine come breadcrumb.
   // La lente vive solo nei Movimenti. Il selettore periodo (head-seg) vive
@@ -82,11 +83,11 @@ const _updateChrome = (name) => {
       lente.style.display = 'none';
     }
   }
-  // + e Annulla: gestiti con isInserimento dichiarato sopra
+  // + e Annulla: gestiti con isInserimento/isRicerca
   const addBtn = document.getElementById('btn-add');
-  if (addBtn) addBtn.style.display = isInserimento ? 'none' : 'flex';
+  if (addBtn) addBtn.style.display = (isInserimento || isRicerca) ? 'none' : 'flex';
   const annulla = document.getElementById('btn-annulla');
-  if (annulla) annulla.style.display = isInserimento ? 'flex' : 'none';
+  if (annulla) annulla.style.display = (isInserimento || isRicerca) ? 'flex' : 'none';
   const seg = document.getElementById('head-seg');
   if (seg) {
     const usaSeg = name === 'spese' || name === 'movimenti' || name === 'analisi';

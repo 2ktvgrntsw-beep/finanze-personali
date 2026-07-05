@@ -5,7 +5,7 @@
 
 // Icone categoria a LINEA (Cockpit): stroke coerente, griglia 24, centrate otticamente.
 // currentColor per ereditare il colore dal contenitore.
-const _svg = (p) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:100%;height:100%;display:block">${p}</svg>`;
+const _svg = (p) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
 export const ICONA_MACRO = {
   'Casa': _svg('<path d="M4 11 12 4.5 20 11"/><path d="M6 9.8V19.5h12V9.8"/><path d="M10 19.5V14.5h4v5"/>'),
   'Trasporti': _svg('<path d="M5 11.5 6.6 7A2 2 0 0 1 8.5 5.5h7a2 2 0 0 1 1.9 1.5L19 11.5"/><rect x="4" y="11.5" width="16" height="5" rx="1.5"/><circle cx="8" cy="16.5" r="1.5"/><circle cx="16" cy="16.5" r="1.5"/>'),
@@ -38,6 +38,8 @@ export const NAV_SVG = {
 
 // Icone UI di servizio (form inserimento, conti, azioni impostazioni) — stile a linea.
 export const UI_SVG = {
+  casa: _svg('<path d="M4 11 12 4.5 20 11"/><path d="M6 9.8V19.5h12V9.8"/><path d="M10 19.5V14.5h4v5"/>'),
+  risparmio: _svg('<path d="M4 8h16v10H4z"/><path d="M4 8l2-4h12l2 4"/><path d="M9 12h6"/>'),
   conto: _svg('<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18"/>'),
   tag: _svg('<path d="M7 7h.01M4 4h7l9 9-7 7-9-9z"/>'),
   importo: _svg('<path d="M12 3v18M8 7h5a2.5 2.5 0 0 1 0 5H9a2.5 2.5 0 0 0 0 5h6"/>'),

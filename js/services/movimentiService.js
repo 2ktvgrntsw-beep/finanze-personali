@@ -199,7 +199,7 @@ export const investitoPerMese = () => {
 const _norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 export const cercaMovimenti = (query, filtri = {}) => {
   const q = _norm((query || '').trim());
-  const haFiltri = filtri.tipo || filtri.macro || filtri.conto || filtri.da || filtri.a || filtri.min != null || filtri.max != null;
+  const haFiltri = filtri.tipo || filtri.macro || filtri.cat || filtri.sub || filtri.conto || filtri.da || filtri.a || filtri.min != null || filtri.max != null;
   if (!q && !haFiltri) return { risultati: [], totali: { spese: 0, entrate: 0, trasf: 0 }, count: 0 };
   const num = q ? parseFloat(q.replace(',', '.')) : NaN;
 
@@ -207,6 +207,10 @@ export const cercaMovimenti = (query, filtri = {}) => {
     // filtri strutturati (tutti in AND)
     if (filtri.tipo && m.tipo !== filtri.tipo) return false;
     if (filtri.macro && m.macro !== filtri.macro) return false;
+    if (filtri.cat && m.cat !== filtri.cat) return false;
+    // sub: '__vuota__' = solo movimenti SENZA sottocategoria; altrimenti match esatto
+    if (filtri.sub === '__vuota__') { if (m.sub) return false; }
+    else if (filtri.sub && m.sub !== filtri.sub) return false;
     if (filtri.conto && m.conto !== filtri.conto) return false;
     if (filtri.da && m.data < filtri.da) return false;
     if (filtri.a && m.data > filtri.a) return false;

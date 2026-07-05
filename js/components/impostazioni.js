@@ -32,16 +32,16 @@ export const renderImpostazioni = async (root) => {
     <div class="card">
       <p class="meta" style="margin-bottom:8px">I tuoi dati vivono solo su questo dispositivo. L'app fa un <b>backup automatico interno</b> a ogni avvio, ma per essere davvero al sicuro esporta ogni tanto un file: è l'unico che sopravvive se iOS libera spazio.</p>
       <p class="meta" style="margin-bottom:14px">${promemoriaBackup}</p>
-      <button class="btn btn-primary" id="export-json" style="margin-bottom:10px">${UI_SVG.backup} Backup completo (JSON) — consigliato</button>
-      <button class="btn btn-secondary" id="export" style="margin-bottom:10px">${UI_SVG.excel} Esporta Excel (per consultazione)</button>
-      <button class="btn btn-secondary" id="import-btn">${UI_SVG.ripristina} Ripristina da backup (.json o .xlsx)</button>
+      <button class="btn btn-primary" id="export-json" style="margin-bottom:10px">Backup completo (JSON) — consigliato</button>
+      <button class="btn btn-secondary" id="export" style="margin-bottom:10px">Esporta Excel (per consultazione)</button>
+      <button class="btn btn-secondary" id="import-btn">Ripristina da backup (.json o .xlsx)</button>
       <input type="file" id="import-file" accept=".json,.xlsx,.xls" style="display:none">
     </div>
 
     <div class="section-lbl"><span>Tag</span></div>
     <div class="card">
       <p class="meta" style="margin-bottom:14px">Applica un tag in blocco a più movimenti passati (es. tutte le spese di un viaggio).</p>
-      <button class="btn btn-secondary" id="bulk-tag">${UI_SVG.tag} Applica tag in blocco</button>
+      <button class="btn btn-secondary" id="bulk-tag">Applica tag in blocco</button>
     </div>
 
     <div class="section-lbl"><span>Gestione</span></div>

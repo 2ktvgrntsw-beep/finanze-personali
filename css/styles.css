@@ -536,15 +536,18 @@ input[type=date].sheet-input{-webkit-appearance:none;appearance:none}
 .app-header .title, .view-title, #view-title, .m, .month-nav .m, .net-card .lbl, .section-lbl span, .day-head span{font-family:var(--font-disp)}
 .big, .big.num, .net-card .big, .val, .amt, .hero .big, .gauge .big{font-family:var(--font-inst)}
 
-/* ═══ COCKPIT — icone SVG a linea nei contenitori categoria/movimento ═══ */
-/* i box icona ora ospitano SVG invece di emoji: centraggio a griglia + bordo */
-.mov .ic, .recrow .ic, .catrow .icon, .patrow .icon, .cat-cell .ci, .frow .fic{
-  display:grid;place-items:center;border:1px solid var(--line)}
+/* ═══ COCKPIT — icone SVG a linea nei contenitori (dimensioni fisse, centraggio robusto) ═══ */
+.mov .ic, .recrow .ic, .catrow .icon, .patrow .icon, .cat-cell .ci, .frow .fic,
+.gruppo-ic, .grp .head .ic, .patrow .ic{
+  display:flex !important;align-items:center;justify-content:center;border:1px solid var(--line);overflow:hidden}
+/* ogni SVG figlio: dimensione fissa coerente col box, colore blu */
 .mov .ic > svg, .recrow .ic > svg, .catrow .icon > svg, .patrow .icon > svg,
-.cat-cell .ci > svg, .frow .fic > svg{
-  width:52%;height:52%;color:var(--blue-2);stroke:var(--blue-2)}
-/* icone leggermente più grandi nelle celle categoria grandi */
-.cat-cell .ci > svg{width:44%;height:44%}
+.patrow .ic > svg, .cat-cell .ci > svg, .frow .fic > svg, .gruppo-ic > svg, .grp .head .ic > svg{
+  width:22px;height:22px;flex:none;color:var(--blue-2);stroke:var(--blue-2)}
+/* celle categoria grandi (Analisi): icona un filo più grande ma non enorme */
+.cat-cell .ci > svg{width:26px;height:26px}
+/* icone nei bottoni gruppo patrimonio */
+.gruppo-ic > svg{width:22px;height:22px}
 /* colore per tipo sulle righe movimento (icona viva) */
 .mov.tipo-spesa .ic, .recrow.tipo-spesa .ic{background:rgba(255,59,92,.08);border-color:rgba(255,59,92,.25)}
 .mov.tipo-spesa .ic > svg, .recrow.tipo-spesa .ic > svg{color:var(--down);stroke:var(--down)}
@@ -646,6 +649,55 @@ input[type=date].sheet-input{-webkit-appearance:none;appearance:none}
 .cell-spese .spark-tip.on{opacity:1}
 
 /* ═══ COCKPIT — icone SVG dentro i bottoni (impostazioni) e box UI form ═══ */
-.btn > svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.8;vertical-align:-3px;margin-right:7px;display:inline-block}
 .frow .fic > svg{width:52%;height:52%;color:var(--blue-2);stroke:var(--blue-2)}
 .frow .fic{display:grid;place-items:center}
+
+/* ═══ COCKPIT — HOME: card grande Spese (hero) come da mock ═══ */
+.hero-spese{position:relative;background:linear-gradient(160deg,var(--surface-2) 0%,var(--surface) 100%);
+  border:1px solid var(--line);border-radius:20px;padding:18px 20px 16px;margin:8px 0 4px;overflow:hidden}
+.hero-spese::before{content:'';position:absolute;inset:0;border-radius:20px;pointer-events:none;
+  background:linear-gradient(160deg,rgba(255,255,255,.045),transparent 42%);z-index:0}
+/* sparkline: piccolo, in alto a destra, NON scende sotto il numero. Proporzione ~2.4:1 */
+.hero-spese .spark{position:absolute;top:15px;right:16px;width:34%;max-width:130px;height:38px;z-index:1;pointer-events:auto}
+.hero-spese .spark svg{width:100%;height:100%;display:block}
+/* il numero e la caption non invadono mai la zona sparkline (le metriche sotto restano piene) */
+.hero-spese .cap, .hero-spese .big-spese{max-width:60%}
+.cell-spese-main{position:relative;z-index:2}
+.hero-spese .cap{font-size:11px;font-weight:600;color:var(--blue-2);text-transform:uppercase;letter-spacing:.1em}
+.hero-spese .big-spese{font-family:var(--font-inst);font-size:26px;font-weight:700;color:var(--txt);line-height:1;margin:6px 0 6px;text-shadow:0 0 22px rgba(46,155,255,.2)}
+.hero-spese .delta{display:inline-flex;align-items:center;font-size:12px;font-weight:600;padding:4px 9px;border-radius:8px;line-height:1}
+.hero-spese .delta.better{color:var(--up);background:rgba(34,227,154,.1)}
+.hero-spese .delta.worse{color:var(--down);background:rgba(255,59,92,.1)}
+.hero-spese .delta.flat{color:var(--txt-2);background:rgba(139,150,171,.1)}
+.metrics-row{display:flex;margin-top:16px;padding-top:14px;border-top:1px solid var(--line);position:relative;z-index:2}
+.metrics-row .metric{flex:1;position:relative;text-align:center}
+.metrics-row .metric:first-child{text-align:left}
+.metrics-row .metric:last-child{text-align:right}
+.metrics-row .metric+.metric::before{content:'';position:absolute;left:0;top:10%;height:80%;width:1px;background:var(--line)}
+.metrics-row .lbl{font-size:9.5px;font-weight:600;color:var(--txt-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+.metrics-row .val{font-family:var(--font-inst);font-size:18px;font-weight:600;line-height:1}
+.metrics-row .val.en{color:var(--up)} .metrics-row .val.sa{color:var(--txt)} .metrics-row .val.tr{color:var(--blue)}
+.hero-spese .spark-tip{position:absolute;top:2px;transform:translateX(-50%);background:rgba(8,11,18,.94);
+  border:1px solid var(--line);border-radius:7px;padding:3px 8px;font-family:var(--font-inst);font-size:12px;
+  font-weight:600;color:var(--blue-2);white-space:nowrap;opacity:0;transition:opacity .12s;pointer-events:none;z-index:5}
+.hero-spese .spark-tip.on{opacity:1}
+
+/* barre categoria a INTENSITÀ (∝ percentuale) */
+.catrow .bar.hi > span{background:linear-gradient(90deg,var(--blue),var(--blue-2));box-shadow:0 0 8px rgba(46,155,255,.45)}
+.catrow .bar.md > span{background:linear-gradient(90deg,#2670C0,var(--blue));box-shadow:none}
+.catrow .bar.lo > span{background:linear-gradient(90deg,#1E4E80,#2E76C4);box-shadow:none}
+.catrow .bar.xlo > span{background:linear-gradient(90deg,#20364F,#274766);box-shadow:none}
+
+/* ═══ COCKPIT — archetti strumento decorativi sulle card principali ═══ */
+.hero-spese::after, .net-card .arcs-deco{
+  content:'';position:absolute;top:-40px;right:-30px;width:150px;height:150px;pointer-events:none;z-index:0;
+  background-image:
+    radial-gradient(circle at 100% 0%, transparent 68px, rgba(46,155,255,.14) 69px, rgba(46,155,255,.14) 70px, transparent 71px),
+    radial-gradient(circle at 100% 0%, transparent 96px, rgba(123,108,255,.10) 97px, rgba(123,108,255,.10) 98px, transparent 99px),
+    radial-gradient(circle at 100% 0%, transparent 124px, rgba(46,155,255,.07) 125px, rgba(46,155,255,.07) 126px, transparent 127px);
+}
+.hero-spese > *{position:relative;z-index:2}
+.hero-spese .spark{z-index:1}
+/* net-card: archi concentrici centrati in alto (già ha ::after glow, aggiungo gli archi) */
+.net-card{position:relative}
+.net-card .big, .net-card .lbl, .net-card .sub{position:relative;z-index:2}

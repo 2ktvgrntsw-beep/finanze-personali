@@ -6,6 +6,7 @@ import { iconaMacro, iconaTipo } from '../core/icons.js';
 import { navigate } from '../core/router.js';
 import { state } from '../core/store.js';
 import { cercaMovimenti, modificaMassiva, applicaTagBulk } from '../services/movimentiService.js';
+import { categorieDi, sottocategorieDi } from '../services/categorieService.js';
 import { apriSelettoreCategoria, apriSheet } from './shared.js';
 import { toast } from '../core/utils.js';
 
@@ -15,7 +16,7 @@ let _ultimiRisultati = [];
 // STATO PERSISTENTE: query e filtri sopravvivono alla navigazione — tornando
 // dalla modifica di un movimento ritrovi la ricerca esattamente com'era.
 let _q = '';
-let _filtri = { tipo: '', macro: '', conto: '', da: '', a: '', min: '', max: '' };
+let _filtri = { tipo: '', macro: '', cat: '', sub: '', conto: '', da: '', a: '', min: '', max: '' };
 let _filtriAperti = false;
 
 export const renderRicerca = async (root, params = {}) => {
@@ -23,6 +24,14 @@ export const renderRicerca = async (root, params = {}) => {
   _selezione = new Set();
   _modoSelezione = false;
   if (params.q) _q = params.q;
+  // filtri preimpostati (es. arrivo da Analisi): applico e apro il pannello
+  if (params.macro !== undefined || params.cat !== undefined || params.sub !== undefined || params.da !== undefined || params.a !== undefined || params.tipo !== undefined) {
+    _filtri = {
+      tipo: params.tipo || '', macro: params.macro || '', cat: params.cat || '', sub: params.sub || '',
+      conto: params.conto || '', da: params.da || '', a: params.a || '', min: '', max: '',
+    };
+    _filtriAperti = true;
+  }
 
   const nFiltri = Object.values(_filtri).filter(v => v !== '').length;
   const macros = [...new Set(state.movimenti.map(m => m.macro).filter(Boolean))].sort();
@@ -43,7 +52,7 @@ export const renderRicerca = async (root, params = {}) => {
         </div>
       </div>
       <div class="filtri-riga filtri-2col">
-        <div><label class="meta">Categoria</label>
+        <div><label class="meta">Macro-categoria</label>
           <select id="f-macro" class="sheet-input">
             <option value="">Tutte</option>
             ${macros.map(m => `<option ${_filtri.macro === m ? 'selected' : ''}>${escapeHtml(m)}</option>`).join('')}
@@ -52,6 +61,19 @@ export const renderRicerca = async (root, params = {}) => {
           <select id="f-conto" class="sheet-input">
             <option value="">Tutti</option>
             ${conti.map(c => `<option ${_filtri.conto === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+          </select></div>
+      </div>
+      <div class="filtri-riga filtri-2col">
+        <div><label class="meta">Categoria</label>
+          <select id="f-cat" class="sheet-input" ${_filtri.macro ? '' : 'disabled'}>
+            <option value="">Tutte</option>
+            ${_filtri.macro ? categorieDi(_filtri.macro).map(c => `<option ${_filtri.cat === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('') : ''}
+          </select></div>
+        <div><label class="meta">Sottocategoria</label>
+          <select id="f-sub" class="sheet-input" ${_filtri.cat ? '' : 'disabled'}>
+            <option value="">Tutte</option>
+            <option value="__vuota__" ${_filtri.sub === '__vuota__' ? 'selected' : ''}>— Senza sottocategoria —</option>
+            ${_filtri.macro && _filtri.cat ? sottocategorieDi(_filtri.macro, _filtri.cat).map(s => `<option ${_filtri.sub === s ? 'selected' : ''}>${escapeHtml(s)}</option>`).join('') : ''}
           </select></div>
       </div>
       <div class="filtri-riga filtri-2col">
@@ -158,11 +180,23 @@ export const renderRicerca = async (root, params = {}) => {
     const el = root.querySelector(sel);
     if (el) el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => { _filtri[campo] = el.value; esegui(); });
   };
-  bindFiltro('#f-macro', 'macro'); bindFiltro('#f-conto', 'conto');
+  // macro: cambia -> azzera cat/sub e ri-renderizza (per popolare i menu a cascata)
+  const elMacro = root.querySelector('#f-macro');
+  if (elMacro) elMacro.addEventListener('change', () => {
+    _filtri.macro = elMacro.value; _filtri.cat = ''; _filtri.sub = '';
+    renderRicerca(root);
+  });
+  // cat: cambia -> azzera sub e ri-renderizza
+  const elCat = root.querySelector('#f-cat');
+  if (elCat) elCat.addEventListener('change', () => {
+    _filtri.cat = elCat.value; _filtri.sub = '';
+    renderRicerca(root);
+  });
+  bindFiltro('#f-sub', 'sub'); bindFiltro('#f-conto', 'conto');
   bindFiltro('#f-da', 'da'); bindFiltro('#f-a', 'a');
   bindFiltro('#f-min', 'min'); bindFiltro('#f-max', 'max');
   root.querySelector('#f-reset').addEventListener('click', () => {
-    _filtri = { tipo: '', macro: '', conto: '', da: '', a: '', min: '', max: '' };
+    _filtri = { tipo: '', macro: '', cat: '', sub: '', conto: '', da: '', a: '', min: '', max: '' };
     renderRicerca(root);
   });
 

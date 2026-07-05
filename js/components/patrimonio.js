@@ -4,7 +4,7 @@
 
 import { state } from '../core/store.js';
 import { fmtEUR, fmtEUR0, escapeHtml, todayISO } from '../core/utils.js';
-import { iconaMacro } from '../core/icons.js';
+import { iconaMacro, UI_SVG } from '../core/icons.js';
 import { navigate } from '../core/router.js';
 import { saldoStimato, saveConto, LABEL_TIPO } from '../services/contiService.js';
 import {
@@ -15,7 +15,7 @@ import { statoPrestito } from '../services/prestitiService.js';
 import { apriSheet } from './shared.js';
 import { toast } from '../core/utils.js';
 
-const ICONA_TIPO_ATT = { asset: '🏠', investimenti: '💠', risparmio: '💰', liquidita: '💳' };
+const ICONA_TIPO_ATT = { asset: UI_SVG.casa || iconaMacro('Casa'), investimenti: UI_SVG.investimento, risparmio: UI_SVG.risparmio, liquidita: UI_SVG.conto };
 const COLORE_ICONA = {
   asset: 'rgba(110,91,255,.18)', investimenti: 'rgba(61,182,255,.18)',
   risparmio: 'rgba(47,208,138,.16)', liquidita: 'var(--surface-2)',
@@ -36,12 +36,12 @@ export const renderPatrimonio = async (root) => {
   const debiti = [];
   if (state.mutuo) {
     const s = statoPrestito(state.mutuo, state.eventiMutuo);
-    if (s) debiti.push({ nome: state.mutuo.nome || 'Mutuo', residuo: s.residuo * (state.mutuo.quota_utente || 100) / 100, icona: '🏛️', max: state.mutuo.importo_iniziale });
+    if (s) debiti.push({ nome: state.mutuo.nome || 'Mutuo', residuo: s.residuo * (state.mutuo.quota_utente || 100) / 100, icona: UI_SVG.casa || iconaMacro('Casa'), max: state.mutuo.importo_iniziale });
   }
   for (const f of state.finanziamenti) {
     if (f.attivo === false) continue;
     const s = statoPrestito(f, []);
-    if (s) debiti.push({ nome: f.nome, residuo: s.residuo * (f.quota_utente || 100) / 100, icona: '📄', max: f.importo_iniziale });
+    if (s) debiti.push({ nome: f.nome, residuo: s.residuo * (f.quota_utente || 100) / 100, icona: UI_SVG.excel, max: f.importo_iniziale });
   }
   const maxDeb = debiti.length ? Math.max(...debiti.map(x => x.max)) : 1;
 
@@ -127,7 +127,7 @@ const _riordinaConti = (root) => {
       <p class="meta" style="margin-bottom:12px">Tieni premuto su ≡ e trascina per riordinare.</p>
       <div id="rio-lista">${conti.map(c => `
         <div class="rio-riga" data-id="${c.id}">
-          <div class="ic">${ICONA_TIPO_ATT[c.tipo] || '💳'}</div>
+          <div class="ic">${ICONA_TIPO_ATT[c.tipo] || UI_SVG.conto}</div>
           <div class="body"><div class="d1">${escapeHtml(c.nome)}</div><div class="d2">${LABEL_TIPO[c.tipo] || c.tipo}</div></div>
           <div class="rio-handle">≡</div>
         </div>`).join('')}</div>
@@ -293,6 +293,11 @@ function _graficoLineaHTML() {
   const ultimoLabel = p[p.length - 1].annomese.split('-').reverse().join('/');
   const haReale = idxPrimoReale >= 0;
 
+  // area sfumata sotto la linea completa (stima+reale), stile sparkline home
+  let dArea = '';
+  p.forEach((pt, i) => { dArea += (i === 0 ? 'M' : 'L') + `${x(i).toFixed(1)},${y(pt.valore).toFixed(1)} `; });
+  dArea += `L${x(p.length - 1).toFixed(1)},${H - padB} L${x(0).toFixed(1)},${H - padB} Z`;
+
   // riferimenti € sull'asse (max e min)
   const fmtK = (v) => Math.abs(v) >= 1000 ? Math.round(v / 1000) + 'k€' : Math.round(v) + '€';
 
@@ -307,11 +312,16 @@ function _graficoLineaHTML() {
           <span>${fmtK(max)}</span><span>${fmtK((max + min) / 2)}</span><span>${fmtK(min)}</span>
         </div>
         <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" id="pat-svg">
+          <defs>
+            <linearGradient id="patline" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2E9BFF"/><stop offset="1" stop-color="#22E39A"/></linearGradient>
+            <linearGradient id="patarea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba(46,155,255,.26)"/><stop offset="1" stop-color="rgba(46,155,255,0)"/></linearGradient>
+          </defs>
           <line x1="${padL}" y1="${padT}" x2="${W - padR}" y2="${padT}" stroke="var(--line)" stroke-width="0.5"/>
           <line x1="${padL}" y1="${H / 2}" x2="${W - padR}" y2="${H / 2}" stroke="var(--line)" stroke-width="0.5"/>
           <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" stroke="var(--line)" stroke-width="0.5"/>
-          <path d="${dStima}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-dasharray="4 3" opacity="0.55"/>
-          ${haReale ? `<path d="${dReale}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>` : ''}
+          <path d="${dArea}" fill="url(#patarea)"/>
+          <path d="${dStima}" fill="none" stroke="url(#patline)" stroke-width="2" stroke-dasharray="4 3" opacity="0.5"/>
+          ${haReale ? `<path d="${dReale}" fill="none" stroke="url(#patline)" stroke-width="2.5"/>` : ''}
           ${dots}
         </svg>
       </div>
