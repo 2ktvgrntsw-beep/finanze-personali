@@ -10,6 +10,7 @@ import {
 } from '../services/categorieService.js';
 import { navigate } from '../core/router.js';
 import { apriSheet, apriSelettoreCategoria } from './shared.js';
+import { UI_SVG } from '../core/icons.js';
 import { safeWrite } from '../core/db.js';
 import { toast } from '../core/utils.js';
 
@@ -21,7 +22,7 @@ export const renderCategorie = async (root) => {
   const macros = listaMacro();
 
   root.innerHTML = `
-    <p class="meta" style="margin:12px 4px">Tocca per aprire l'albero, ✎ per rinominare o eliminare. Le rinomine aggiornano anche i movimenti passati.</p>
+    <p class="meta" style="margin:12px 4px">Tocca per aprire l'albero, la matita per rinominare o eliminare. Le rinomine aggiornano anche i movimenti passati.</p>
     ${macros.map(macro => {
       const cats = categorieDi(macro);
       const aperta = _aperte.has(macro);
@@ -30,7 +31,7 @@ export const renderCategorie = async (root) => {
           <div class="cat-acc-head" data-macro="${escapeHtml(macro)}">
             <div class="cat-acc-title">${escapeHtml(macro)}</div>
             <div class="cat-acc-meta">${cats.length} categorie</div>
-            <div class="cat-gest" data-gest-macro="${escapeHtml(macro)}">✎</div>
+            <div class="cat-gest" data-gest-macro="${escapeHtml(macro)}" role="button" aria-label="Gestisci ${escapeHtml(macro)}">${UI_SVG.matita}</div>
             <div class="cat-acc-chev">${aperta ? '⌄' : '›'}</div>
           </div>
           ${aperta ? `<div class="cat-acc-body">
@@ -41,20 +42,20 @@ export const renderCategorie = async (root) => {
               return `
                 <div class="cat-riga" data-togglecat="${escapeHtml(kCat)}">
                   <div class="cat-riga-nome" style="flex:1">${escapeHtml(cat)}${subs.length ? ` <span class="meta">· ${subs.length} sub</span>` : ''}</div>
-                  <div class="cat-gest" data-gest-cat="${escapeHtml(kCat)}">✎</div>
+                  <div class="cat-gest" data-gest-cat="${escapeHtml(kCat)}" role="button" aria-label="Gestisci categoria">${UI_SVG.matita}</div>
                   ${subs.length ? `<div class="cat-acc-chev">${catAperta ? '⌄' : '›'}</div>` : '<div class="cat-acc-chev" style="opacity:.25">·</div>'}
                 </div>
                 ${catAperta && subs.length ? subs.map(s => `
                   <div class="cat-riga cat-riga-sub">
                     <div class="cat-riga-nome" style="flex:1;color:var(--txt-2)">${escapeHtml(s)}</div>
-                    <div class="cat-gest" data-gest-sub="${escapeHtml(macro)}|${escapeHtml(cat)}|${escapeHtml(s)}">✎</div>
+                    <div class="cat-gest" data-gest-sub="${escapeHtml(macro)}|${escapeHtml(cat)}|${escapeHtml(s)}" role="button" aria-label="Gestisci sottocategoria">${UI_SVG.matita}</div>
                     <div class="cat-acc-chev" style="opacity:0">·</div>
                   </div>`).join('') : ''}`;
             }).join('') : '<div class="meta" style="padding:12px 16px">Nessuna categoria</div>'}
           </div>` : ''}
         </div>`;
     }).join('')}
-    <div style="margin-top:20px"><button class="btn btn-primary" id="nuova">➕ Nuova categoria</button></div>
+    <div style="margin-top:20px"><button class="btn btn-primary" id="nuova">Nuova categoria</button></div>
   `;
 
   root.querySelectorAll('[data-macro]').forEach(el => el.addEventListener('click', () => {
@@ -95,7 +96,7 @@ const _gestisciNodo = (root, livello, macro, cat, sub) => {
     <div class="divider" style="margin:6px 0 14px"></div>
     <label class="meta">Elimina</label>
     ${nMov > 0 ? `
-      <p class="meta" style="font-size:12px;margin:4px 0 10px;color:var(--down)">⚠️ Questa ${lblLiv} è usata da ${nMov} movimenti. Scegli cosa farne:</p>
+      <p class="meta" style="font-size:12px;margin:4px 0 10px;color:var(--down)">Questa ${lblLiv} è usata da ${nMov} movimenti. Scegli cosa farne:</p>
       <button class="btn btn-secondary" id="g-del-riassegna" style="margin-bottom:8px">Elimina e riassegna i movimenti a un'altra categoria…</button>
       <button class="btn btn-danger" id="g-del-lascia">Elimina, lasciando i movimenti come sono</button>
       <p class="meta" style="font-size:11px;margin-top:6px;opacity:.8">Lasciandoli, i movimenti conservano l'etichetta attuale e restano visibili ovunque: sparisce solo dal selettore per i nuovi inserimenti.</p>

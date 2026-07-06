@@ -64,10 +64,10 @@ const costruisciChrome = () => {
   // · lente (solo Movimenti) · ⚙️ a destra. Nelle sottopagine: [‹][titolo]…[+][⚙️].
   const header = document.getElementById('app-header');
   header.innerHTML = `
-    <button class="hbtn" id="btn-search" title="Cerca" style="order:1">
+    <button class="hbtn" id="btn-search" title="Cerca" aria-label="Cerca movimenti" style="order:1">
       <svg viewBox="0 0 24 24" style="width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
     </button>
-    <button class="hbtn back" id="btn-back" style="display:none;order:1">‹</button>
+    <button class="hbtn back" id="btn-back" aria-label="Indietro" style="display:none;order:1">‹</button>
     <button id="btn-annulla" style="display:none;order:1;background:none;border:0;color:var(--down);font-size:15px;font-weight:600;padding:6px 4px;cursor:pointer">Annulla</button>
     <button class="hbtn" id="btn-filtro-pat" title="Filtra patrimonio" aria-label="Filtra patrimonio" style="display:none;order:1">
       <svg viewBox="0 0 24 24" style="width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linejoin:round"><path d="M4 5h16l-6 8v5l-4 2v-7z"/></svg>
@@ -75,7 +75,7 @@ const costruisciChrome = () => {
     <div class="title" id="view-title" style="order:2">Spese</div>
     <div id="head-spacer" style="flex:1;display:none;order:3"></div>
     <div id="head-seg" style="order:4;flex:1;display:flex;justify-content:center"></div>
-    <button class="hbtn add" id="btn-add" title="Aggiungi" style="order:9">+</button>
+    <button class="hbtn add" id="btn-add" title="Aggiungi" aria-label="Nuovo movimento" style="order:9">+</button>
   `;
 
   document.getElementById('btn-back').addEventListener('click', () => history.back());

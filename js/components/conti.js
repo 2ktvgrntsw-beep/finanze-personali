@@ -30,7 +30,7 @@ export const renderConti = async (root, params = {}) => {
   }
 
   root.innerHTML = (html || '<div class="empty">Nessun conto</div>') +
-    `<div style="margin-top:20px"><button class="btn btn-primary" id="nuovo-conto">➕ Nuovo conto</button></div>`;
+    `<div style="margin-top:20px"><button class="btn btn-primary" id="nuovo-conto">Nuovo conto</button></div>`;
 
   root.querySelectorAll('[data-conto]').forEach(el => el.addEventListener('click', () => _editConto(root, el.dataset.conto)));
   root.querySelector('#nuovo-conto').addEventListener('click', () => _editConto(root, null));

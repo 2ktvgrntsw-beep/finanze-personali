@@ -2,7 +2,7 @@
 // modifica massiva di qualsiasi campo (categoria, conto, da/a conto, descrizione, tag).
 
 import { fmtEUR, escapeHtml, fmtDataEstesa } from '../core/utils.js';
-import { iconaMacro, iconaTipo } from '../core/icons.js';
+import { iconaMacro, iconaTipo, UI_SVG } from '../core/icons.js';
 import { navigate } from '../core/router.js';
 import { state } from '../core/store.js';
 import { cercaMovimenti, modificaMassiva, applicaTagBulk } from '../services/movimentiService.js';
@@ -104,7 +104,7 @@ export const renderRicerca = async (root, params = {}) => {
     _ultimiRisultati = risultati;
     const attivi = Object.values(_filtri).some(v => v !== '');
     if (!_q.trim() && !attivi) { box.innerHTML = '<div class="empty">Scrivi qualcosa o apri i Filtri per cercare tra tutti i tuoi movimenti</div>'; return; }
-    if (!count) { box.innerHTML = '<div class="empty"><div class="big-ic">🔍</div>Nessun risultato</div>'; return; }
+    if (!count) { box.innerHTML = `<div class="empty"><div class="big-ic">${UI_SVG.lente}</div>Nessun risultato</div>`; return; }
 
     // totali SEPARATI per tipo: la somma è sempre leggibile anche con risultati misti
     const pezzi = [];

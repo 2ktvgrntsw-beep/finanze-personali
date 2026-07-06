@@ -51,7 +51,7 @@ export const renderInvestimenti = async (root) => {
       <div class="section-lbl"><span>Per strumento</span></div>
       ${strumenti.map(s => `
         <div class="patrow">
-          <div class="icon" style="background:rgba(61,182,255,.12)">📈</div>
+          <div class="icon" style="background:rgba(61,182,255,.12)">${UI_SVG.investimento}</div>
           <div class="body" data-strumento="${escapeHtml(s.nome)}">
             <div class="row1"><span class="name">${escapeHtml(s.nome)}</span><span class="amt num">${fmtEUR(s.tot)}</span></div>
             <div class="bar"><span style="width:${Math.max(1.5, s.tot / maxS * 100)}%;background:var(--transfer)"></span></div>

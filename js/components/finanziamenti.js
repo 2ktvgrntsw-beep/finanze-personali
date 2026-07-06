@@ -36,7 +36,7 @@ export const renderFinanziamenti = async (root) => {
   }).join('');
 
   root.innerHTML = (cards || '<div class="empty"><div class="big-ic">📄</div>Nessun finanziamento attivo</div>') +
-    `<div style="margin-top:16px"><button class="btn btn-primary" id="nuovo">➕ Nuovo finanziamento</button></div>`;
+    `<div style="margin-top:16px"><button class="btn btn-primary" id="nuovo">Nuovo finanziamento</button></div>`;
 
   root.querySelectorAll('[data-fin]').forEach(el => el.addEventListener('click', () => { _apertoId = el.dataset.fin; renderFinanziamenti(root); }));
   root.querySelector('#nuovo').addEventListener('click', () => _edit(root, null));

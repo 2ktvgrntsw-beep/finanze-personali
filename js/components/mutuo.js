@@ -36,7 +36,7 @@ export const renderMutuo = async (root) => {
       ${m.banca ? `<div style="display:flex;justify-content:space-between;padding:6px 0"><span class="meta">Banca</span><span>${escapeHtml(m.banca)}</span></div>` : ''}
     </div>
 
-    <div class="section-lbl"><span>Eventi</span><span style="color:var(--accent);font-size:11px;cursor:pointer" id="add-ev">➕ Estinzione parziale</span></div>
+    <div class="section-lbl"><span>Eventi</span><span style="color:var(--accent);font-size:11px;cursor:pointer" id="add-ev">+ Estinzione parziale</span></div>
     ${eventi.length ? eventi.map(e => `<div class="recrow" data-ev="${e.id}"><div class="ic" style="background:var(--up-bg)">💸</div><div class="body"><div class="d1">${e.tipo === 'estinzione_parziale' ? 'Estinzione parziale' : e.tipo}</div><div class="d2">${fmtData(e.data)}</div></div><div class="amt num">−${fmtEUR(e.importo)}</div></div>`).join('') : '<div class="meta" style="padding:4px">Nessun evento straordinario</div>'}
 
     <div class="section-lbl"><span>Piano di ammortamento</span><span style="color:var(--accent);font-size:11px;cursor:pointer" id="toggle-piano">Mostra piano</span></div>

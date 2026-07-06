@@ -6,6 +6,7 @@ import { state } from '../core/store.js';
 import { fmtEUR, escapeHtml, nomeMese } from '../core/utils.js';
 import { navigate } from '../core/router.js';
 import { contoDiTrasferimento, eInvestimento } from '../services/attribuzioneInvestimenti.js';
+import { costruisciSparkline, agganciaSparkline } from '../core/sparkline.js';
 
 // Somma cumulata dei versamenti verso il conto/strumento dato, per mese.
 // Predicato: il movimento appartiene al conto/strumento dato? (fonte unica per il conto)
@@ -48,36 +49,15 @@ const _andamentoVersato = (nome, isStrumento) => {
 
 const _graficoGrande = (punti) => {
   if (punti.length < 2) return '<div class="empty">Storico insufficiente per il grafico</div>';
-  const VW = 320, VH = 150, padX = 12, padTop = 16, padBot = 30;
-  const vals = punti.map(p => p.val);
-  const min = Math.min(...vals), max = Math.max(...vals), range = max - min || 1;
-  const nx = i => padX + (i / (punti.length - 1)) * (VW - padX * 2);
-  const ny = v => VH - padBot - ((v - min) / range) * (VH - padTop - padBot);
-  const pts = punti.map((p, i) => [nx(i), ny(p.val)]);
-  let line = 'M' + pts[0][0].toFixed(1) + ' ' + pts[0][1].toFixed(1);
-  for (let i = 0; i < pts.length - 1; i++) {
-    const p0 = pts[i > 0 ? i - 1 : 0], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
-    const c1x = p1[0] + (p2[0] - p0[0]) / 6, c1y = p1[1] + (p2[1] - p0[1]) / 6;
-    const c2x = p2[0] - (p3[0] - p1[0]) / 6, c2y = p2[1] - (p3[1] - p1[1]) / 6;
-    line += ` C${c1x.toFixed(1)} ${c1y.toFixed(1)} ${c2x.toFixed(1)} ${c2y.toFixed(1)} ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
-  }
-  const area = line + ` L${pts[pts.length - 1][0].toFixed(1)} ${VH - padBot} L${pts[0][0].toFixed(1)} ${VH - padBot} Z`;
-  const last = pts[pts.length - 1];
-  // etichette: prima, metà, ultima (evita affollamento)
-  const idxLbl = [0, Math.floor(punti.length / 2), punti.length - 1];
-  const labels = idxLbl.map(i => `<text x="${nx(i).toFixed(1)}" y="${VH - 8}" text-anchor="${i === 0 ? 'start' : i === punti.length - 1 ? 'end' : 'middle'}" font-family="Rajdhani" font-size="11" font-weight="600" fill="#535E72">${punti[i].label}</text>`).join('');
-  const dataJson = escapeHtml(JSON.stringify(punti.map(p => ({ l: p.label, v: p.val }))));
-  return `<div class="spark spark-big" data-spark='${dataJson}'>
-    <svg viewBox="0 0 ${VW} ${VH}" preserveAspectRatio="xMidYMid meet">
-      <defs>
-        <linearGradient id="invl" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2E9BFF"/><stop offset="1" stop-color="#22E39A"/></linearGradient>
-        <linearGradient id="inva" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba(46,155,255,.28)"/><stop offset="1" stop-color="rgba(46,155,255,0)"/></linearGradient>
-      </defs>
-      <path d="${area}" fill="url(#inva)"/>
-      <path d="${line}" fill="none" stroke="url(#invl)" stroke-width="2.4" vector-effect="non-scaling-stroke"/>
-      <circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="3.5" fill="#22E39A"/>
-      ${labels}
-    </svg>
+  const datiGrafico = punti.map(p => ({ label: p.label, valore: p.val }));
+  const { svg, dataAttr } = costruisciSparkline(datiGrafico, {
+    vw: 320, vh: 150, padX: 12, padTop: 16, padBot: 30,
+    idLinea: 'invl', idArea: 'inva',
+    coloreLinea0: '#2E9BFF', coloreLinea1: '#22E39A',
+    larghezzaLinea: 2.4, mostraEtichette: true, mostraUltimoPunto: true,
+  });
+  return `<div class="spark spark-big" ${dataAttr}>
+    ${svg}
     <div class="spark-vline"></div>
     <div class="spark-tip"></div>
   </div>`;
@@ -118,29 +98,7 @@ export const renderDettaglioInvestimento = async (root, params = {}) => {
     tipo: 'trasferimento', periodo: 'anno', mese: new Date().toISOString().slice(0, 7),
   }));
 
-  // interattività grafico
-  const spark = root.querySelector('.spark');
-  if (spark) {
-    let dati; try { dati = JSON.parse(spark.dataset.spark); } catch { dati = null; }
-    if (dati) {
-      const tip = spark.querySelector('.spark-tip');
-      const vline = spark.querySelector('.spark-vline');
-      const show = (clientX) => {
-        const r = spark.getBoundingClientRect();
-        let rel = (clientX - r.left) / r.width; rel = Math.max(0, Math.min(1, rel));
-        const idx = Math.round(rel * (dati.length - 1));
-        const o = dati[idx];
-        const posPct = (idx / (dati.length - 1)) * 100;
-        tip.textContent = `${o.l} · ${fmtEUR(o.v)}`;
-        tip.style.left = posPct + '%'; tip.classList.add('on');
-        if (vline) { vline.style.left = posPct + '%'; vline.classList.add('on'); }
-      };
-      const hide = () => { tip.classList.remove('on'); if (vline) vline.classList.remove('on'); };
-      spark.addEventListener('touchstart', (e) => show(e.touches[0].clientX), { passive: true });
-      spark.addEventListener('touchmove', (e) => show(e.touches[0].clientX), { passive: true });
-      spark.addEventListener('touchend', hide, { passive: true });
-      spark.addEventListener('mousemove', (e) => show(e.clientX));
-      spark.addEventListener('mouseleave', hide);
-    }
-  }
+  // interattività grafico: modulo condiviso (corregge anche la precisione della barra,
+  // che qui non era mai stata allineata al fix fatto in spese/patrimonio)
+  agganciaSparkline(root.querySelector('.spark'), fmtEUR);
 };
