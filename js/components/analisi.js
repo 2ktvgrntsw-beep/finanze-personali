@@ -16,7 +16,7 @@ import { listaMacro, categoriaHaSub } from '../services/categorieService.js';
 let _tab = 'categoria';   // 'categoria' | 'anno' | 'tag'
 let _annoSel = String(new Date().getFullYear());
 // stato drill per la vista "categoria nel tempo"
-let _cMacro = '', _cCat = '', _cSub = '', _cAnno = '';
+let _cMacro = '', _cCat = '', _cSub = '', _cAnno = '', _cTipo = 'spesa';
 let _tagSel = new Set();   // tag selezionati per l'analisi incrociata
 let _tagQuery = '';       // testo digitato nella barra tag
 let _tagAnno = '';        // anno selezionato nel grafico a barre dell'analisi tag
@@ -84,6 +84,7 @@ const _renderCategoriaTempo = (body, root) => {
     tipiNellaMacro[m.tipo] = (tipiNellaMacro[m.tipo] || 0) + 1;
   }
   const tipoMacro = Object.entries(tipiNellaMacro).sort((a, b) => b[1] - a[1])[0]?.[0] || 'spesa';
+  _cTipo = tipoMacro;   // tipo dominante della macro analizzata (per la Cerca coerente)
   const filtraTipo = (m) => m.tipo === tipoMacro;
 
   // totale per anno del ramo selezionato
@@ -213,7 +214,7 @@ const _renderCategoriaTempo = (body, root) => {
     else if (livello === 'sub') {
       // ultimo livello: vai alla RICERCA filtrata (così puoi modificare le spese)
       navigate('ricerca', {
-        tipo: 'spesa', macro: _cMacro, cat: _cCat,
+        tipo: _cTipo, macro: _cMacro, cat: _cCat,
         sub: isSenza ? '__vuota__' : v,
         da: _cAnno + '-01-01', a: _cAnno + '-12-31',
       });
@@ -221,7 +222,7 @@ const _renderCategoriaTempo = (body, root) => {
   }));
   // vedi movimenti dell'anno selezionato -> apre la RICERCA filtrata (così puoi modificare da lì)
   body.querySelector('#vedi-mov').addEventListener('click', () => navigate('ricerca', {
-    tipo: 'spesa', macro: _cMacro, cat: _cCat || '', sub: _cSub || '',
+    tipo: _cTipo, macro: _cMacro, cat: _cCat || '', sub: _cSub || '',
     da: _cAnno + '-01-01', a: _cAnno + '-12-31',
   }));
 };

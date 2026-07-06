@@ -19,10 +19,10 @@ export const composizioneAttivita = () => {
   return out;
 };
 
-export const totaleAttivita = () => composizioneAttivita().reduce((s, r) => s + r.totale, 0);
+export const totaleAttivita = (escludiTipi = []) => composizioneAttivita().filter(r => !escludiTipi.includes(r.tipo)).reduce((s, r) => s + r.totale, 0);
 export const totalePassivita = () => debitoTotaleResiduo();
 
-export const patrimonioNetto = () => round2(totaleAttivita() - totalePassivita());
+export const patrimonioNetto = (escludiTipi = []) => round2(totaleAttivita(escludiTipi) - totalePassivita());
 
 // --- Snapshot mensili (per il delta e lo storico patrimoniale) ---
 export const salvaSnapshotMese = async () => {
@@ -59,10 +59,11 @@ export const deltaNettoMese = () => {
 //    attuale, per avere una linea storica già popolata fin dal primo giorno.
 //  - REALE: gli snapshot mensili effettivamente salvati dall'utente ("rilevazioni").
 // Ritorna { punti: [{annomese, valore, stima}], primoReale }.
-export const serieStoricoPatrimonio = () => {
-  const nettoOggi = patrimonioNetto();
+export const serieStoricoPatrimonio = (escludiTipi = []) => {
+  const nettoOggi = patrimonioNetto(escludiTipi);
 
   // flusso netto mensile (entrate - spese; i trasferimenti sono interni)
+  // se escludo un tipo, i flussi restano gli stessi (il flusso è entrate/spese, non per conto)
   const flussoMese = {};
   for (const m of state.movimenti) {
     const am = m.annomese || m.data.slice(0, 7);
@@ -76,8 +77,8 @@ export const serieStoricoPatrimonio = () => {
   const tuttiMesi = Array.from(new Set([...mesi, meseCorrente])).sort();
 
   // Asset con data di possesso: il loro valore va SOTTRATTO dalla stima nei mesi
-  // precedenti al possesso (in quei mesi non facevano parte del patrimonio).
-  const assetDatati = state.conti.filter(c => c.tipo === 'asset' && c.possessoData);
+  // precedenti al possesso. Se il tipo 'asset' è escluso, non li consideriamo affatto.
+  const assetDatati = escludiTipi.includes('asset') ? [] : state.conti.filter(c => c.tipo === 'asset' && c.possessoData);
 
   const stima = {};
   let valore = nettoOggi;
@@ -94,8 +95,9 @@ export const serieStoricoPatrimonio = () => {
   }
 
   const realeByMese = {};
-  for (const s of state.snapshot) realeByMese[s.annomese] = s.netto;
-  const primoReale = Object.keys(realeByMese).sort()[0] || null;
+  const filtrato = escludiTipi.length > 0;
+  if (!filtrato) { for (const s of state.snapshot) realeByMese[s.annomese] = s.netto; }
+  const primoReale = filtrato ? null : (Object.keys(realeByMese).sort()[0] || null);
 
   const punti = tuttiMesi.map(am => ({
     annomese: am,

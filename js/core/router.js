@@ -69,7 +69,8 @@ const _updateChrome = (name) => {
   const titolo = document.getElementById('view-title');
   if (titolo) {
     titolo.style.display = (ROTTE_PRINCIPALI.includes(name) || name === 'nuovo') ? 'none' : 'block';
-    titolo.classList.toggle('center', name === 'modifica');
+    // titolo centrato in tutte le pagine con Annulla a sinistra (modifica, modifica ricorrenza)
+    titolo.classList.toggle('center', isInserimento && name !== 'nuovo');
   }
   // lente: VISIBILE solo nei Movimenti; nelle altre principali resta invisibile ma
   // occupa il suo spazio (il selettore centrale rimane perfettamente centrato).

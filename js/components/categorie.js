@@ -134,17 +134,41 @@ const _gestisciNodo = (root, livello, macro, cat, sub) => {
 const _nuovaCategoria = (root, macros) => {
   apriSheet('Nuova categoria', `
     <label class="meta">Macrocategoria</label>
-    <input id="nc-macro" list="macro-list" placeholder="Es. Casa" class="sheet-input">
+    <input id="nc-macro" list="macro-list" placeholder="Es. Casa" class="sheet-input" autocomplete="off">
     <datalist id="macro-list">${macros.map(m => `<option>${escapeHtml(m)}</option>`).join('')}</datalist>
     <label class="meta">Categoria</label>
-    <input id="nc-cat" placeholder="Es. Bollette" class="sheet-input">
+    <input id="nc-cat" list="cat-list" placeholder="Es. Bollette" class="sheet-input" autocomplete="off">
+    <datalist id="cat-list"></datalist>
     <label class="meta">Sottocategoria (opzionale)</label>
-    <input id="nc-sub" placeholder="Es. Luce" class="sheet-input">
+    <input id="nc-sub" list="sub-list" placeholder="Es. Luce" class="sheet-input" autocomplete="off">
+    <datalist id="sub-list"></datalist>
     <button class="btn btn-primary" id="nc-ok" style="margin-top:8px">Aggiungi</button>
   `, (body, chiudi) => {
+    const inMacro = body.querySelector('#nc-macro');
+    const inCat = body.querySelector('#nc-cat');
+    const dlCat = body.querySelector('#cat-list');
+    const dlSub = body.querySelector('#sub-list');
+    // cascata: le opzioni di categoria dipendono dalla macro digitata
+    const aggiornaCat = () => {
+      const m = inMacro.value.trim();
+      const cats = m ? categorieDi(m) : [];
+      dlCat.innerHTML = cats.map(c => `<option>${escapeHtml(c)}</option>`).join('');
+      aggiornaSub();
+    };
+    // le sub dipendono da macro + categoria digitate
+    const aggiornaSub = () => {
+      const m = inMacro.value.trim(), c = inCat.value.trim();
+      const subs = (m && c) ? sottocategorieDi(m, c) : [];
+      dlSub.innerHTML = subs.map(s => `<option>${escapeHtml(s)}</option>`).join('');
+    };
+    inMacro.addEventListener('input', aggiornaCat);
+    inMacro.addEventListener('change', aggiornaCat);
+    inCat.addEventListener('input', aggiornaSub);
+    inCat.addEventListener('change', aggiornaSub);
+
     body.querySelector('#nc-ok').addEventListener('click', async () => {
-      const macro = body.querySelector('#nc-macro').value.trim();
-      const cat = body.querySelector('#nc-cat').value.trim();
+      const macro = inMacro.value.trim();
+      const cat = inCat.value.trim();
       const sub = body.querySelector('#nc-sub').value.trim();
       if (!macro) { toast('Inserisci la macrocategoria'); return; }
       await saveCategoria({ macro, cat, sub });

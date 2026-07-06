@@ -40,6 +40,7 @@ export const NAV_SVG = {
 export const UI_SVG = {
   casa: _svg('<path d="M4 11 12 4.5 20 11"/><path d="M6 9.8V19.5h12V9.8"/><path d="M10 19.5V14.5h4v5"/>'),
   risparmio: _svg('<path d="M4 8h16v10H4z"/><path d="M4 8l2-4h12l2 4"/><path d="M9 12h6"/>'),
+  descrizione: _svg('<path d="M4 7h16M4 12h16M4 17h10"/>'),
   conto: _svg('<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18"/>'),
   tag: _svg('<path d="M7 7h.01M4 4h7l9 9-7 7-9-9z"/>'),
   importo: _svg('<path d="M12 3v18M8 7h5a2.5 2.5 0 0 1 0 5H9a2.5 2.5 0 0 0 0 5h6"/>'),

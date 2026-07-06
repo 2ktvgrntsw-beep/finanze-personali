@@ -49,7 +49,12 @@ export const renderInserimento = async (root, params = {}) => {
     const liq = state.conti.find(c => c.tipo === 'liquidita');
     if (liq) d.conto = liq.nome;
   }
-  document.getElementById('view-title').textContent = d.ricEdit ? 'Modifica ricorrenza' : params.id ? 'Modifica' : 'Nuova operazione';
+  const _title = document.getElementById('view-title');
+  const _isModifica = d.ricEdit || params.id;
+  _title.textContent = d.ricEdit ? 'Modifica ricorrenza' : params.id ? 'Modifica' : 'Nuova operazione';
+  // in modifica: titolo visibile e centrato (non si sovrappone ad Annulla)
+  if (_isModifica) { _title.style.display = 'block'; _title.classList.add('center'); }
+  else { _title.classList.remove('center'); }
   _render(root);
 };
 
@@ -71,7 +76,7 @@ const _render = (root) => {
     <div class="ins-compact">
       ${contoRow}
       <div class="frow">
-        <div class="fic">💬</div>
+        <div class="fic">${UI_SVG.descrizione}</div>
         <input class="ffld" id="fld-desc" placeholder="Descrizione" value="${escapeHtml(d.desc)}" autocomplete="off">
         <div class="sugg-dropdown" id="sugg-dd"></div>
       </div>
@@ -158,9 +163,11 @@ const _labelRipeti = (r) => {
 const _mostraTendina = (root) => {
   const dd = root.querySelector('#sugg-dd');
   if (!dd) return;
-  const sugg = suggerisciPerTesto(d.desc, 5);
-  if (!sugg.length || d.desc.trim().length < 2) { dd.innerHTML = ''; dd.style.display = 'none'; return; }
+  const formRows = dd.closest('.form-rows');
+  const sugg = suggerisciPerTesto(d.desc, 12);
+  if (!sugg.length || d.desc.trim().length < 2) { dd.innerHTML = ''; dd.style.display = 'none'; if (formRows) formRows.classList.remove('sugg-open'); return; }
   dd.style.display = 'block';
+  if (formRows) formRows.classList.add('sugg-open');
   dd.innerHTML = sugg.map((s, i) => {
     const c = s.classificazione;
     const label = [c.macro, c.cat].filter(Boolean).join(':') || c.tipo;

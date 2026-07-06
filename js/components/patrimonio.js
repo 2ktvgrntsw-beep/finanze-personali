@@ -4,12 +4,12 @@
 
 import { state } from '../core/store.js';
 import { dbGet, dbAdd } from '../core/db.js';
-import { fmtEUR, fmtEUR0, escapeHtml, todayISO } from '../core/utils.js';
+import { fmtEUR, fmtEUR0, escapeHtml, todayISO, nomeMese } from '../core/utils.js';
 import { iconaMacro, UI_SVG } from '../core/icons.js';
 import { navigate } from '../core/router.js';
 import { saldoStimato, saveConto, LABEL_TIPO } from '../services/contiService.js';
 import {
-  totaleAttivita, totalePassivita, patrimonioNetto,
+  totaleAttivita, totalePassivita, patrimonioNetto, composizioneAttivita,
   salvaSnapshotMese, snapshotMeseMancante, serieStoricoPatrimonio,
 } from '../services/patrimonioService.js';
 import { statoPrestito } from '../services/prestitiService.js';
@@ -24,6 +24,10 @@ const COLORE_ICONA = {
 
 // stato dei gruppi conti aperti (default: tutti chiusi per compattezza)
 const _gruppiAperti = new Set();
+const _contiEspansi = new Set();   // conti investimento con strumenti annidati aperti
+let _graficoPatAperto = false;     // grafico andamento: nascosto di default, apribile da icona
+let _filtroPatAperto = false;      // finestrella filtro categorie del totale
+const _tipiEsclusi = new Set();    // tipi esclusi dal totale/grafico (es. 'asset' per togliere la casa)
 // ordine dei 4 gruppi patrimoniali (persistito in meta); default sotto
 const ORDINE_DEFAULT = ['liquidita', 'risparmio', 'investimenti', 'asset'];
 let _ordineGruppi = ORDINE_DEFAULT.slice();
@@ -35,8 +39,9 @@ export const renderPatrimonio = async (root) => {
     const rec = await dbGet('meta', CHIAVE_ORDINE);
     if (rec && Array.isArray(rec.valore) && rec.valore.length === 4) _ordineGruppi = rec.valore;
   } catch { /* default */ }
-  const netto = patrimonioNetto();
-  const att = totaleAttivita();
+  const esclusi = [..._tipiEsclusi];
+  const netto = patrimonioNetto(esclusi);
+  const att = totaleAttivita(esclusi);
   const pass = totalePassivita();
 
   // conti per lo strip orizzontale
@@ -55,20 +60,43 @@ export const renderPatrimonio = async (root) => {
   }
   const maxDeb = debiti.length ? Math.max(...debiti.map(x => x.max)) : 1;
 
+  const NOMI_TIPO = { liquidita: 'Liquidità', risparmio: 'Risparmio', investimenti: 'Investimenti', asset: 'Beni / Asset' };
+  const tipiDisponibili = composizioneAttivita().map(r => r.tipo);
+  const filtroAttivo = _tipiEsclusi.size > 0;
+
   root.innerHTML = `
     <div class="net-card">
-      <div class="lbl">Patrimonio netto</div>
+      <div class="net-icons">
+        <button class="net-ic ${filtroAttivo ? 'on' : ''}" id="filtro-pat" aria-label="Filtra categorie" title="Filtra">
+          <svg viewBox="0 0 24 24"><path d="M4 5h16l-6 8v5l-4 2v-7z"/></svg>
+        </button>
+        <button class="net-ic ${_graficoPatAperto ? 'on' : ''}" id="grafico-pat" aria-label="Andamento" title="Andamento">
+          <svg viewBox="0 0 24 24"><path d="M4 18l5-6 4 4 6-8"/><path d="M3 21h18"/></svg>
+        </button>
+      </div>
+      <div class="lbl">Patrimonio netto${filtroAttivo ? ' · filtrato' : ''}</div>
       <div class="big num">${fmtEUR(netto)}</div>
       <div class="sub">
         <div><span class="lbl2">Attività</span><b class="num">${fmtEUR(att)}</b></div>
         <div><span class="lbl2">Passività</span><b class="neg num">${pass > 0 ? '−' : ''}${fmtEUR(pass)}</b></div>
       </div>
+      <div class="net-filtro ${_filtroPatAperto ? 'open' : ''}" id="net-filtro">
+        <div class="net-filtro-tit">Includi nel totale</div>
+        ${tipiDisponibili.map(t => `
+          <label class="net-filtro-riga">
+            <span>${NOMI_TIPO[t] || t}</span>
+            <input type="checkbox" data-tipo-filtro="${t}" ${_tipiEsclusi.has(t) ? '' : 'checked'}>
+          </label>`).join('')}
+      </div>
+    </div>
+
+    <div class="grafico-pat-wrap ${_graficoPatAperto ? 'open' : ''}" id="grafico-pat-wrap">
+      ${_graficoLineaHTML(esclusi)}
     </div>
 
     ${_contiCollassabiliHTML()}
 
-    ${_graficoLineaHTML()}
-    ${snapshotMeseMancante() ? '<div style="text-align:center;margin:10px 0"><button class="btn btn-secondary" id="snap" style="width:auto;display:inline-flex;padding:9px 16px;font-size:13px">📸 Salva rilevazione di oggi</button></div>' : ''}
+    ${snapshotMeseMancante() && !filtroAttivo ? '<div style="text-align:center;margin:10px 0"><button class="btn btn-secondary" id="snap" style="width:auto;display:inline-flex;padding:9px 16px;font-size:13px">📸 Salva rilevazione di oggi</button></div>' : ''}
 
     ${debiti.length ? `
       <div class="section-lbl"><span>Debiti</span></div>
@@ -104,7 +132,14 @@ export const renderPatrimonio = async (root) => {
   root.querySelectorAll('[data-conto]').forEach(el => el.addEventListener('click', (e) => {
     e.stopPropagation();
     const c = state.conti.find(x => x.id === el.dataset.conto);
-    // conti di investimento -> pagina dettaglio con grafico; altri -> modifica saldo
+    // conto investimento CON strumenti -> espande/collassa l'annidamento
+    if (el.dataset.espandi) {
+      if (_contiEspansi.has(el.dataset.espandi)) _contiEspansi.delete(el.dataset.espandi);
+      else _contiEspansi.add(el.dataset.espandi);
+      renderPatrimonio(root);
+      return;
+    }
+    // conto investimento SENZA strumenti annidati -> dettaglio con grafico; altri -> modifica saldo
     if (c && c.tipo === 'investimenti') navigate('dettaglio-investimento', { conto: c.nome });
     else _modificaConto(root, el.dataset.conto);
   }));
@@ -122,14 +157,64 @@ export const renderPatrimonio = async (root) => {
   // navigazione sezioni
   root.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => navigate(b.dataset.go)));
 
-  // tocco sui punti del grafico patrimonio -> mostra la cifra
-  const tip = root.querySelector('#pat-tip');
-  root.querySelectorAll('.pt-dot').forEach(dot => {
-    const mostra = () => { if (tip) tip.textContent = dot.dataset.info; };
-    dot.addEventListener('click', mostra);
-    dot.addEventListener('touchstart', mostra, { passive: true });
-    dot.addEventListener('mouseenter', mostra);
+  // toggle grafico andamento patrimonio (icona nella net-card)
+  const gBtn = root.querySelector('#grafico-pat');
+  const gWrap = root.querySelector('#grafico-pat-wrap');
+  if (gBtn && gWrap) gBtn.addEventListener('click', () => {
+    _graficoPatAperto = !_graficoPatAperto;
+    gWrap.classList.toggle('open', _graficoPatAperto);
+    gBtn.classList.toggle('on', _graficoPatAperto);
+    if (_graficoPatAperto) _agganciaGraficoPat(root);
   });
+
+  // toggle finestrella filtro categorie
+  const fBtn = root.querySelector('#filtro-pat');
+  const fBox = root.querySelector('#net-filtro');
+  if (fBtn && fBox) fBtn.addEventListener('click', () => {
+    _filtroPatAperto = !_filtroPatAperto;
+    fBox.classList.toggle('open', _filtroPatAperto);
+    fBtn.classList.toggle('on', _filtroPatAperto || _tipiEsclusi.size > 0);
+  });
+
+  // checkbox categorie: includi/escludi dal totale + grafico
+  root.querySelectorAll('[data-tipo-filtro]').forEach(cb => cb.addEventListener('change', () => {
+    const t = cb.dataset.tipoFiltro;
+    if (cb.checked) _tipiEsclusi.delete(t); else _tipiEsclusi.add(t);
+    _filtroPatAperto = true;   // tieni aperta la finestrella
+    renderPatrimonio(root);
+  }));
+
+  // aggancio grafico interattivo (se aperto)
+  if (_graficoPatAperto) _agganciaGraficoPat(root);
+};
+
+// interattività del grafico patrimonio (vline + tooltip che seguono i punti)
+const _agganciaGraficoPat = (root) => {
+  const spark = root.querySelector('.spark-pat');
+  if (!spark) return;
+  let dati; try { dati = JSON.parse(spark.dataset.spark); } catch { return; }
+  const tip = spark.querySelector('.spark-tip');
+  const vline = spark.querySelector('.spark-vline');
+  const VW = parseFloat(spark.dataset.vw) || 320;
+  const padX = parseFloat(spark.dataset.padx) || 12;
+  const puntoPct = (idx) => ((padX + (idx / (dati.length - 1)) * (VW - padX * 2)) / VW) * 100;
+  const show = (clientX) => {
+    const r = spark.getBoundingClientRect();
+    let rel = (clientX - r.left) / r.width; rel = Math.max(0, Math.min(1, rel));
+    const relInner = (rel * VW - padX) / (VW - padX * 2);
+    const idx = Math.max(0, Math.min(dati.length - 1, Math.round(relInner * (dati.length - 1))));
+    const o = dati[idx];
+    const posPct = puntoPct(idx);
+    tip.textContent = `${o.l} · ${fmtEUR(o.v)}`;
+    tip.style.left = posPct + '%'; tip.classList.add('on');
+    if (vline) { vline.style.left = posPct + '%'; vline.classList.add('on'); }
+  };
+  const hide = () => { tip.classList.remove('on'); if (vline) vline.classList.remove('on'); };
+  spark.addEventListener('touchstart', (e) => show(e.touches[0].clientX), { passive: true });
+  spark.addEventListener('touchmove', (e) => show(e.touches[0].clientX), { passive: true });
+  spark.addEventListener('touchend', hide, { passive: true });
+  spark.addEventListener('mousemove', (e) => show(e.clientX));
+  spark.addEventListener('mouseleave', hide);
 };
 
 // Riordino dei 4 GRUPPI patrimoniali (liquidità, risparmio, investimenti, asset).
@@ -260,13 +345,17 @@ function _contiCollassabiliHTML() {
           <div class="gruppo-tot num">${fmtEUR(tot)}</div>
           <div class="gruppo-chev">${aperto ? '⌄' : '›'}</div>
         </div>
-        ${aperto ? conti.map(c => `
-          <div class="conto-riga" data-conto="${c.id}">
+        ${aperto ? conti.map(c => {
+          const haStrum = tipo === 'investimenti' && !!strumentiPerConto[c.nome];
+          const espanso = _contiEspansi.has(c.nome);
+          return `
+          <div class="conto-riga${haStrum ? ' conto-espandibile' : ''}" data-conto="${c.id}"${haStrum ? ` data-espandi="${escapeHtml(c.nome)}"` : ''}>
             <div class="conto-nome">${escapeHtml(c.nome)}</div>
             <div class="conto-saldo num">${fmtEUR(saldoStimato(c))}</div>
-            <div class="conto-chev">›</div>
+            <div class="conto-chev${haStrum && espanso ? ' giu' : ''}">›</div>
           </div>
-          ${tipo === 'investimenti' ? strumentiDi(c.nome) : ''}`).join('') : ''}
+          ${haStrum && espanso ? strumentiDi(c.nome) : ''}`;
+        }).join('') : ''}
       </div>`;
   }
   return html;
@@ -280,70 +369,53 @@ function contiPerTipoLocale() {
 }
 
 // Grafico a linea del patrimonio: assi €, stima (tratteggiata) + reale (piena), tocco per cifra.
-function _graficoLineaHTML() {
-  const { punti, primoReale } = serieStoricoPatrimonio();
-  if (punti.length < 2) return '';
+function _graficoLineaHTML(esclusi = []) {
+  const { punti } = serieStoricoPatrimonio(esclusi);
+  if (punti.length < 2) return '<div class="card" style="padding:16px"><div class="empty">Storico insufficiente</div></div>';
 
   let p = punti;
-  if (p.length > 24) { const step = Math.ceil(p.length / 24); p = p.filter((_, i) => i % step === 0 || i === punti.length - 1); }
+  if (p.length > 40) { const step = Math.ceil(p.length / 40); p = p.filter((_, i) => i % step === 0 || i === punti.length - 1); }
 
-  const W = 320, H = 100, padL = 4, padR = 4, padT = 8, padB = 8;
+  const VW = 320, VH = 150, padX = 12, padTop = 16, padBot = 30;
   const vals = p.map(x => x.valore);
-  const min = Math.min(...vals), max = Math.max(...vals);
-  const range = max - min || 1;
-  const x = (i) => padL + (i / (p.length - 1)) * (W - padL - padR);
-  const y = (v) => H - padB - ((v - min) / range) * (H - padT - padB);
+  const min = Math.min(...vals), max = Math.max(...vals), range = max - min || 1;
+  const nx = i => padX + (i / (p.length - 1)) * (VW - padX * 2);
+  const ny = v => VH - padBot - ((v - min) / range) * (VH - padTop - padBot);
+  const pts = p.map((pt, i) => [nx(i), ny(pt.valore)]);
 
-  let dStima = '', dReale = '';
-  p.forEach((pt, i) => {
-    const cmd = `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(pt.valore).toFixed(1)}`;
-    if (pt.stima) dStima += cmd + ' ';
-    else dReale += (dReale ? 'L' : 'M') + `${x(i).toFixed(1)},${y(pt.valore).toFixed(1)} `;
-  });
-  const idxPrimoReale = p.findIndex(pt => !pt.stima);
-  if (idxPrimoReale > 0) dStima += `L${x(idxPrimoReale).toFixed(1)},${y(p[idxPrimoReale].valore).toFixed(1)} `;
+  let line = 'M' + pts[0][0].toFixed(1) + ' ' + pts[0][1].toFixed(1);
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i > 0 ? i - 1 : 0], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+    const c1x = p1[0] + (p2[0] - p0[0]) / 6, c1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const c2x = p2[0] - (p3[0] - p1[0]) / 6, c2y = p2[1] - (p3[1] - p1[1]) / 6;
+    line += ` C${c1x.toFixed(1)} ${c1y.toFixed(1)} ${c2x.toFixed(1)} ${c2y.toFixed(1)} ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
+  }
+  const area = line + ` L${pts[pts.length - 1][0].toFixed(1)} ${VH - padBot} L${pts[0][0].toFixed(1)} ${VH - padBot} Z`;
+  const last = pts[pts.length - 1];
+  const fmtK = (v) => Math.abs(v) >= 1000 ? Math.round(v / 1000) + 'k' : Math.round(v) + '';
 
-  const primoLabel = p[0].annomese.split('-').reverse().join('/');
-  const ultimoLabel = p[p.length - 1].annomese.split('-').reverse().join('/');
-  const haReale = idxPrimoReale >= 0;
+  // etichette: prima, metà, ultima
+  const idxLbl = [0, Math.floor(p.length / 2), p.length - 1];
+  const ancora = (i) => i === 0 ? 'start' : i === p.length - 1 ? 'end' : 'middle';
+  const fmtMese = (am) => { const [y, m] = am.split('-'); return nomeMese(parseInt(m) - 1).slice(0, 3) + " '" + y.slice(2); };
+  const labels = idxLbl.map(i => `<text x="${nx(i).toFixed(1)}" y="${VH - 8}" text-anchor="${ancora(i)}" font-family="Rajdhani" font-size="11" font-weight="600" fill="#535E72">${fmtMese(p[i].annomese)}</text>`).join('');
 
-  // area sfumata sotto la linea completa (stima+reale), stile sparkline home
-  let dArea = '';
-  p.forEach((pt, i) => { dArea += (i === 0 ? 'M' : 'L') + `${x(i).toFixed(1)},${y(pt.valore).toFixed(1)} `; });
-  dArea += `L${x(p.length - 1).toFixed(1)},${H - padB} L${x(0).toFixed(1)},${H - padB} Z`;
-
-  // riferimenti € sull'asse (max e min)
-  const fmtK = (v) => Math.abs(v) >= 1000 ? Math.round(v / 1000) + 'k€' : Math.round(v) + '€';
-
-  // punti tappabili (cerchi invisibili con titolo)
-  const dots = p.map((pt, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(pt.valore).toFixed(1)}" r="8" fill="transparent" class="pt-dot" data-info="${pt.annomese.split('-').reverse().join('/')}: ${fmtEUR(pt.valore)}${pt.stima ? ' (stima)' : ''}"/>`).join('');
-
-  return `
-    <div class="section-lbl"><span>Andamento patrimonio</span></div>
-    <div class="card" style="padding:16px 14px">
-      <div style="display:flex">
-        <div style="display:flex;flex-direction:column;justify-content:space-between;font-size:9px;color:var(--txt-3);padding:8px 6px 8px 0;text-align:right">
-          <span>${fmtK(max)}</span><span>${fmtK((max + min) / 2)}</span><span>${fmtK(min)}</span>
-        </div>
-        <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" id="pat-svg">
-          <defs>
-            <linearGradient id="patline" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2E9BFF"/><stop offset="1" stop-color="#22E39A"/></linearGradient>
-            <linearGradient id="patarea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba(46,155,255,.26)"/><stop offset="1" stop-color="rgba(46,155,255,0)"/></linearGradient>
-          </defs>
-          <line x1="${padL}" y1="${padT}" x2="${W - padR}" y2="${padT}" stroke="var(--line)" stroke-width="0.5"/>
-          <line x1="${padL}" y1="${H / 2}" x2="${W - padR}" y2="${H / 2}" stroke="var(--line)" stroke-width="0.5"/>
-          <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" stroke="var(--line)" stroke-width="0.5"/>
-          <path d="${dArea}" fill="url(#patarea)"/>
-          <path d="${dStima}" fill="none" stroke="url(#patline)" stroke-width="2" stroke-dasharray="4 3" opacity="0.5"/>
-          ${haReale ? `<path d="${dReale}" fill="none" stroke="url(#patline)" stroke-width="2.5"/>` : ''}
-          ${dots}
-        </svg>
-      </div>
-      <div style="display:flex;justify-content:space-between;margin-top:6px;padding-left:28px"><span class="meta">${primoLabel}</span><span class="meta">${ultimoLabel}</span></div>
-      <div id="pat-tip" class="meta" style="text-align:center;margin-top:8px;min-height:16px;color:var(--accent);font-weight:600"></div>
-      <div style="display:flex;gap:16px;margin-top:6px;font-size:11px;color:var(--txt-2)">
-        <span>┈ stima</span>
-        ${haReale ? '<span>━ rilevazioni reali</span>' : '<span style="opacity:.6">tocca un punto per la cifra · le rilevazioni reali si aggiungono salvando il patrimonio</span>'}
-      </div>
-    </div>`;
+  const dataJson = escapeHtml(JSON.stringify(p.map(pt => ({ l: fmtMese(pt.annomese), v: pt.valore }))));
+  return `<div class="card spark-card" style="margin:0">
+    <div class="spark-title">Andamento patrimonio</div>
+    <div class="spark spark-pat" data-spark='${dataJson}' data-vw="${VW}" data-padx="${padX}">
+      <svg viewBox="0 0 ${VW} ${VH}" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <linearGradient id="patline" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2E9BFF"/><stop offset="1" stop-color="#22E39A"/></linearGradient>
+          <linearGradient id="patarea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba(46,155,255,.28)"/><stop offset="1" stop-color="rgba(46,155,255,0)"/></linearGradient>
+        </defs>
+        <path d="${area}" fill="url(#patarea)"/>
+        <path d="${line}" fill="none" stroke="url(#patline)" stroke-width="2.4" vector-effect="non-scaling-stroke"/>
+        <circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="3.5" fill="#22E39A"/>
+        ${labels}
+      </svg>
+      <div class="spark-vline"></div>
+      <div class="spark-tip"></div>
+    </div>
+  </div>`;
 }

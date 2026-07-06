@@ -13,6 +13,7 @@ import { calcolaDelta } from './shared.js';
 // stato locale della schermata (periodo selezionato)
 let _periodo = 'mese';                 // 'settimana' | 'mese' | 'anno'
 let _meseCorrente = annomese(todayISO());
+let _sparkAperto = false;              // grafico andamento spese: nascosto di default, apribile dall'icona
 
 const mesePrec = (am) => { const [a, m] = am.split('-').map(Number); const d = new Date(a, m - 2, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
 const meseSucc = (am) => { const [a, m] = am.split('-').map(Number); const d = new Date(a, m, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
@@ -88,6 +89,7 @@ export const renderSpese = async (root) => {
       </div>` : `<div class="month-nav"><div class="m">${labelPeriodo}</div></div>`}
 
     <div class="hero-spese">
+      ${_periodo === 'mese' ? '<button class="spark-toggle" id="spark-toggle" title="Andamento spese" aria-label="Mostra andamento"><svg viewBox="0 0 24 24"><path d="M4 18l5-6 4 4 6-8"/><path d="M3 21h18"/></svg></button>' : ''}
       <div class="cell-spese-main" data-tot="spesa" style="cursor:pointer">
         <div class="cap">${_periodo === 'anno' ? 'Spese ' + anno : _periodo === 'mese' ? 'Spese di ' + nomeMese(parseInt(mese) - 1).toLowerCase() : 'Spese'}</div>
         <div class="big-spese num">${fmtEUR(tot.spese)}</div>
@@ -100,7 +102,7 @@ export const renderSpese = async (root) => {
       </div>
     </div>
 
-    ${_periodo === 'mese' ? _sparklineCard(_meseCorrente) : ''}
+    ${_periodo === 'mese' ? `<div class="spark-wrap ${_sparkAperto ? 'open' : ''}" id="spark-wrap">${_sparklineCard(_meseCorrente)}</div>` : ''}
 
     ${paceHTML}
 
@@ -152,6 +154,19 @@ export const renderSpese = async (root) => {
   // sparkline interattivo: attacca il tocco (solo se presente, cioè in vista mese)
   _agganciaSparkline(root);
 
+  // toggle grafico andamento (icona nella card spese)
+  const sparkToggle = root.querySelector('#spark-toggle');
+  const sparkWrap = root.querySelector('#spark-wrap');
+  if (sparkToggle && sparkWrap) {
+    sparkToggle.classList.toggle('on', _sparkAperto);
+    sparkToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      _sparkAperto = !_sparkAperto;
+      sparkWrap.classList.toggle('open', _sparkAperto);
+      sparkToggle.classList.toggle('on', _sparkAperto);
+    });
+  }
+
 };
 
 // ═══ SPARKLINE spese ultimi 6 mesi (additivo, puramente visivo) ═══
@@ -189,11 +204,12 @@ const _sparklineCard = (meseRif) => {
   const area = line + ` L${pts[pts.length - 1][0].toFixed(1)} ${VH - padBot} L${pts[0][0].toFixed(1)} ${VH - padBot} Z`;
   // punti + etichette mesi
   const dots = pts.map((p, i) => `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="3" fill="${i === pts.length - 1 ? '#5FC3FF' : '#2E9BFF'}"/>`).join('');
-  const labels = d.mesi.map((o, i) => `<text x="${nx(i).toFixed(1)}" y="${VH - 8}" text-anchor="middle" font-family="Rajdhani" font-size="11" font-weight="600" fill="${i === d.mesi.length - 1 ? '#5FC3FF' : '#535E72'}">${o.label}</text>`).join('');
+  const ancora = (i) => i === 0 ? 'start' : i === d.mesi.length - 1 ? 'end' : 'middle';
+  const labels = d.mesi.map((o, i) => `<text x="${nx(i).toFixed(1)}" y="${VH - 8}" text-anchor="${ancora(i)}" font-family="Rajdhani" font-size="11" font-weight="600" fill="${i === d.mesi.length - 1 ? '#5FC3FF' : '#535E72'}">${o.label}</text>`).join('');
   const dataJson = escapeHtml(JSON.stringify(d.mesi.map(o => ({ l: o.label, v: o.val }))));
   return `<div class="card spark-card">
     <div class="spark-title">Andamento spese · ultimi 6 mesi</div>
-    <div class="spark" data-spark='${dataJson}'>
+    <div class="spark" data-spark='${dataJson}' data-vw="${VW}" data-padx="${padX}">
       <svg viewBox="0 0 ${VW} ${VH}" preserveAspectRatio="xMidYMid meet">
         <defs>
           <linearGradient id="spkl" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2E9BFF"/><stop offset="1" stop-color="#7B6CFF"/></linearGradient>
@@ -218,13 +234,23 @@ const _agganciaSparkline = (root) => {
   try { dati = JSON.parse(spark.dataset.spark); } catch { return; }
   const tip = spark.querySelector('.spark-tip');
   const vline = spark.querySelector('.spark-vline');
+  const VW = parseFloat(spark.dataset.vw) || 300;
+  const padX = parseFloat(spark.dataset.padx) || 10;
+  // posizione X reale del punto idx, in % del contenitore (tiene conto del padding del viewBox)
+  const puntoPct = (idx) => {
+    const xSvg = padX + (idx / (dati.length - 1)) * (VW - padX * 2);
+    return (xSvg / VW) * 100;
+  };
   const show = (clientX) => {
     const r = spark.getBoundingClientRect();
     let rel = (clientX - r.left) / r.width;
     rel = Math.max(0, Math.min(1, rel));
-    const idx = Math.round(rel * (dati.length - 1));
+    // converto la posizione del dito (in % contenitore) nell'indice più vicino tenendo conto del padding
+    const xSvg = rel * VW;
+    const relInner = (xSvg - padX) / (VW - padX * 2);
+    const idx = Math.max(0, Math.min(dati.length - 1, Math.round(relInner * (dati.length - 1))));
     const o = dati[idx];
-    const posPct = (idx / (dati.length - 1)) * 100;
+    const posPct = puntoPct(idx);
     tip.textContent = `${o.l} · ${fmtEUR(o.v)}`;
     tip.style.left = posPct + '%';
     tip.classList.add('on');

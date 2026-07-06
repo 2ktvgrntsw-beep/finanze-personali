@@ -3,7 +3,7 @@
 // l'app dopo un deploy, basta incrementare CACHE_VERSION: il vecchio cache viene
 // eliminato e i file ricaricati.
 
-const CACHE_VERSION = 'finanze-v2.14.0';
+const CACHE_VERSION = 'finanze-v2.17.0';
 
 const ASSETS = [
   './',
@@ -44,8 +44,8 @@ const ASSETS = [
   './js/components/dettaglioInvestimento.js',
   './js/components/categorie.js',
   './js/components/impostazioni.js',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
+  './icons/icon-192.png?v=216',
+  './icons/icon-512.png?v=216',
 ];
 
 self.addEventListener('install', (e) => {
