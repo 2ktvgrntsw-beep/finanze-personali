@@ -318,7 +318,7 @@ input[type=date]{color-scheme:dark}
 .frow .fclear{color:var(--down);font-size:16px;padding:0 14px;cursor:pointer}
 
 /* tendina suggerimenti sotto la descrizione */
-.sugg-dropdown{position:absolute;top:100%;left:48px;right:0;background:var(--surface-2);border:1px solid var(--line);border-top:0;border-radius:0 0 12px 12px;z-index:60;display:none;max-height:220px;overflow-y:auto;box-shadow:0 12px 24px rgba(0,0,0,.4)}
+.sugg-dropdown{position:absolute;top:100%;left:48px;right:0;background:var(--surface-2);border:1px solid var(--line);border-top:0;border-radius:0 0 12px 12px;z-index:60;display:none;max-height:240px;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-y;box-shadow:0 12px 24px rgba(0,0,0,.4)}
 .sugg-item{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 14px;cursor:pointer;border-bottom:1px solid var(--line)}
 .sugg-item:last-child{border-bottom:0}
 .sugg-item:active{background:var(--surface-3)}
@@ -476,7 +476,7 @@ button,.hbtn,.numpad button,.seg button,.mov,.catrow,.chip,.frow .fval,.type-swi
 .triple.quad .delta{font-size:9.5px}
 
 /* header v2.7: + a destra nelle sottopagine; selettore periodo compatto nell'header */
-.app-header.sub #btn-add{order:7}
+.app-header.sub #btn-add{order:7;margin-left:auto}
 #head-seg .seg{margin:0;padding:3px;max-width:270px;width:100%}
 #head-seg .seg button{padding:5px 0;font-size:12.5px;border-radius:9px}
 
@@ -529,8 +529,8 @@ input[type=date].sheet-input{-webkit-appearance:none;appearance:none}
 .card-crumb-center .cc-nome{display:block;font-size:17px;font-weight:750;line-height:1.1}
 .card-crumb-center .cc-ctx{display:block;font-size:10.5px;color:var(--txt-3);margin-top:1px}
 
-/* titolo header centrato (pagine di modifica) */
-.app-header .title.center{position:absolute;left:0;right:0;text-align:center;pointer-events:none;margin:0}
+/* titolo header centrato (pagine di modifica): margini laterali per non toccare Annulla/pulsanti */
+.app-header .title.center{position:absolute;left:88px;right:88px;text-align:center;pointer-events:none;margin:0;max-width:none}
 
 /* ═══ COCKPIT — tipografia display (titoli/header/mesi) ═══ */
 .app-header .title, .view-title, #view-title, .m, .month-nav .m, .net-card .lbl, .section-lbl span, .day-head span{font-family:var(--font-disp)}
@@ -731,3 +731,51 @@ input[type=date].sheet-input{-webkit-appearance:none;appearance:none}
 .rio-frecce button{width:34px;height:34px;border-radius:9px;background:var(--surface-2);border:1px solid var(--line);color:var(--blue-2);font-size:13px;cursor:pointer;display:grid;place-items:center}
 .rio-frecce button:disabled{opacity:.3;color:var(--txt-3)}
 .rio-frecce button:active:not(:disabled){background:var(--surface-3)}
+
+/* ═══ COCKPIT — grafico spese a scomparsa (toggle con icona) ═══ */
+.hero-spese{position:relative}
+.spark-toggle{position:absolute;top:14px;right:14px;z-index:5;width:34px;height:34px;border-radius:10px;
+  background:var(--surface-3);border:1px solid var(--line);color:var(--txt-2);display:grid;place-items:center;cursor:pointer;padding:0}
+.spark-toggle svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.spark-toggle.on{background:rgba(46,155,255,.16);border-color:rgba(46,155,255,.45);color:var(--blue-2)}
+.spark-toggle:active{transform:scale(.94)}
+/* wrap collassabile */
+.spark-wrap{display:none}
+.spark-wrap.open{display:block;animation:sparkIn .22s ease}
+@keyframes sparkIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+
+/* ═══ COCKPIT — conto investimento espandibile (annidamento collassabile) ═══ */
+.conto-espandibile{cursor:pointer}
+.conto-chev{transition:transform .2s}
+.conto-chev.giu{transform:rotate(90deg);color:var(--blue-2)}
+
+/* ═══ COCKPIT — net-card patrimonio: icone filtro/grafico + finestrella + grafico a scomparsa ═══ */
+.net-icons{position:absolute;top:14px;right:14px;display:flex;gap:8px;z-index:4}
+.net-ic{width:34px;height:34px;border-radius:10px;background:var(--surface-3);border:1px solid var(--line);
+  color:var(--txt-2);display:grid;place-items:center;cursor:pointer;padding:0}
+.net-ic svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linejoin:round}
+.net-ic.on{background:rgba(46,155,255,.16);border-color:rgba(46,155,255,.45);color:var(--blue-2)}
+.net-ic:active{transform:scale(.94)}
+/* finestrella filtro */
+.net-filtro{display:none;margin-top:16px;padding-top:14px;border-top:1px solid var(--line);text-align:left}
+.net-filtro.open{display:block;animation:sparkIn .2s ease}
+.net-filtro-tit{font-size:10px;font-weight:700;color:var(--txt-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+.net-filtro-riga{display:flex;align-items:center;justify-content:space-between;padding:8px 2px;font-size:14px;color:var(--txt)}
+.net-filtro-riga input{width:20px;height:20px;accent-color:var(--blue)}
+/* wrap grafico a scomparsa */
+.grafico-pat-wrap{display:none;margin:8px 0 4px}
+.grafico-pat-wrap.open{display:block;animation:sparkIn .22s ease}
+.spark-pat{position:relative}
+.spark-pat svg{width:100%;height:auto;display:block;overflow:visible}
+.spark-pat .spark-vline{position:absolute;top:8px;bottom:30px;width:1px;background:rgba(95,195,255,.45);opacity:0;transition:opacity .1s;pointer-events:none}
+.spark-pat .spark-vline.on{opacity:1}
+.spark-pat .spark-tip{position:absolute;top:-4px;transform:translateX(-50%);background:rgba(8,11,18,.95);
+  border:1px solid var(--line);border-radius:8px;padding:4px 9px;font-family:var(--font-inst);font-size:13px;
+  font-weight:600;color:var(--blue-2);white-space:nowrap;opacity:0;transition:opacity .12s;pointer-events:none;z-index:5;box-shadow:0 6px 18px rgba(0,0,0,.5)}
+.spark-pat .spark-tip.on{opacity:1}
+
+/* ═══ fix: la tendina suggerimenti non è più tagliata dal contenitore ═══ */
+.form-rows.sugg-open{overflow:visible}
+.form-rows .frow{position:relative}
+/* la riga con la tendina aperta sta sopra le altre */
+.form-rows.sugg-open .frow:has(#sugg-dd[style*="block"]){z-index:61}
