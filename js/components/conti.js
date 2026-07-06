@@ -5,6 +5,7 @@ import { state } from '../core/store.js';
 import { fmtEUR, escapeHtml, todayISO } from '../core/utils.js';
 import { saldoStimato, saveConto, deleteConto, TIPI_CONTO, LABEL_TIPO } from '../services/contiService.js';
 import { apriSheet, apriDataNativa, montaTastierino } from './shared.js';
+import { safeWrite } from '../core/db.js';
 import { toast } from '../core/utils.js';
 
 export const renderConti = async (root, params = {}) => {
@@ -75,20 +76,24 @@ const _editConto = (root, id) => {
     body.querySelector('#c-ok').addEventListener('click', async () => {
       const nome = body.querySelector('#c-nome').value.trim();
       if (!nome) { toast('Inserisci un nome'); return; }
-      if (id) {
-        // rinomina: conservo tutto il resto del conto
-        await saveConto({ ...c, nome });
-      } else {
-        await saveConto({
-          id: c.id, nome, tipo: body.querySelector('#c-tipo').value,
-          saldo_iniziale: parseFloat(String(body.querySelector('#c-saldo').value).replace(',', '.')) || 0,
-          data_saldo: tmp.data_saldo, possessoData: tmp.possessoData || null,
-        });
-      }
+      const payload = id
+        ? { ...c, nome }   // rinomina: conservo tutto il resto del conto
+        : {
+            id: c.id, nome, tipo: body.querySelector('#c-tipo').value,
+            saldo_iniziale: parseFloat(String(body.querySelector('#c-saldo').value).replace(',', '.')) || 0,
+            data_saldo: tmp.data_saldo, possessoData: tmp.possessoData || null,
+          };
+      const ok = await safeWrite(() => saveConto(payload), 'Conto non salvato');
+      if (!ok) return;
       chiudi(); toast('Salvato'); renderConti(root);
     });
     const del = body.querySelector('#c-del');
-    if (del) del.addEventListener('click', async () => { if (confirm('Eliminare il conto? I movimenti restano.')) { await deleteConto(c.id); chiudi(); toast('Eliminato'); renderConti(root); } });
+    if (del) del.addEventListener('click', async () => {
+      if (!confirm('Eliminare il conto? I movimenti restano.')) return;
+      const ok = await safeWrite(() => deleteConto(c.id), 'Conto non eliminato');
+      if (!ok) return;
+      chiudi(); toast('Eliminato'); renderConti(root);
+    });
   });
 };
 

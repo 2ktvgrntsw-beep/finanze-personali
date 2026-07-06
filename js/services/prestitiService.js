@@ -83,10 +83,12 @@ export const statoPrestito = (p, eventi = []) => {
   };
 };
 
-// Somma dei debiti residui (mutuo + finanziamenti) per il patrimonio
-export const debitoTotaleResiduo = () => {
+// Somma dei debiti residui per il patrimonio. Con escludiMutuo=true il mutuo NON
+// viene contato: serve quando si esclude la casa dal patrimonio (il mutuo è il
+// debito legato a quella casa, quindi va tolto insieme ad essa).
+export const debitoTotaleResiduo = (escludiMutuo = false) => {
   let tot = 0;
-  if (state.mutuo) {
+  if (state.mutuo && !escludiMutuo) {
     const s = statoPrestito(state.mutuo, state.eventiMutuo);
     if (s) tot += s.residuo * (state.mutuo.quota_utente || 100) / 100;
   }

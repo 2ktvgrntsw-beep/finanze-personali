@@ -7,6 +7,7 @@ import { fmtEUR, fmtDataEstesa, nomeMese, annomese, todayISO, escapeHtml, gruppo
 import { iconaMacro, iconaTipo } from '../core/icons.js';
 import { navigate } from '../core/router.js';
 import { deleteMovimento, movimentiDiVoce } from '../services/movimentiService.js';
+import { safeWrite } from '../core/db.js';
 import { toast } from '../core/utils.js';
 
 let _mese = annomese(todayISO());
@@ -213,7 +214,7 @@ const _abilitaSwipe = (root, refresh) => {
         mov.style.transform = 'translateX(-100%)';
         const id = wrap.dataset.id;
         setTimeout(async () => {
-          if (confirm('Eliminare questo movimento?')) { await deleteMovimento(id); toast('Movimento eliminato'); refresh(); }
+          if (confirm('Eliminare questo movimento?')) { const ok = await safeWrite(() => deleteMovimento(id), 'Movimento non eliminato'); if (ok) { toast('Movimento eliminato'); refresh(); } }
           else { mov.style.transform = 'translateX(0)'; }
         }, 150);
       } else {

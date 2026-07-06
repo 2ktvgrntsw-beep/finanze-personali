@@ -10,6 +10,7 @@ import {
 } from '../services/categorieService.js';
 import { navigate } from '../core/router.js';
 import { apriSheet, apriSelettoreCategoria } from './shared.js';
+import { safeWrite } from '../core/db.js';
 import { toast } from '../core/utils.js';
 
 const _aperte = new Set();      // macro espanse
@@ -171,7 +172,8 @@ const _nuovaCategoria = (root, macros) => {
       const cat = inCat.value.trim();
       const sub = body.querySelector('#nc-sub').value.trim();
       if (!macro) { toast('Inserisci la macrocategoria'); return; }
-      await saveCategoria({ macro, cat, sub });
+      const ok = await safeWrite(() => saveCategoria({ macro, cat, sub }), 'Categoria non salvata');
+      if (!ok) return;
       _aperte.add(macro);
       chiudi(); toast('Categoria aggiunta'); renderCategorie(root);
     });

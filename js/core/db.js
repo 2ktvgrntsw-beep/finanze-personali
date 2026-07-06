@@ -98,3 +98,32 @@ export const dbBulkPut = (store, items) => new Promise((res, rej) => {
 
 export const STORE_NAMES = Object.keys(STORES);
 export const closeDB = () => { if (_db) { _db.close(); _db = null; } };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// safeWrite — wrapper per operazioni di SCRITTURA con gestione errori uniforme.
+//
+// In un'app di finanze una scrittura fallita in silenzio è il bug peggiore: l'utente
+// crede di aver salvato un dato che non c'è. IndexedDB può fallire per quota piena,
+// storage sfrattato da iOS a metà sessione, transazione abortita da un altro tab.
+//
+// Uso:
+//   const ok = await safeWrite(() => saveMovimento(m), 'Movimento non salvato');
+//   if (!ok) return;   // l'utente ha già ricevuto il feedback
+//
+// Ritorna true se l'operazione è riuscita, false se è fallita (l'errore è già stato
+// loggato e notificato). Non rilancia: il chiamante decide cosa fare col booleano.
+// ─────────────────────────────────────────────────────────────────────────────
+let _onWriteError = (msg, err) => console.error('[safeWrite]', msg, err);
+
+// Permette all'app (che ha accesso al DOM/toast) di iniettare il notificatore utente.
+export const setWriteErrorHandler = (fn) => { if (typeof fn === 'function') _onWriteError = fn; };
+
+export const safeWrite = async (operazione, messaggioErrore = 'Salvataggio non riuscito') => {
+  try {
+    await operazione();
+    return true;
+  } catch (err) {
+    _onWriteError(messaggioErrore, err);
+    return false;
+  }
+};

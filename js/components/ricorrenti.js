@@ -9,6 +9,7 @@ import { ricorrentiAttive, saveRicorrente, deleteRicorrente, FREQUENZE } from '.
 import { applicaModificaAmbito } from '../services/movimentiService.js';
 import { apriSheet, apriSelettoreCategoria, apriDataNativa } from './shared.js';
 import { navigate } from '../core/router.js';
+import { safeWrite } from '../core/db.js';
 import { toast } from '../core/utils.js';
 
 const FREQ_LABEL = { giornaliera: 'Ogni giorno', settimanale: 'Ogni settimana', mensile: 'Ogni mese', annuale: 'Ogni anno' };
@@ -153,13 +154,14 @@ const _nuovaRicorrenza = (root) => {
       if (imp <= 0) { toast('Inserisci un importo'); return; }
       const inizio = body.querySelector('#nr-inizio').value;
       const fineTipo = ft.value;
-      await saveRicorrente({
+      const ok = await safeWrite(() => saveRicorrente({
         nome, desc: nome, tipo: body.querySelector('#nr-tipo').value, imp,
         conto: body.querySelector('#nr-conto').value, frequenza: body.querySelector('#nr-freq').value,
         dataInizio: inizio, prossima: inizio, fineTipo,
         fineData: fineTipo === 'data' ? body.querySelector('#nr-fine-data')?.value : null,
         fineConteggio: fineTipo === 'conteggio' ? parseInt(body.querySelector('#nr-fine-cont')?.value) : null,
-      });
+      }), 'Ricorrenza non creata');
+      if (!ok) return;
       chiudi(); toast('Ricorrenza creata'); renderRicorrenti(root);
     });
   });
@@ -186,12 +188,13 @@ const _nuovaRegola = (root) => {
       const nome = body.querySelector('#g-nome').value.trim() || 'Regola';
       const mod = body.querySelector('#g-mod').value;
       const imp = parseFloat(body.querySelector('#g-imp').value) || 0;
-      await saveRicorrente({
+      const ok = await safeWrite(() => saveRicorrente({
         nome, desc: nome, tipo: 'trasferimento', frequenza: body.querySelector('#g-freq').value, modalita: mod,
         imp: mod === 'soglia' ? 0 : imp, soglia: mod === 'soglia' ? imp : null,
         conto: body.querySelector('#g-da').value, contoDest: body.querySelector('#g-a').value,
         macro: 'Investimenti', isRegola: true, prossima: todayISO(), dataInizio: todayISO(),
-      });
+      }), 'Regola non creata');
+      if (!ok) return;
       chiudi(); toast('Regola creata'); renderRicorrenti(root);
     });
   });

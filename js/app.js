@@ -1,6 +1,6 @@
 // app.js — Bootstrap e orchestrazione dell'applicazione.
 
-import { openDB } from './core/db.js';
+import { openDB, setWriteErrorHandler } from './core/db.js';
 import { refreshAll } from './core/store.js';
 import { seedStoricoSeNecessario } from './core/seed.js';
 import { registerRoute, initRouter, navigate, renderCurrent, currentRoute } from './core/router.js';
@@ -69,6 +69,9 @@ const costruisciChrome = () => {
     </button>
     <button class="hbtn back" id="btn-back" style="display:none;order:1">‹</button>
     <button id="btn-annulla" style="display:none;order:1;background:none;border:0;color:var(--down);font-size:15px;font-weight:600;padding:6px 4px;cursor:pointer">Annulla</button>
+    <button class="hbtn" id="btn-filtro-pat" title="Filtra patrimonio" aria-label="Filtra patrimonio" style="display:none;order:1">
+      <svg viewBox="0 0 24 24" style="width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linejoin:round"><path d="M4 5h16l-6 8v5l-4 2v-7z"/></svg>
+    </button>
     <div class="title" id="view-title" style="order:2">Spese</div>
     <div id="head-spacer" style="flex:1;display:none;order:3"></div>
     <div id="head-seg" style="order:4;flex:1;display:flex;justify-content:center"></div>
@@ -94,6 +97,12 @@ const costruisciChrome = () => {
 
 const boot = async () => {
   try {
+    // notificatore utente per gli errori di scrittura DB (safeWrite -> toast)
+    setWriteErrorHandler((msg, err) => {
+      console.error('[DB write]', msg, err);
+      toast(msg + '. Riprova.');
+    });
+
     // Chiede al browser di marcare lo storage come PERSISTENTE: riduce (non azzera)
     // la probabilità che iOS/il browser cancelli i dati per liberare spazio.
     if (navigator.storage && navigator.storage.persist) {

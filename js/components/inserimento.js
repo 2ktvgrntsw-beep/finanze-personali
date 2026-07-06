@@ -6,6 +6,7 @@ import { state } from '../core/store.js';
 import { fmtEUR, todayISO, fmtDataEstesa, escapeHtml, round2 } from '../core/utils.js';
 import { iconaMacro, UI_SVG } from '../core/icons.js';
 import { navigate } from '../core/router.js';
+import { safeWrite } from '../core/db.js';
 import { saveMovimento, deleteMovimento } from '../services/movimentiService.js';
 import { saveRicorrente } from '../services/ricorrentiService.js';
 import { suggerisciPerTesto, suggerisciTag } from '../services/suggerimentiService.js';
@@ -149,7 +150,7 @@ const _render = (root) => {
     }
   });
   const dm = root.querySelector('#del-mov');
-  if (dm) dm.addEventListener('click', async () => { if (confirm('Eliminare?')) { await deleteMovimento(d.id); toast('Eliminato'); navigate('movimenti'); } });
+  if (dm) dm.addEventListener('click', async () => { if (!confirm('Eliminare?')) return; const ok = await safeWrite(() => deleteMovimento(d.id), 'Movimento non eliminato'); if (!ok) return; toast('Eliminato'); navigate('movimenti'); });
 };
 
 const _labelRipeti = (r) => {
@@ -314,11 +315,14 @@ const _salva = async () => {
 
   const wasTrasf = d.tipo === 'trasferimento';
   const eraModifica = !!d.id;
-  await saveMovimento({
+  const ok = await safeWrite(() => saveMovimento({
     id: d.id, tipo: d.tipo, imp: d.imp, data: d.data,
     macro: d.macro, cat: d.cat, sub: d.sub, conto: d.conto, contoDest: d.contoDest,
     desc: d.desc, tag: d.tag,
-  });
+  }), eraModifica ? 'Modifiche non salvate' : 'Movimento non salvato');
+  // se la scrittura è fallita, NON navigo: l'utente vede il toast e può riprovare
+  // senza perdere ciò che ha inserito.
+  if (!ok) return;
 
   // crea la ricorrenza se richiesta — ANCHE in modifica (bug precedente: solo su nuovo)
   if (d.ripeti) {
@@ -328,15 +332,15 @@ const _salva = async () => {
     // Se invece la data di inizio è futura (oltre il movimento), parte da lì.
     const copreMovimento = d.ripeti.dataInizio <= d.data;
     const prossima = copreMovimento ? _occorrenzaSuccessiva(d.ripeti.dataInizio, d.ripeti.frequenza) : d.ripeti.dataInizio;
-    await saveRicorrente({
+    const okRic = await safeWrite(() => saveRicorrente({
       nome: d.desc || d.macro, tipo: d.tipo, frequenza: d.ripeti.frequenza,
       imp: d.imp, macro: d.macro, cat: d.cat, sub: d.sub,
       conto: d.conto, contoDest: d.contoDest, tag: d.tag, desc: d.desc,
       dataInizio: d.ripeti.dataInizio, prossima,
       generati: copreMovimento ? 1 : 0,   // il movimento manuale conta come prima occorrenza
       fineTipo: d.ripeti.fineTipo, fineData: d.ripeti.fineData, fineConteggio: d.ripeti.fineConteggio,
-    });
-    toast('Salvato e reso ricorrente');
+    }), 'Ricorrenza non impostata');
+    toast(okRic ? 'Salvato e reso ricorrente' : 'Movimento salvato, ma ricorrenza non impostata');
   } else {
     toast(eraModifica ? 'Modifiche salvate' : 'Salvato');
   }

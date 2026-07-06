@@ -3,13 +3,14 @@
 // I valori (casa, saldi conti) si modificano toccandoli direttamente (no icone matita).
 
 import { state } from '../core/store.js';
-import { dbGet, dbAdd } from '../core/db.js';
+import { dbGet, dbAdd, dbDelete, safeWrite } from '../core/db.js';
+import { contoDiTrasferimento, eInvestimento, strumentoDiTrasferimento } from '../services/attribuzioneInvestimenti.js';
 import { fmtEUR, fmtEUR0, escapeHtml, todayISO, nomeMese } from '../core/utils.js';
 import { iconaMacro, UI_SVG } from '../core/icons.js';
 import { navigate } from '../core/router.js';
 import { saldoStimato, saveConto, LABEL_TIPO } from '../services/contiService.js';
 import {
-  totaleAttivita, totalePassivita, patrimonioNetto, composizioneAttivita,
+  totaleAttivita, totalePassivita, patrimonioNetto, composizioneAttivita, patrimonioLiquido,
   salvaSnapshotMese, snapshotMeseMancante, serieStoricoPatrimonio,
 } from '../services/patrimonioService.js';
 import { statoPrestito } from '../services/prestitiService.js';
@@ -28,6 +29,8 @@ const _contiEspansi = new Set();   // conti investimento con strumenti annidati 
 let _graficoPatAperto = false;     // grafico andamento: nascosto di default, apribile da icona
 let _filtroPatAperto = false;      // finestrella filtro categorie del totale
 const _tipiEsclusi = new Set();    // tipi esclusi dal totale/grafico (es. 'asset' per togliere la casa)
+let _obiettivoLiquido = null;      // obiettivo di patrimonio liquido per l'anno in corso (€)
+const CHIAVE_OBIETTIVO = 'obiettivo_liquido';
 // ordine dei 4 gruppi patrimoniali (persistito in meta); default sotto
 const ORDINE_DEFAULT = ['liquidita', 'risparmio', 'investimenti', 'asset'];
 let _ordineGruppi = ORDINE_DEFAULT.slice();
@@ -39,10 +42,16 @@ export const renderPatrimonio = async (root) => {
     const rec = await dbGet('meta', CHIAVE_ORDINE);
     if (rec && Array.isArray(rec.valore) && rec.valore.length === 4) _ordineGruppi = rec.valore;
   } catch { /* default */ }
+  // carico l'obiettivo di patrimonio liquido salvato
+  try {
+    const rec = await dbGet('meta', CHIAVE_OBIETTIVO);
+    if (rec && typeof rec.valore === 'number') _obiettivoLiquido = rec.valore;
+    if (rec && rec.anno && rec.anno !== new Date().getFullYear()) _obiettivoLiquido = null; // obiettivo di un altro anno: azzero
+  } catch { /* nessun obiettivo */ }
   const esclusi = [..._tipiEsclusi];
   const netto = patrimonioNetto(esclusi);
   const att = totaleAttivita(esclusi);
-  const pass = totalePassivita();
+  const pass = totalePassivita(esclusi);
 
   // conti per lo strip orizzontale
   const contiAttivi = state.conti.filter(c => c.attivo !== false);
@@ -64,12 +73,14 @@ export const renderPatrimonio = async (root) => {
   const tipiDisponibili = composizioneAttivita().map(r => r.tipo);
   const filtroAttivo = _tipiEsclusi.size > 0;
 
+  // card obiettivo patrimonio liquido (anno in corso)
+  const liquidoAttuale = patrimonioLiquido();
+  const annoCorrente = new Date().getFullYear();
+  const cardObiettivo = _obiettivoLiquidoHTML(liquidoAttuale, annoCorrente);
+
   root.innerHTML = `
     <div class="net-card">
       <div class="net-icons">
-        <button class="net-ic ${filtroAttivo ? 'on' : ''}" id="filtro-pat" aria-label="Filtra categorie" title="Filtra">
-          <svg viewBox="0 0 24 24"><path d="M4 5h16l-6 8v5l-4 2v-7z"/></svg>
-        </button>
         <button class="net-ic ${_graficoPatAperto ? 'on' : ''}" id="grafico-pat" aria-label="Andamento" title="Andamento">
           <svg viewBox="0 0 24 24"><path d="M4 18l5-6 4 4 6-8"/><path d="M3 21h18"/></svg>
         </button>
@@ -93,6 +104,8 @@ export const renderPatrimonio = async (root) => {
     <div class="grafico-pat-wrap ${_graficoPatAperto ? 'open' : ''}" id="grafico-pat-wrap">
       ${_graficoLineaHTML(esclusi)}
     </div>
+
+    ${cardObiettivo}
 
     ${_contiCollassabiliHTML()}
 
@@ -167,14 +180,21 @@ export const renderPatrimonio = async (root) => {
     if (_graficoPatAperto) _agganciaGraficoPat(root);
   });
 
-  // toggle finestrella filtro categorie
-  const fBtn = root.querySelector('#filtro-pat');
+  // toggle finestrella filtro categorie — il pulsante ora è nell'HEADER, a sinistra del titolo
+  const fBtn = document.getElementById('btn-filtro-pat');
   const fBox = root.querySelector('#net-filtro');
-  if (fBtn && fBox) fBtn.addEventListener('click', () => {
-    _filtroPatAperto = !_filtroPatAperto;
-    fBox.classList.toggle('open', _filtroPatAperto);
+  if (fBtn) {
     fBtn.classList.toggle('on', _filtroPatAperto || _tipiEsclusi.size > 0);
-  });
+    // rimpiazzo il listener clonando per non accumulare handler tra i re-render
+    const fresh = fBtn.cloneNode(true);
+    fBtn.parentNode.replaceChild(fresh, fBtn);
+    fresh.style.display = 'flex';
+    fresh.addEventListener('click', () => {
+      _filtroPatAperto = !_filtroPatAperto;
+      if (fBox) fBox.classList.toggle('open', _filtroPatAperto);
+      fresh.classList.toggle('on', _filtroPatAperto || _tipiEsclusi.size > 0);
+    });
+  }
 
   // checkbox categorie: includi/escludi dal totale + grafico
   root.querySelectorAll('[data-tipo-filtro]').forEach(cb => cb.addEventListener('change', () => {
@@ -186,6 +206,10 @@ export const renderPatrimonio = async (root) => {
 
   // aggancio grafico interattivo (se aperto)
   if (_graficoPatAperto) _agganciaGraficoPat(root);
+
+  // obiettivo liquido: apri lo sheet per impostarlo/modificarlo
+  const setObBtn = root.querySelector('#set-obiettivo');
+  if (setObBtn) setObBtn.addEventListener('click', () => _impostaObiettivo(root));
 };
 
 // interattività del grafico patrimonio (vline + tooltip che seguono i punti)
@@ -271,7 +295,8 @@ const _modificaConto = (root, contoId) => {
       const nuovo = parseFloat(body.querySelector('#c-saldo').value) || 0;
       const nuovaData = body.querySelector('#c-data') ? body.querySelector('#c-data').value : c.data_saldo;
       const possesso = body.querySelector('#c-possesso') ? body.querySelector('#c-possesso').value : c.possessoData;
-      await saveConto({ ...c, saldo_iniziale: nuovo, data_saldo: nuovaData, possessoData: possesso });
+      const ok = await safeWrite(() => saveConto({ ...c, saldo_iniziale: nuovo, data_saldo: nuovaData, possessoData: possesso }), 'Valore non aggiornato');
+      if (!ok) return;
       chiudi(); toast('Aggiornato'); renderPatrimonio(root);
     });
   });
@@ -280,6 +305,72 @@ const _modificaConto = (root, contoId) => {
 // Sezione conti collassabile per tipo. Nel gruppo Investimenti mostra anche gli
 // strumenti (PAC, Crypto, Azioni sciolte) ricavati dai trasferimenti. I conti sono
 // riordinabili (campo 'ordine').
+// Sheet per impostare/modificare l'obiettivo di patrimonio liquido dell'anno.
+const _impostaObiettivo = (root) => {
+  const anno = new Date().getFullYear();
+  const valoreCorrente = _obiettivoLiquido != null ? String(_obiettivoLiquido).replace('.', ',') : '';
+  apriSheet(`Obiettivo liquido ${anno}`, `
+    <p class="meta" style="margin-bottom:10px;line-height:1.5">Quanto vuoi avere in liquidità, risparmio e investimenti entro fine ${anno}? (esclusi i beni come la casa)</p>
+    <label class="meta">Obiettivo (€)</label>
+    <input type="text" inputmode="decimal" id="ob-val" value="${valoreCorrente}" placeholder="Es. 50000" class="sheet-input">
+    <div class="btn-row">
+      ${_obiettivoLiquido != null ? '<button class="btn btn-danger" id="ob-del">Rimuovi</button>' : ''}
+      <button class="btn btn-primary" id="ob-ok">Salva</button>
+    </div>
+  `, (body, chiudi) => {
+    body.querySelector('#ob-ok').addEventListener('click', async () => {
+      const val = parseFloat(String(body.querySelector('#ob-val').value).replace(',', '.'));
+      if (!val || val <= 0) { toast('Inserisci un importo valido'); return; }
+      const ok = await safeWrite(() => dbAdd('meta', { chiave: CHIAVE_OBIETTIVO, valore: val, anno }), 'Obiettivo non salvato');
+      if (!ok) return;
+      _obiettivoLiquido = val;
+      chiudi(); toast('Obiettivo salvato'); renderPatrimonio(root);
+    });
+    const del = body.querySelector('#ob-del');
+    if (del) del.addEventListener('click', async () => {
+      const ok = await safeWrite(() => dbDelete('meta', CHIAVE_OBIETTIVO), 'Obiettivo non rimosso');
+      if (!ok) return;
+      _obiettivoLiquido = null;
+      chiudi(); toast('Obiettivo rimosso'); renderPatrimonio(root);
+    });
+  });
+};
+
+// Card OBIETTIVO patrimonio liquido per l'anno in corso: confronto tra il liquido
+// attuale (liquidità+risparmio+investimenti) e l'obiettivo impostato dall'utente.
+function _obiettivoLiquidoHTML(liquidoAttuale, anno) {
+  if (_obiettivoLiquido == null) {
+    // nessun obiettivo: invito a impostarlo
+    return `<div class="card obiettivo-card">
+      <div class="obiettivo-head">
+        <div class="obiettivo-tit">Obiettivo liquido ${anno}</div>
+        <button class="obiettivo-set" id="set-obiettivo">Imposta</button>
+      </div>
+      <div class="obiettivo-vuoto">Imposta un traguardo di patrimonio liquido per quest'anno e segui i progressi.</div>
+      <div class="obiettivo-attuale">Liquido attuale: <b class="num">${fmtEUR(liquidoAttuale)}</b></div>
+    </div>`;
+  }
+  const pct = _obiettivoLiquido > 0 ? Math.min(100, (liquidoAttuale / _obiettivoLiquido) * 100) : 0;
+  const raggiunto = liquidoAttuale >= _obiettivoLiquido;
+  const manca = Math.max(0, _obiettivoLiquido - liquidoAttuale);
+  return `<div class="card obiettivo-card">
+    <div class="obiettivo-head">
+      <div class="obiettivo-tit">Obiettivo liquido ${anno}</div>
+      <button class="obiettivo-set" id="set-obiettivo">Modifica</button>
+    </div>
+    <div class="obiettivo-cifre">
+      <div><span class="lbl2">Attuale</span><b class="num">${fmtEUR(liquidoAttuale)}</b></div>
+      <div style="text-align:right"><span class="lbl2">Obiettivo</span><b class="num">${fmtEUR(_obiettivoLiquido)}</b></div>
+    </div>
+    <div class="obiettivo-barra"><div class="obiettivo-fill ${raggiunto ? 'done' : ''}" style="width:${pct.toFixed(1)}%"></div></div>
+    <div class="obiettivo-foot">
+      ${raggiunto
+        ? `<span class="obiettivo-ok">🎉 Obiettivo raggiunto! (${pct.toFixed(0)}%)</span>`
+        : `<span>${pct.toFixed(0)}% raggiunto</span><span class="obiettivo-manca">mancano ${fmtEUR(manca)}</span>`}
+    </div>
+  </div>`;
+}
+
 function _contiCollassabiliHTML() {
   const perTipo = contiPerTipoLocale();
   const ordine = _ordineGruppi;
@@ -294,32 +385,15 @@ function _contiCollassabiliHTML() {
     const aperto = _gruppiAperti.has(tipo);
 
     // per gli investimenti: strumenti annidati SOTTO il conto di riferimento.
-    // I dati storici non hanno contoDest popolato, quindi inferiamo il conto dal
-    // sub/cat/descrizione (es. "PAC Fideuram" -> Fideuram, "Crypto" -> Binance).
+    // L'attribuzione conto/strumento usa la FONTE UNICA (attribuzioneInvestimenti.js),
+    // condivisa con la pagina di dettaglio: così i numeri non possono divergere.
     let strumentiPerConto = {};
     if (tipo === 'investimenti' && aperto) {
-      const nomiConti = conti.map(c => c.nome);
-      const inferisciConto = (m) => {
-        const testo = `${m.sub || ''} ${m.cat || ''} ${m.desc || ''}`.toLowerCase();
-        // match diretto col nome di un conto (o una sua parola chiave)
-        for (const nome of nomiConti) {
-          const chiave = nome.replace(/investimenti/i, '').trim().toLowerCase();
-          if (chiave && testo.includes(chiave)) return nome;
-        }
-        // crypto -> Binance se esiste
-        if (/crypto|binance|bitcoin|btc/.test(testo)) {
-          const binance = nomiConti.find(n => /binance/i.test(n));
-          if (binance) return binance;
-        }
-        return null;
-      };
       for (const m of state.movimenti) {
-        if (m.tipo !== 'trasferimento') continue;
-        const isInv = m.macro === 'Investimenti' || (state.conti.find(c => c.nome === m.contoDest)?.tipo === 'investimenti');
-        if (!isInv) continue;
-        const conto = (m.contoDest && nomiConti.includes(m.contoDest)) ? m.contoDest : inferisciConto(m);
+        if (!eInvestimento(m, state.conti)) continue;
+        const conto = contoDiTrasferimento(m, state.conti);
         if (!conto) continue;  // non attribuibile: lo salto (evita "Altro" rumoroso)
-        const strum = m.sub || m.cat || m.desc || conto;
+        const strum = strumentoDiTrasferimento(m, conto);
         strumentiPerConto[conto] = strumentiPerConto[conto] || {};
         strumentiPerConto[conto][strum] = (strumentiPerConto[conto][strum] || 0) + m.imp;
       }

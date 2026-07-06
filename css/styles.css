@@ -779,3 +779,22 @@ input[type=date].sheet-input{-webkit-appearance:none;appearance:none}
 .form-rows .frow{position:relative}
 /* la riga con la tendina aperta sta sopra le altre */
 .form-rows.sugg-open .frow:has(#sugg-dd[style*="block"]){z-index:61}
+
+/* ═══ COCKPIT — card obiettivo patrimonio liquido ═══ */
+.obiettivo-card{padding:16px 16px 14px;margin:10px 0 4px}
+.obiettivo-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.obiettivo-tit{font-size:13px;font-weight:700;color:var(--txt);text-transform:uppercase;letter-spacing:.05em}
+.obiettivo-set{background:var(--surface-3);border:1px solid var(--line);color:var(--blue-2);font-size:12px;font-weight:600;padding:6px 12px;border-radius:9px;cursor:pointer}
+.obiettivo-set:active{transform:scale(.96)}
+.obiettivo-vuoto{color:var(--txt-2);font-size:13px;line-height:1.5;margin-bottom:10px}
+.obiettivo-attuale{color:var(--txt-2);font-size:13px}
+.obiettivo-attuale b{color:var(--txt)}
+.obiettivo-cifre{display:flex;justify-content:space-between;margin-bottom:12px}
+.obiettivo-cifre .lbl2{display:block;font-size:10px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}
+.obiettivo-cifre b{font-size:20px;color:var(--txt)}
+.obiettivo-barra{height:10px;background:var(--surface-3);border-radius:6px;overflow:hidden;margin-bottom:10px}
+.obiettivo-fill{height:100%;border-radius:6px;background:linear-gradient(90deg,#2E9BFF,#22E39A);transition:width .5s ease}
+.obiettivo-fill.done{background:linear-gradient(90deg,#22E39A,#5FC3FF)}
+.obiettivo-foot{display:flex;justify-content:space-between;font-size:12.5px;color:var(--txt-2)}
+.obiettivo-manca{color:var(--txt-3)}
+.obiettivo-ok{color:var(--up);font-weight:600}

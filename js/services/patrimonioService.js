@@ -20,9 +20,16 @@ export const composizioneAttivita = () => {
 };
 
 export const totaleAttivita = (escludiTipi = []) => composizioneAttivita().filter(r => !escludiTipi.includes(r.tipo)).reduce((s, r) => s + r.totale, 0);
-export const totalePassivita = () => debitoTotaleResiduo();
+// se escludo gli asset (la casa), escludo anche il mutuo ad essa legato
+export const totalePassivita = (escludiTipi = []) => debitoTotaleResiduo(escludiTipi.includes('asset'));
 
-export const patrimonioNetto = (escludiTipi = []) => round2(totaleAttivita(escludiTipi) - totalePassivita());
+// Patrimonio LIQUIDO: liquidità + risparmio + investimenti (esclude i beni/asset come
+// la casa, non liquidabili nell'immediato). È la base per l'obiettivo annuale.
+export const patrimonioLiquido = () => composizioneAttivita()
+  .filter(r => r.tipo !== 'asset')
+  .reduce((s, r) => s + r.totale, 0);
+
+export const patrimonioNetto = (escludiTipi = []) => round2(totaleAttivita(escludiTipi) - totalePassivita(escludiTipi));
 
 // --- Snapshot mensili (per il delta e lo storico patrimoniale) ---
 export const salvaSnapshotMese = async () => {

@@ -5,28 +5,25 @@
 import { state } from '../core/store.js';
 import { fmtEUR, escapeHtml, nomeMese } from '../core/utils.js';
 import { navigate } from '../core/router.js';
+import { contoDiTrasferimento, eInvestimento } from '../services/attribuzioneInvestimenti.js';
 
 // Somma cumulata dei versamenti verso il conto/strumento dato, per mese.
-// I dati storici hanno contoDest vuoto: attribuiamo per nome conto, per strumento
-// (sub) o per parola chiave nel testo.
+// Predicato: il movimento appartiene al conto/strumento dato? (fonte unica per il conto)
+const _appartiene = (m, nome, isStrumento) => {
+  if (isStrumento) {
+    const nomeLow = (nome || '').toLowerCase();
+    return (m.sub && m.sub === nome) || (m.cat && m.cat === nome) ||
+           (`${m.sub || ''} ${m.cat || ''} ${m.desc || ''}`.toLowerCase().includes(nomeLow));
+  }
+  return contoDiTrasferimento(m, state.conti) === nome;
+};
+
+// I dati storici hanno contoDest vuoto: l'attribuzione al conto usa la FONTE UNICA
+// (attribuzioneInvestimenti.js), condivisa con la pagina Patrimonio, così i numeri
+// coincidono. Per lo "strumento" (PAC Fideuram, Crypto...) il match resta su sub/cat/desc.
 const _andamentoVersato = (nome, isStrumento) => {
-  const nomeLow = (nome || '').toLowerCase();
-  const chiaveConto = nomeLow.replace(/investimenti/i, '').trim();
-  const appartiene = (m) => {
-    if (isStrumento) {
-      // strumento: match su sub/cat/desc
-      return (m.sub && m.sub === nome) || (m.cat && m.cat === nome) ||
-             (`${m.sub || ''} ${m.cat || ''} ${m.desc || ''}`.toLowerCase().includes(nomeLow));
-    }
-    // conto: match diretto o per parola chiave
-    if (m.contoDest === nome) return true;
-    const testo = `${m.sub || ''} ${m.cat || ''} ${m.desc || ''}`.toLowerCase();
-    if (chiaveConto && testo.includes(chiaveConto)) return true;
-    if (/binance/i.test(nome) && /crypto|binance|btc|bitcoin/.test(testo)) return true;
-    return false;
-  };
   const movs = state.movimenti
-    .filter(m => m.tipo === 'trasferimento' && (m.macro === 'Investimenti' || m.contoDest) && appartiene(m))
+    .filter(m => eInvestimento(m, state.conti) && _appartiene(m, nome, isStrumento))
     .sort((a, b) => a.data.localeCompare(b.data));
   if (!movs.length) return [];
   const perMese = {};
@@ -92,10 +89,7 @@ export const renderDettaglioInvestimento = async (root, params = {}) => {
   document.getElementById('view-title').textContent = nome || 'Investimento';
   const punti = _andamentoVersato(nome, isStrumento);
   const versato = punti.length ? punti[punti.length - 1].val : 0;
-  const nVersamenti = state.movimenti.filter(m => m.tipo === 'trasferimento' && (
-    isStrumento ? (m.sub === nome || m.cat === nome || `${m.sub || ''} ${m.cat || ''} ${m.desc || ''}`.toLowerCase().includes(nome.toLowerCase()))
-                : (m.contoDest === nome || `${m.sub || ''} ${m.cat || ''} ${m.desc || ''}`.toLowerCase().includes(nome.toLowerCase().replace(/investimenti/i, '').trim()))
-  )).length;
+  const nVersamenti = state.movimenti.filter(m => eInvestimento(m, state.conti) && _appartiene(m, nome, isStrumento)).length;
 
   root.innerHTML = `
     <div class="net-card">

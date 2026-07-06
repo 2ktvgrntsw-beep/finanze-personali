@@ -68,15 +68,21 @@ const _updateChrome = (name) => {
   // nell'header in Spese e Movimenti; il + si sposta a destra nelle sottopagine.
   const titolo = document.getElementById('view-title');
   if (titolo) {
-    titolo.style.display = (ROTTE_PRINCIPALI.includes(name) || name === 'nuovo') ? 'none' : 'block';
-    // titolo centrato in tutte le pagine con Annulla a sinistra (modifica, modifica ricorrenza)
+    // Patrimonio mostra il titolo nell'header (col filtro a sinistra); le altre
+    // principali no. Le sottopagine sì.
+    const mostraTitolo = !(ROTTE_PRINCIPALI.includes(name) && name !== 'patrimonio') && name !== 'nuovo';
+    titolo.style.display = mostraTitolo ? 'block' : 'none';
+    if (name === 'patrimonio') titolo.textContent = 'Patrimonio';
+    // titolo centrato nelle pagine con Annulla a sinistra (modifica, modifica ricorrenza)
     titolo.classList.toggle('center', isInserimento && name !== 'nuovo');
   }
   // lente: VISIBILE solo nei Movimenti; nelle altre principali resta invisibile ma
   // occupa il suo spazio (il selettore centrale rimane perfettamente centrato).
   const lente = document.getElementById('btn-search');
   if (lente) {
-    if (ROTTE_PRINCIPALI.includes(name)) {
+    if (name === 'patrimonio') {
+      lente.style.display = 'none';   // in Patrimonio al suo posto c'è il filtro
+    } else if (ROTTE_PRINCIPALI.includes(name)) {
       lente.style.display = 'flex';
       lente.style.visibility = name === 'movimenti' ? 'visible' : 'hidden';
       lente.style.pointerEvents = name === 'movimenti' ? 'auto' : 'none';
@@ -89,6 +95,9 @@ const _updateChrome = (name) => {
   if (addBtn) addBtn.style.display = (isInserimento || isRicerca) ? 'none' : 'flex';
   const annulla = document.getElementById('btn-annulla');
   if (annulla) annulla.style.display = (isInserimento || isRicerca) ? 'flex' : 'none';
+  // filtro patrimonio: visibile SOLO nella pagina Patrimonio, a sinistra del titolo
+  const filtroPat = document.getElementById('btn-filtro-pat');
+  if (filtroPat) filtroPat.style.display = (name === 'patrimonio') ? 'flex' : 'none';
   const seg = document.getElementById('head-seg');
   if (seg) {
     const usaSeg = name === 'spese' || name === 'movimenti' || name === 'analisi';
