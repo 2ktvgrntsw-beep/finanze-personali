@@ -3,7 +3,7 @@
 import { UI_SVG } from '../core/icons.js';
 import { state, refreshAll } from '../core/store.js';
 import { APP_VERSION } from '../core/version.js';
-import { escapeHtml, fmtEUR, fmtDataEstesa } from '../core/utils.js';
+import { escapeHtml, fmtEUR, fmtDataEstesa, fmtDataEstesaAnno } from '../core/utils.js';
 import { navigate } from '../core/router.js';
 import { esportaBackup, importaBackup } from '../services/excelService.js';
 import { registraBackupExcelFatto, giorniDaUltimoBackupExcel, esportaJSON, importaJSON } from '../services/backupService.js';
@@ -151,7 +151,7 @@ const _bulkTag = (root) => {
       ris.innerHTML = risultati.slice(0, 100).map(m => `
         <div class="mov" data-id="${m.id}" style="cursor:pointer">
           <div class="ic" style="font-size:14px">${selezionati.has(m.id) ? '✅' : '⬜'}</div>
-          <div class="body"><div class="d1">${escapeHtml(m.desc || m.cat)}</div><div class="d2">${fmtDataEstesa(m.data)} · ${fmtEUR(m.imp)}</div></div>
+          <div class="body"><div class="d1">${escapeHtml(m.desc || m.cat)}</div><div class="d2">${fmtDataEstesaAnno(m.data)} · ${fmtEUR(m.imp)}</div></div>
         </div>`).join('');
       ris.querySelectorAll('[data-id]').forEach(el => el.addEventListener('click', () => {
         const id = el.dataset.id;

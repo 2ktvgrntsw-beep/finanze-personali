@@ -1,7 +1,7 @@
 // ricerca.js — Ricerca full-text con totale aggregato + selezione multipla e
 // modifica massiva di qualsiasi campo (categoria, conto, da/a conto, descrizione, tag).
 
-import { fmtEUR, escapeHtml, fmtDataEstesa } from '../core/utils.js';
+import { fmtEUR, escapeHtml, fmtDataEstesaAnno } from '../core/utils.js';
 import { iconaMacro, iconaTipo, UI_SVG } from '../core/icons.js';
 import { navigate } from '../core/router.js';
 import { state } from '../core/store.js';
@@ -144,7 +144,7 @@ export const renderRicerca = async (root, params = {}) => {
       return `<div class="mov tipo-${m.tipo} ${selMode ? 'selectable' : ''} ${isSel ? 'sel' : ''}" data-mov="${m.id}">
         ${selMode ? `<div class="selbox">${isSel ? '✓' : ''}</div>` : ''}
         <div class="ic">${icona}</div>
-        <div class="body"><div class="d1">${escapeHtml(m.desc || classif)}</div><div class="d2"><span class="cls">${escapeHtml(classif)}</span> <span class="cnt">· ${fmtDataEstesa(m.data)}${m.conto ? ' · ' + escapeHtml(m.conto) : ''}</span></div></div>
+        <div class="body"><div class="d1">${escapeHtml(m.desc || classif)}</div><div class="d2"><span class="cls">${escapeHtml(classif)}</span> <span class="cnt">· ${fmtDataEstesaAnno(m.data)}${m.conto ? ' · ' + escapeHtml(m.conto) : ''}</span></div></div>
         <div class="amt ${cls} num">${segno}${fmtEUR(m.imp)}</div>
       </div>`;
     }).join('') + '</div>';

@@ -47,6 +47,13 @@ export const fmtDataEstesa = (iso) => {
   const d = new Date(iso + 'T00:00:00');
   return `${GIORNI[d.getDay()]} ${parseInt(iso.split('-')[2])} ${MESI[d.getMonth()]}`;
 };
+
+// Come fmtDataEstesa ma CON l'anno ("Lun 6 Lug '24"): per le liste che spaziano
+// su più anni (ricerca, bulk tag), dove senza anno le date sono ambigue.
+export const fmtDataEstesaAnno = (iso) => {
+  const d = new Date(iso + 'T00:00:00');
+  return `${GIORNI[d.getDay()]} ${parseInt(iso.split('-')[2])} ${MESI[d.getMonth()]} '${iso.slice(2, 4)}`;
+};
 export const annomese = (iso) => iso.slice(0, 7);            // '2026-06'
 export const annoDi = (iso) => iso.slice(0, 4);
 
