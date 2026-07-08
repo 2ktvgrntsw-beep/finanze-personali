@@ -8,15 +8,22 @@ import { iconaMacro, iconaTipo } from '../core/icons.js';
 import { navigate } from '../core/router.js';
 import { deleteMovimento, movimentiDiVoce } from '../services/movimentiService.js';
 import { safeWrite } from '../core/db.js';
+import { conferma } from './shared.js';
 import { toast } from '../core/utils.js';
+import { creaSelezione } from './selezioneMultipla.js';
 
 let _mese = annomese(todayISO());
 let _periodo = 'mese';   // 'settimana' | 'mese' | 'anno'
+let _sel = null;         // controller selezione multipla (creato al primo render)
 
 export const renderMovimenti = async (root, params = {}) => {
   const { macro, cat, sub, tipo } = params;
   if (params.mese) _mese = params.mese;
   if (params.periodo) _periodo = params.periodo;
+
+  // La selezione multipla non deve sopravvivere all'uscita dalla pagina: se questo
+  // render NON è un refresh interno (innescato dalla selezione stessa), la azzero.
+  if (!params._interno && _sel) _sel.esciSilenzioso();
 
   const haFiltri = macro || cat || sub || tipo || params.contoDest;
 
@@ -116,11 +123,13 @@ export const renderMovimenti = async (root, params = {}) => {
       const icona = m.macro ? iconaMacro(m.macro) : iconaTipo(m.tipo);
       // classificazione COMPLETA fino alla sottocategoria (per modifiche massive a colpo d'occhio)
       const classif = [m.macro, m.cat, m.sub].filter(Boolean).join(' › ') || m.tipo;
-      const sotto = classif;
+      const selMode = _sel && _sel.attiva();
+      const isSel = selMode && _sel.ha(m.id);
       return `
         <div class="mov-wrap" data-id="${m.id}">
           <div class="del-bg">Elimina</div>
-          <div class="mov tipo-${m.tipo}" data-mov="${m.id}">
+          <div class="mov tipo-${m.tipo} ${selMode ? 'selectable' : ''} ${isSel ? 'sel' : ''}" data-mov="${m.id}">
+            ${selMode ? `<div class="selbox">${isSel ? '✓' : ''}</div>` : ''}
             <div class="ic">${icona}</div>
             <div class="body">
               <div class="d1">${escapeHtml(m.desc || classif)}</div>
@@ -139,7 +148,14 @@ export const renderMovimenti = async (root, params = {}) => {
     : _periodo === 'settimana' ? 'Ultimi 7 giorni'
     : `${nomeMese(parseInt(mese) - 1)} ${anno}`;
 
-  // HEADER STICKY: navigatore bloccato in alto (il selettore periodo vive nell'header dell'app)
+  // controller selezione multipla (creato una volta, refresh ri-renderizza la lista)
+  const refreshLista = () => renderMovimenti(root, { ...params, mese: _mese, periodo: _periodo, _interno: true });
+  if (!_sel) _sel = creaSelezione(refreshLista);
+
+  const toolbarHTML = _sel.attiva()
+    ? _sel.toolbarHTML()
+    : (movs.length ? `<div style="text-align:right;margin:4px 0 8px"><button class="btn btn-secondary" id="attiva-sel" style="width:auto;display:inline-flex;padding:8px 14px;font-size:13px">Seleziona</button></div>` : '');
+
   root.innerHTML = `
     <div class="mov-sticky">
       ${_periodo !== 'settimana' ? `
@@ -149,6 +165,7 @@ export const renderMovimenti = async (root, params = {}) => {
           <button class="arr" id="next">›</button>
         </div>` : `<div class="month-nav" style="margin:6px 0"><div class="m">${labelPeriodo}</div></div>`}
       ${haFiltri ? `<div class="filtro-badge">Filtro: <b>${escapeHtml(titolo)}</b> · ${movs.length} mov <span id="clear-filtro">✕</span></div>` : ''}
+      ${toolbarHTML}
       ${cardsHTML}
     </div>
     ${listaHTML}
@@ -190,31 +207,56 @@ export const renderMovimenti = async (root, params = {}) => {
   const cf = root.querySelector('#clear-filtro');
   if (cf) cf.addEventListener('click', () => renderMovimenti(root, { periodo: _periodo, mese: _mese }));
 
-  // swipe-to-delete + tap per modifica
-  _abilitaSwipe(root, () => renderMovimenti(root, { ...params, mese: _mese, periodo: _periodo }));
+  // swipe-to-delete + tap per modifica + long-press per selezione multipla
+  _abilitaInterazioni(root, refreshLista);
+  const attivaSelBtn = root.querySelector('#attiva-sel');
+  if (attivaSelBtn) attivaSelBtn.addEventListener('click', () => _sel.avvia());
+  if (_sel.attiva()) {
+    const idsVisibili = movs.map(m => m.id);
+    _sel.bindToolbar(root, idsVisibili);
+  }
 };
 
-// Swipe-to-delete semplice (touch) + tap per eliminare su desktop tramite long-press fallback
-const _abilitaSwipe = (root, refresh) => {
+// Gestione interazioni su ogni riga: swipe (elimina), tap (modifica o toggle selezione),
+// long-press (avvia la selezione multipla). Il long-press di ~500ms entra in modalità
+// selezione; da lì un tap seleziona/deseleziona invece di aprire la modifica.
+const _abilitaInterazioni = (root, refresh) => {
   root.querySelectorAll('.mov-wrap').forEach(wrap => {
     const mov = wrap.querySelector('.mov');
-    let startX = 0, curX = 0, dragging = false;
+    const id = wrap.dataset.id;
+    let startX = 0, curX = 0, dragging = false, longTimer = null, longFired = false;
 
-    const onStart = (x) => { startX = x; dragging = true; mov.style.transition = 'none'; };
+    const clearLong = () => { if (longTimer) { clearTimeout(longTimer); longTimer = null; } };
+
+    const onStart = (x) => {
+      startX = x; dragging = true; longFired = false;
+      mov.style.transition = 'none';
+      // avvio timer long-press SOLO se non sono già in selezione (in selezione il tap basta)
+      if (!_sel.attiva()) {
+        longTimer = setTimeout(() => {
+          longFired = true;
+          if (navigator.vibrate) navigator.vibrate(15);   // feedback aptico
+          _sel.avvia(id);   // entra in modalità selezione con questa riga
+        }, 500);
+      }
+    };
     const onMove = (x) => {
       if (!dragging) return;
+      if (Math.abs(x - startX) > 8) clearLong();   // si sta muovendo: non è un long-press
+      if (_sel.attiva()) return;                   // in selezione niente swipe
       curX = Math.min(0, x - startX);
       mov.style.transform = `translateX(${curX}px)`;
     };
     const onEnd = async () => {
+      clearLong();
       if (!dragging) return;
       dragging = false;
+      if (longFired) { curX = 0; return; }   // il long-press ha già agito
       mov.style.transition = 'transform .2s ease';
-      if (curX < -110) {
+      if (!_sel.attiva() && curX < -110) {
         mov.style.transform = 'translateX(-100%)';
-        const id = wrap.dataset.id;
         setTimeout(async () => {
-          if (confirm('Eliminare questo movimento?')) { const ok = await safeWrite(() => deleteMovimento(id), 'Movimento non eliminato'); if (ok) { toast('Movimento eliminato'); refresh(); } }
+          if (await conferma('Eliminare questo movimento?', { danger: true, ok: 'Elimina' })) { const ok = await safeWrite(() => deleteMovimento(id), 'Movimento non eliminato'); if (ok) { toast('Movimento eliminato'); refresh(); } }
           else { mov.style.transform = 'translateX(0)'; }
         }, 150);
       } else {
@@ -226,11 +268,17 @@ const _abilitaSwipe = (root, refresh) => {
     mov.addEventListener('touchstart', e => onStart(e.touches[0].clientX), { passive: true });
     mov.addEventListener('touchmove', e => onMove(e.touches[0].clientX), { passive: true });
     mov.addEventListener('touchend', onEnd);
+    // desktop: long-press col mouse
+    mov.addEventListener('mousedown', e => onStart(e.clientX));
+    mov.addEventListener('mouseup', onEnd);
+    mov.addEventListener('mouseleave', () => { clearLong(); });
 
-    // tap (senza swipe) -> apre modifica
+    // tap: in selezione -> toggle; altrimenti -> modifica
     mov.addEventListener('click', () => {
-      if (Math.abs(curX) > 5) return;
-      navigate('modifica', { id: wrap.dataset.id });
+      if (longFired) return;              // il long-press non è un click
+      if (Math.abs(curX) > 5) return;     // era uno swipe
+      if (_sel.attiva()) { _sel.toggle(id); return; }
+      navigate('modifica', { id });
     });
   });
 };

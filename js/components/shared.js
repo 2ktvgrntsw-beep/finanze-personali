@@ -5,7 +5,7 @@ import { iconaMacro, iconaTipo } from '../core/icons.js';
 import { listaMacro, categorieDi, sottocategorieDi } from '../services/categorieService.js';
 
 // --- Bottom sheet generico ---
-export const apriSheet = (titolo, contenutoHTML, onMount) => {
+export const apriSheet = (titolo, contenutoHTML, onMount, onClose) => {
   const bg = document.createElement('div');
   bg.className = 'sheet-bg';
   bg.innerHTML = `<div class="sheet">
@@ -13,12 +13,36 @@ export const apriSheet = (titolo, contenutoHTML, onMount) => {
     <div class="sheet-body">${contenutoHTML}</div>
   </div>`;
   document.body.appendChild(bg);
-  const chiudi = () => bg.remove();
+  const chiudi = () => { bg.remove(); if (onClose) { const f = onClose; onClose = null; f(); } };
   bg.addEventListener('click', (e) => { if (e.target === bg) chiudi(); });
   bg.querySelector('.sheet-close').addEventListener('click', chiudi);
   if (onMount) onMount(bg.querySelector('.sheet-body'), chiudi);
   return chiudi;
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// conferma — sostituto brandizzato di confirm(). Ritorna Promise<bool>.
+// I dialog nativi bloccano il thread e su iOS standalone mostrano "localhost
+// dice...", rompendo l'estetica curata dell'app. Questo usa lo stesso sheet
+// del resto dell'interfaccia. Chiusura via X o sfondo = annulla (false).
+//
+// Uso:  if (!(await conferma('Eliminare il conto?', { danger: true }))) return;
+// ─────────────────────────────────────────────────────────────────────────────
+export const conferma = (messaggio, { titolo = 'Conferma', ok = 'Conferma', annulla = 'Annulla', danger = false } = {}) =>
+  new Promise((resolve) => {
+    let risposto = false;
+    const rispondi = (val, chiudi) => { if (risposto) return; risposto = true; resolve(val); if (chiudi) chiudi(); };
+    apriSheet(titolo, `
+      <p class="conferma-testo">${escapeHtml(messaggio)}</p>
+      <div class="btn-row">
+        <button class="btn btn-secondary" id="cf-no">${escapeHtml(annulla)}</button>
+        <button class="btn ${danger ? 'btn-danger' : 'btn-primary'}" id="cf-si">${escapeHtml(ok)}</button>
+      </div>
+    `, (body, chiudi) => {
+      body.querySelector('#cf-si').addEventListener('click', () => rispondi(true, chiudi));
+      body.querySelector('#cf-no').addEventListener('click', () => rispondi(false, chiudi));
+    }, () => rispondi(false));   // X o tap sullo sfondo = annulla
+  });
 
 // --- Riga movimento (usata in liste e ricerca) ---
 export const rigaMovimentoHTML = (m) => {

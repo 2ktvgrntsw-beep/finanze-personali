@@ -66,7 +66,27 @@ export const deltaNettoMese = () => {
 //    attuale, per avere una linea storica già popolata fin dal primo giorno.
 //  - REALE: gli snapshot mensili effettivamente salvati dall'utente ("rilevazioni").
 // Ritorna { punti: [{annomese, valore, stima}], primoReale }.
+// ── Memoizzazione: la serie itera TUTTI i movimenti (migliaia) a ogni chiamata,
+// ma i dati cambiano solo dopo un refreshAll (che riassegna gli array dello state).
+// Cache per (identità array movimenti/conti/snapshot + tipi esclusi): con anni di
+// dati evita ricalcoli O(n) a ogni apertura di Patrimonio o toggle del filtro. ──
+let _cacheSerie = { movs: null, conti: null, snap: null, chiavi: new Map() };
+
 export const serieStoricoPatrimonio = (escludiTipi = []) => {
+  const chiave = escludiTipi.slice().sort().join(',');
+  if (_cacheSerie.movs === state.movimenti && _cacheSerie.conti === state.conti &&
+      _cacheSerie.snap === state.snapshot && _cacheSerie.chiavi.has(chiave)) {
+    return _cacheSerie.chiavi.get(chiave);
+  }
+  if (_cacheSerie.movs !== state.movimenti || _cacheSerie.conti !== state.conti || _cacheSerie.snap !== state.snapshot) {
+    _cacheSerie = { movs: state.movimenti, conti: state.conti, snap: state.snapshot, chiavi: new Map() };
+  }
+  const out = _serieStoricoCalcolo(escludiTipi);
+  _cacheSerie.chiavi.set(chiave, out);
+  return out;
+};
+
+const _serieStoricoCalcolo = (escludiTipi = []) => {
   const nettoOggi = patrimonioNetto(escludiTipi);
 
   // flusso netto mensile (entrate - spese; i trasferimenti sono interni)

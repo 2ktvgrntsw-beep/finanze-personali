@@ -4,7 +4,7 @@
 // aggiungere store/indici senza perdere i dati esistenti dell'utente.
 
 const DB_NAME = 'FinanzePersonaliDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;   // v2: aggiunto lo store 'bollette' (sezione Energia)
 
 // Dichiarazione centralizzata degli store. Aggiungere qui una nuova voce è tutto
 // ciò che serve per introdurre una nuova "tabella" in futuro.
@@ -27,6 +27,10 @@ const STORES = {
   eventiMutuo:    { keyPath: 'id' },          // estinzioni, rinegoziazioni ecc.
   suggerimenti:   { keyPath: 'chiave' },      // motore suggerimenti descrizione->classificazione
   meta:           { keyPath: 'chiave' },      // flag di sistema (es. seed completato)
+  bollette:       { keyPath: 'id', indexes: [ // bollette energia elettrica (sezione Energia)
+                      { name: 'al', keyPath: 'al' },
+                      { name: 'fornitore', keyPath: 'fornitore' },
+                  ]},
 };
 
 let _db = null;
@@ -71,6 +75,11 @@ export const dbGet = (store, key) => new Promise((res, rej) => {
 export const dbAll = (store) => new Promise((res, rej) => {
   const r = tx(store).getAll();
   r.onsuccess = () => res(r.result || []); r.onerror = () => rej(r.error);
+});
+
+export const dbCount = (store) => new Promise((res, rej) => {
+  const r = tx(store).count();
+  r.onsuccess = () => res(r.result || 0); r.onerror = () => rej(r.error);
 });
 
 export const dbDelete = (store, key) => new Promise((res, rej) => {

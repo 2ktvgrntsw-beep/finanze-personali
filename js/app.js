@@ -3,6 +3,7 @@
 import { openDB, setWriteErrorHandler } from './core/db.js';
 import { refreshAll } from './core/store.js';
 import { seedStoricoSeNecessario } from './core/seed.js';
+import { seedBolletteSeNecessario } from './core/seedBollette.js';
 import { registerRoute, initRouter, navigate, renderCurrent, currentRoute } from './core/router.js';
 import { NAV_SVG } from './core/icons.js';
 import { ensureContoDefault } from './services/contiService.js';
@@ -20,6 +21,7 @@ import { renderPatrimonio } from './components/patrimonio.js';
 import { renderRicorrenti } from './components/ricorrenti.js';
 import { renderAnalisi } from './components/analisi.js';
 import { renderRicerca } from './components/ricerca.js';
+import { conferma } from './components/shared.js';
 import { renderConti } from './components/conti.js';
 import { renderMutuo } from './components/mutuo.js';
 import { renderFinanziamenti } from './components/finanziamenti.js';
@@ -27,6 +29,8 @@ import { renderInvestimenti } from './components/investimenti.js';
 import { renderDettaglioInvestimento } from './components/dettaglioInvestimento.js';
 import { renderCategorie } from './components/categorie.js';
 import { renderImpostazioni } from './components/impostazioni.js';
+import { renderEnergia } from './components/energia.js';
+import { renderBollettaForm, renderBollettaDettaglio, renderBolletteStorico } from './components/energiaBollette.js';
 
 // Titolo di ogni schermata principale (per l'header)
 const TITOLI = {
@@ -57,6 +61,10 @@ const registraRotte = () => {
   registerRoute('dettaglio-investimento', renderDettaglioInvestimento);
   registerRoute('categorie', renderCategorie);
   registerRoute('impostazioni', wrap(renderImpostazioni, 'Impostazioni'));
+  registerRoute('energia', renderEnergia);
+  registerRoute('bolletta-nuova', renderBollettaForm);
+  registerRoute('bolletta-dettaglio', renderBollettaDettaglio);
+  registerRoute('bollette-storico', renderBolletteStorico);
 };
 
 const costruisciChrome = () => {
@@ -111,6 +119,7 @@ const boot = async () => {
 
     await openDB();
     await seedStoricoSeNecessario();   // carica lo storico al primo avvio
+    await seedBolletteSeNecessario();  // carica le bollette energia (una tantum)
     await refreshAll();
 
     // RILEVAMENTO PERDITA DATI: se i dati principali sono vuoti ma esiste un backup
@@ -118,7 +127,7 @@ const boot = async () => {
     const perdita = await rilevaPerdita();
     if (perdita) {
       const quando = new Date(perdita.data).toLocaleDateString('it-IT');
-      if (confirm(`Sembra che i dati siano andati persi, ma ho trovato un backup automatico del ${quando} con ${perdita.contatori.movimenti} movimenti. Vuoi ripristinarlo?`)) {
+      if (await conferma(`Sembra che i dati siano andati persi, ma ho trovato un backup automatico del ${quando} con ${perdita.contatori.movimenti} movimenti. Vuoi ripristinarlo?`, { titolo: 'Backup trovato', ok: 'Ripristina' })) {
         await ripristinaBackupAuto();
         toast('Dati ripristinati dal backup automatico');
       }

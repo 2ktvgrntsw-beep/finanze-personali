@@ -3,7 +3,7 @@
 import { state } from '../core/store.js';
 import { fmtEUR, escapeHtml, fmtData } from '../core/utils.js';
 import { statoPrestito, saveMutuo, saveEventoMutuo, eventiMutuo, deleteEventoMutuo } from '../services/prestitiService.js';
-import { apriSheet, apriDataNativa, montaTastierino, apriSelettoreCategoria } from './shared.js';
+import { apriSheet, apriDataNativa, montaTastierino, apriSelettoreCategoria, conferma } from './shared.js';
 import { toast } from '../core/utils.js';
 
 export const renderMutuo = async (root) => {
@@ -45,7 +45,7 @@ export const renderMutuo = async (root) => {
 
   root.querySelector('#edit').addEventListener('click', () => _edit(root));
   root.querySelector('#add-ev').addEventListener('click', () => _addEvento(root));
-  root.querySelectorAll('[data-ev]').forEach(el => el.addEventListener('click', async () => { if (confirm('Eliminare evento?')) { await deleteEventoMutuo(el.dataset.ev); toast('Eliminato'); renderMutuo(root); } }));
+  root.querySelectorAll('[data-ev]').forEach(el => el.addEventListener('click', async () => { if (await conferma('Eliminare questo evento?', { danger: true, ok: 'Elimina' })) { await deleteEventoMutuo(el.dataset.ev); toast('Eliminato'); renderMutuo(root); } }));
 
   // piano nascosto, si apre al click
   const togglePiano = root.querySelector('#toggle-piano');

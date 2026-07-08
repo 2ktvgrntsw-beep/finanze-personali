@@ -4,7 +4,7 @@
 import { state } from '../core/store.js';
 import { fmtEUR, escapeHtml, fmtData, todayISO } from '../core/utils.js';
 import { statoPrestito, saveFinanziamento, deleteFinanziamento } from '../services/prestitiService.js';
-import { apriSheet, apriDataNativa, apriSelettoreCategoria } from './shared.js';
+import { apriSheet, apriDataNativa, apriSelettoreCategoria, conferma } from './shared.js';
 import { toast } from '../core/utils.js';
 
 let _apertoId = null;   // id del finanziamento di cui mostrare il dettaglio
@@ -84,7 +84,7 @@ const _renderDettaglio = (root, f) => {
   root.querySelector('#back-list').addEventListener('click', () => { _apertoId = null; renderFinanziamenti(root); });
   root.querySelector('#edit').addEventListener('click', () => _edit(root, f.id));
   root.querySelector('#del-fin').addEventListener('click', async () => {
-    if (confirm('Eliminare il finanziamento? La ricorrenza collegata verrà rimossa.')) {
+    if (await conferma('Eliminare il finanziamento? La ricorrenza collegata verrà rimossa.', { danger: true, ok: 'Elimina' })) {
       await deleteFinanziamento(f.id); _apertoId = null; toast('Eliminato'); renderFinanziamenti(root);
     }
   });
@@ -154,6 +154,6 @@ const _edit = (root, id) => {
       chiudi(); toast('Salvato'); renderFinanziamenti(root);
     });
     const del = body.querySelector('#f-del');
-    if (del) del.addEventListener('click', async () => { if (confirm('Eliminare?')) { await deleteFinanziamento(f.id); _apertoId = null; chiudi(); toast('Eliminato'); renderFinanziamenti(root); } });
+    if (del) del.addEventListener('click', async () => { if (!(await conferma('Eliminare il finanziamento?', { danger: true, ok: 'Elimina' }))) return; await deleteFinanziamento(f.id); _apertoId = null; chiudi(); toast('Eliminato'); renderFinanziamenti(root); });
   });
 };

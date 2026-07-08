@@ -752,7 +752,10 @@ button,.hbtn,.numpad button,.seg button,.mov,.catrow,.chip,.frow .fval,.type-swi
 .filtri-btn{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:var(--surface-3);border:0;color:var(--txt-2);font-size:11.5px;padding:6px 10px;border-radius:9px;cursor:pointer}
 
 .filtri-btn.on{background:var(--accent);color:#fff}
-.searchbar input{background:transparent;border:0;color:var(--txt);font-size:16px;flex:1;font-family:var(--font);outline:none;padding-right:84px}
+.q-clear{position:absolute;right:70px;top:50%;transform:translateY(-50%);background:none;border:0;padding:4px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--txt-3)}
+.q-clear svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round}
+.q-clear:active{color:var(--txt)}
+.searchbar input{background:transparent;border:0;color:var(--txt);font-size:16px;flex:1;font-family:var(--font);outline:none;padding-right:104px}
 
 .filtri-card{margin:8px 0;padding:12px 14px}
 
@@ -1254,5 +1257,123 @@ input[type=date].sheet-input{-webkit-appearance:none;appearance:none}
 .obiettivo-ok{color:var(--up);font-weight:600}
 
 /* ═══ Accessibilità: stato di focus visibile per navigazione da tastiera ═══ */
-button:focus-visible, [role="button"]:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible{
+button:focus-visible, [role="button"]:focus-visible, a:focus-visible{
   outline:2px solid var(--blue-2);outline-offset:2px;border-radius:8px}
+/* campi di testo/select: focus discreto (niente anello spesso — hanno già il loro stile) */
+input:focus, input:focus-visible, select:focus, select:focus-visible, textarea:focus{outline:none}
+.sheet-input:focus{border-color:var(--blue-2)}
+/* la searchbar segnala il focus con un bordo sottile sul CONTENITORE, non sull'input */
+.searchbar{border:1px solid transparent;transition:border-color .15s}
+.searchbar:focus-within{border-color:rgba(95,195,255,.5)}
+
+/* ═══ sheet di conferma (sostituto di confirm nativo) ═══ */
+.conferma-testo{color:var(--txt);font-size:14.5px;line-height:1.55;margin:2px 0 16px}
+
+/* ═══ M4: contenitori collassabili (aprire/chiudere senza re-render) ═══ */
+.coll{display:none}
+.coll.open{display:block}
+.gruppo-chev{transition:transform .2s}
+.gruppo-chev.giu{transform:rotate(90deg);color:var(--blue-2)}
+
+/* ═══════════════ SEZIONE ENERGIA ═══════════════ */
+.energia-hero{background:radial-gradient(120% 120% at 100% 0%,rgba(46,155,255,.10),transparent 55%),var(--surface-2)}
+.energia-hero .net-row{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px}
+.ehero-forn{font-size:12.5px;color:var(--txt-2);line-height:1.5}
+.ehero-forn b{color:var(--txt);font-weight:600}
+.ebadge{background:rgba(34,227,154,.12);color:var(--up);font-size:11px;font-weight:600;padding:4px 9px;border-radius:8px;white-space:nowrap}
+.ehero-imp{font-size:40px;font-weight:700;line-height:1}
+.ehero-meta{display:flex;gap:20px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.ehero-meta .k{font-size:10px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.04em}
+.ehero-meta .v{font-size:16px;font-weight:600;margin-top:2px}
+
+.ekpis{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.ekpi{background:var(--surface-2);border:1px solid var(--line);border-radius:14px;padding:13px 14px}
+.ekpi .k{font-size:11px;color:var(--txt-2);margin-bottom:5px}
+.ekpi .v{font-size:22px;font-weight:700}
+.ekpi .v small{font-size:12px;color:var(--txt-2)}
+.ekpi .d{font-size:11px;margin-top:3px}
+.ekpi .d.up{color:var(--down)}.ekpi .d.down{color:var(--up)}
+
+.eyear{display:flex;align-items:center;gap:6px;background:var(--surface-3);border:1px solid var(--line);border-radius:10px;padding:4px 6px}
+.eyear button{background:none;border:0;color:var(--txt-2);font-size:16px;cursor:pointer;padding:0 6px;line-height:1}
+.eyear .num{font-size:14px;font-weight:600;min-width:38px;text-align:center}
+
+.elegend{display:flex;gap:12px;margin-bottom:14px}
+.elegend span{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--txt-2)}
+.elegend i{width:9px;height:9px;border-radius:3px;display:inline-block}
+.estack{display:flex;align-items:flex-end;gap:8px;height:150px}
+.escol{flex:1;display:flex;flex-direction:column;align-items:center;gap:7px;height:100%}
+.estot{font-size:10px;color:var(--txt-2);font-weight:600}
+.ebar-wrap{flex:1;width:100%;max-width:30px;margin:0 auto;display:flex;flex-direction:column-reverse;border-radius:5px 5px 0 0;overflow:hidden}
+.ebar-seg{width:100%}
+.eslbl{font-size:10px;color:var(--txt-3);font-weight:600}
+
+.eprice-toggle{display:flex;gap:4px;background:var(--surface-3);border-radius:9px;padding:3px}
+.eprice-toggle button{background:none;border:0;color:var(--txt-2);font-size:11px;font-weight:600;padding:5px 10px;border-radius:7px;cursor:pointer;font-family:var(--font)}
+.eprice-toggle button.on{background:var(--accent);color:#fff}
+.eprice-note{font-size:11.5px;color:var(--txt-2);line-height:1.5;margin-top:10px}
+.eprice-note b{color:var(--blue-2)}
+.spark-energia{height:130px;position:relative}
+
+.efasce{display:flex;gap:8px}
+.efascia{flex:1;background:var(--surface-2);border:1px solid var(--line);border-radius:13px;padding:12px;text-align:center}
+.efascia .dot{width:8px;height:8px;border-radius:50%;margin:0 auto 7px}
+.efascia .nm{font-size:10px;color:var(--txt-3);text-transform:uppercase}
+.efascia .pc{font-size:19px;font-weight:700;margin:3px 0}
+.efascia .kw{font-size:10px;color:var(--txt-2)}
+
+.eboll{display:flex;align-items:center;gap:12px;padding:12px 14px;cursor:pointer}
+.eboll-ic{width:36px;height:36px;border-radius:10px;background:var(--surface-3);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.eboll-ic svg{width:18px;height:18px;stroke:var(--blue-2);fill:none;stroke-width:1.8}
+.eboll-body{flex:1;min-width:0}
+.eboll-r1{display:flex;justify-content:space-between;align-items:baseline}
+.eboll-nm{font-size:14px;font-weight:600}
+.eboll-imp{font-size:15px;font-weight:600}
+.eboll-r2{display:flex;justify-content:space-between;margin-top:2px}
+.eboll-sub{font-size:11.5px;color:var(--txt-2)}
+.eboll-kwh{font-size:11.5px;color:var(--txt-3)}
+.eboll-chev{color:var(--txt-3)}
+
+/* ═══ Energia: form, dettaglio, storico ═══ */
+.seg-tab{display:flex;gap:4px;background:var(--surface-2);border:1px solid var(--line);border-radius:11px;padding:3px}
+.seg-tab button{flex:1;background:none;border:0;color:var(--txt-2);font-size:13px;font-weight:600;padding:9px;border-radius:8px;font-family:var(--font);cursor:pointer}
+.seg-tab button.on{background:var(--accent);color:#fff}
+.fasce-in{display:flex;gap:8px}
+.fasce-in .fi{flex:1}
+.fasce-in .fi label{font-size:10px;text-align:center;color:var(--txt-3);text-transform:uppercase;display:block;margin-bottom:4px}
+.fasce-in .fi input{text-align:center;font-family:var(--font-inst);font-weight:600}
+
+.det-hero{background:radial-gradient(120% 120% at 100% 0%,rgba(46,155,255,.10),transparent 55%),var(--surface-2);border:1px solid var(--line);border-radius:18px;padding:18px;text-align:center}
+.det-hero .forn{font-size:13px;color:var(--txt-2);margin-bottom:4px}
+.det-hero .forn b{color:var(--txt)}
+.det-hero .imp{font-size:44px;font-weight:700;line-height:1.1}
+.det-hero .per{font-size:12px;color:var(--txt-3);margin-top:4px}
+.det-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:12px}
+.det-cell{background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:11px;text-align:center}
+.det-cell .k{font-size:9.5px;color:var(--txt-3);text-transform:uppercase}
+.det-cell .v{font-size:17px;font-weight:600;margin-top:3px}
+.det-actions{display:flex;gap:10px;margin-top:18px}
+.det-actions .btn{flex:1}
+
+.ecomp-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+.ecomp-row:last-child{border-bottom:0}
+.ecomp-nm{font-size:12.5px;width:130px}
+.ecomp-bar{flex:1;height:6px;background:var(--surface-3);border-radius:4px;overflow:hidden}
+.ecomp-fill{height:100%;border-radius:4px}
+.ecomp-val{font-size:13px;font-weight:600;width:52px;text-align:right}
+.enote{font-size:11.5px;color:var(--txt-3);line-height:1.5;margin-top:14px;padding:12px;background:var(--surface);border-radius:10px}
+
+.efilters{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.echip{background:var(--surface-2);border:1px solid var(--line);color:var(--txt-2);font-size:12px;padding:7px 13px;border-radius:20px;cursor:pointer;white-space:nowrap}
+.echip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.eyear-group{margin-bottom:8px}
+.eyear-head{display:flex;justify-content:space-between;align-items:baseline;padding:8px 4px}
+.eyear-head .yy{font-family:var(--font-disp);font-size:16px;font-weight:700}
+.eyear-head .yt{font-size:13px;color:var(--txt-2)}
+
+/* ═══ Selezione multipla: pulsante esci toolbar + bottoni sheet azioni ═══ */
+.sel-toolbar .sel-esci{background:none;padding:6px;display:flex;align-items:center;color:var(--txt-2)}
+.sel-toolbar .sel-esci svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2.2}
+.sel-toolbar .sel-modifica:disabled{opacity:.4}
+.mm-btn{width:100%;margin-bottom:8px;display:flex;align-items:center;justify-content:center;gap:8px}
+.mm-btn svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.9;flex:none}

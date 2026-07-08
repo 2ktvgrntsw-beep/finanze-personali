@@ -10,7 +10,7 @@ import { safeWrite } from '../core/db.js';
 import { saveMovimento, deleteMovimento } from '../services/movimentiService.js';
 import { saveRicorrente } from '../services/ricorrentiService.js';
 import { suggerisciPerTesto, suggerisciTag } from '../services/suggerimentiService.js';
-import { apriSelettoreCategoria, apriSheet } from './shared.js';
+import { apriSelettoreCategoria, apriSheet, conferma } from './shared.js';
 import { toast } from '../core/utils.js';
 
 let d = null;
@@ -144,13 +144,13 @@ const _render = (root) => {
   root.querySelector('#salva').addEventListener('click', () => _salva());
   const dr = root.querySelector('#del-ric');
   if (dr) dr.addEventListener('click', async () => {
-    if (confirm('Eliminare la ricorrenza? I movimenti già generati restano.')) {
+    if (await conferma('Eliminare la ricorrenza? I movimenti già generati restano.', { danger: true, ok: 'Elimina' })) {
       const { deleteRicorrente } = await import('../services/ricorrentiService.js');
       await deleteRicorrente(d.ricEdit); toast('Eliminata'); d = null; navigate('ricorrenti');
     }
   });
   const dm = root.querySelector('#del-mov');
-  if (dm) dm.addEventListener('click', async () => { if (!confirm('Eliminare?')) return; const ok = await safeWrite(() => deleteMovimento(d.id), 'Movimento non eliminato'); if (!ok) return; toast('Eliminato'); navigate('movimenti'); });
+  if (dm) dm.addEventListener('click', async () => { if (!(await conferma('Eliminare questo movimento?', { danger: true, ok: 'Elimina' }))) return; const ok = await safeWrite(() => deleteMovimento(d.id), 'Movimento non eliminato'); if (!ok) return; toast('Eliminato'); navigate('movimenti'); });
 };
 
 const _labelRipeti = (r) => {

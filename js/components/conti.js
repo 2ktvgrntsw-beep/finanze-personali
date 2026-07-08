@@ -4,7 +4,7 @@ import { UI_SVG } from '../core/icons.js';
 import { state } from '../core/store.js';
 import { fmtEUR, escapeHtml, todayISO } from '../core/utils.js';
 import { saldoStimato, saveConto, deleteConto, TIPI_CONTO, LABEL_TIPO } from '../services/contiService.js';
-import { apriSheet, apriDataNativa, montaTastierino } from './shared.js';
+import { apriSheet, apriDataNativa, montaTastierino, conferma } from './shared.js';
 import { safeWrite } from '../core/db.js';
 import { toast } from '../core/utils.js';
 
@@ -89,7 +89,7 @@ const _editConto = (root, id) => {
     });
     const del = body.querySelector('#c-del');
     if (del) del.addEventListener('click', async () => {
-      if (!confirm('Eliminare il conto? I movimenti restano.')) return;
+      if (!(await conferma('Eliminare il conto? I movimenti restano.', { danger: true, ok: 'Elimina' }))) return;
       const ok = await safeWrite(() => deleteConto(c.id), 'Conto non eliminato');
       if (!ok) return;
       chiudi(); toast('Eliminato'); renderConti(root);

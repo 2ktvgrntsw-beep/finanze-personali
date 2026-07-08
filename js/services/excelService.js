@@ -69,6 +69,16 @@ export const esportaBackup = async () => {
     Tipo: e.tipo, Importo: e.importo, Data: e.data, Riferimento: e.riferimento || 'mutuo-principale',
   })));
 
+  // Bollette energia elettrica (sezione Energia)
+  sheet('Bollette', state.bollette.map(b => ({
+    ID: b.id, Numero: b.numero || '', Dal: b.dal, Al: b.al, Giorni: b.giorni,
+    Fornitore: b.fornitore, Offerta: b.offerta || '', Tariffa: b.tariffa || '',
+    ConsumoTot_kWh: b.kwhTot, F1_kWh: b.kwhF1, F2_kWh: b.kwhF2, F3_kWh: b.kwhF3,
+    Totale: b.totale, MateriaEnergia: b.materia ?? '', Trasporto: b.trasporto ?? '',
+    Oneri: b.oneri ?? '', Accise: b.accise ?? '', IVA: b.iva ?? '',
+    Completa: b.completa ? 'Sì' : 'No', Note: b.note || '',
+  })));
+
   // Meta / impostazioni (backup automatico, versione, ecc.)
   // Meta / impostazioni — ESCLUSO il backup automatico interno ('_backup_auto'):
   // contiene tutti i dati serializzati e supererebbe il limite di 32.767 caratteri
@@ -105,6 +115,7 @@ export const importaBackup = async (file) => {
   const mappaFogli = {
     movimenti: 'Movimenti', conti: 'Conti', categorie: 'Categorie', tag: 'Tag',
     ricorrenti: 'Ricorrenti', mutuo: 'Mutuo', finanziamenti: 'Finanziamenti', eventiMutuo: 'EventiMutuo',
+    bollette: 'Bollette',
   };
   const preservati = [];
   for (const [store, foglio] of Object.entries(mappaFogli)) {
@@ -191,6 +202,21 @@ export const importaBackup = async (file) => {
     importo: round2(parseFloat(String(r.Importo).replace(',', '.')) || 0),
     data: parseDataEU(r.Data), riferimento: r.Riferimento || 'mutuo-principale',
   })).filter(e => e.importo > 0));
+
+  // Bollette energia (solo se il foglio esiste nel file)
+  if (haFoglio('Bollette')) {
+    const numO = (v) => { const s = String(v).replace(',', '.'); return s === '' || isNaN(parseFloat(s)) ? null : round2(parseFloat(s)); };
+    const intO = (v) => { const n = parseInt(v); return isNaN(n) ? 0 : n; };
+    await dbBulkPut('bollette', leggi('Bollette').map((r, i) => ({
+      id: r.ID || `imp_boll_${i}`, numero: r.Numero || null,
+      dal: r.Dal, al: r.Al, giorni: intO(r.Giorni),
+      fornitore: r.Fornitore || '', offerta: r.Offerta || null, tariffa: r.Tariffa || 'Bioraria',
+      kwhTot: intO(r.ConsumoTot_kWh), kwhF1: intO(r.F1_kWh), kwhF2: intO(r.F2_kWh), kwhF3: intO(r.F3_kWh),
+      totale: numO(r.Totale) ?? 0, materia: numO(r.MateriaEnergia), trasporto: numO(r.Trasporto),
+      oneri: numO(r.Oneri), accise: numO(r.Accise), iva: numO(r.IVA),
+      completa: String(r.Completa).toLowerCase() !== 'no', note: r.Note || null, origine: 'backup',
+    })).filter(b => b.dal && b.al && b.fornitore));
+  }
 
   await refreshAll();
   return { movimenti: movs.length, preservati };

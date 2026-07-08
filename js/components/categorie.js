@@ -9,7 +9,7 @@ import {
   contaMovimentiNodo, rinominaNodo, eliminaNodo,
 } from '../services/categorieService.js';
 import { navigate } from '../core/router.js';
-import { apriSheet, apriSelettoreCategoria } from './shared.js';
+import { apriSheet, apriSelettoreCategoria, conferma } from './shared.js';
 import { UI_SVG } from '../core/icons.js';
 import { safeWrite } from '../core/db.js';
 import { toast } from '../core/utils.js';
@@ -114,9 +114,10 @@ const _gestisciNodo = (root, livello, macro, cat, sub) => {
     });
 
     body.querySelector('#g-del-lascia').addEventListener('click', async () => {
-      if (!confirm(nMov > 0
+      const msg = nMov > 0
         ? `Eliminare "${nome}" dall'anagrafica? I ${nMov} movimenti NON verranno toccati.`
-        : `Eliminare "${nome}"?`)) return;
+        : `Eliminare "${nome}"?`;
+      if (!(await conferma(msg, { danger: true, ok: 'Elimina' }))) return;
       await eliminaNodo(livello, macro, cat, sub, null);
       chiudi(); toast('Eliminata'); renderCategorie(root);
     });
@@ -125,7 +126,7 @@ const _gestisciNodo = (root, livello, macro, cat, sub) => {
     if (delRi) delRi.addEventListener('click', () => {
       chiudi();
       apriSelettoreCategoria(async (sel) => {
-        if (!confirm(`Riassegnare ${nMov} movimenti a "${[sel.macro, sel.cat, sel.sub].filter(Boolean).join(' › ')}" ed eliminare "${nome}"?`)) return;
+        if (!(await conferma(`Riassegnare ${nMov} movimenti a "${[sel.macro, sel.cat, sel.sub].filter(Boolean).join(' › ')}" ed eliminare "${nome}"?`, { ok: 'Riassegna ed elimina', danger: true }))) return;
         const n = await eliminaNodo(livello, macro, cat, sub, sel);
         toast(`Eliminata · ${n} movimenti riassegnati`); renderCategorie(root);
       });

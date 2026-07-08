@@ -136,21 +136,31 @@ export const renderPatrimonio = async (root) => {
   const snap = root.querySelector('#snap');
   if (snap) snap.addEventListener('click', async () => { await salvaSnapshotMese(); toast('Rilevazione salvata'); renderPatrimonio(root); });
 
-  // gruppi conti collassabili
+  // gruppi conti collassabili: SOLO mutazione locale (scroll e stato restano fermi)
   root.querySelectorAll('[data-gruppo]').forEach(el => el.addEventListener('click', () => {
     const tipo = el.dataset.gruppo;
-    if (_gruppiAperti.has(tipo)) _gruppiAperti.delete(tipo); else _gruppiAperti.add(tipo);
-    renderPatrimonio(root);
+    const aperto = !_gruppiAperti.has(tipo);
+    if (aperto) _gruppiAperti.add(tipo); else _gruppiAperti.delete(tipo);
+    const body = el.parentElement.querySelector('.gruppo-body');
+    if (body) body.classList.toggle('open', aperto);
+    const chev = el.querySelector('.gruppo-chev');
+    if (chev) chev.classList.toggle('giu', aperto);
+    el.setAttribute('aria-expanded', String(aperto));
   }));
   // tap su singolo conto -> modifica
   root.querySelectorAll('[data-conto]').forEach(el => el.addEventListener('click', (e) => {
     e.stopPropagation();
     const c = state.conti.find(x => x.id === el.dataset.conto);
-    // conto investimento CON strumenti -> espande/collassa l'annidamento
+    // conto investimento CON strumenti -> espande/collassa l'annidamento (mutazione locale)
     if (el.dataset.espandi) {
-      if (_contiEspansi.has(el.dataset.espandi)) _contiEspansi.delete(el.dataset.espandi);
-      else _contiEspansi.add(el.dataset.espandi);
-      renderPatrimonio(root);
+      const nome = el.dataset.espandi;
+      const espanso = !_contiEspansi.has(nome);
+      if (espanso) _contiEspansi.add(nome); else _contiEspansi.delete(nome);
+      const blocco = root.querySelector(`.strumenti-annidati[data-strum-di="${CSS.escape(nome)}"]`);
+      if (blocco) blocco.classList.toggle('open', espanso);
+      const chev = el.querySelector('.conto-chev');
+      if (chev) chev.classList.toggle('giu', espanso);
+      el.setAttribute('aria-expanded', String(espanso));
       return;
     }
     // conto investimento SENZA strumenti annidati -> dettaglio con grafico; altri -> modifica saldo
@@ -365,7 +375,7 @@ function _contiCollassabiliHTML() {
     // L'attribuzione conto/strumento usa la FONTE UNICA (attribuzioneInvestimenti.js),
     // condivisa con la pagina di dettaglio: così i numeri non possono divergere.
     let strumentiPerConto = {};
-    if (tipo === 'investimenti' && aperto) {
+    if (tipo === 'investimenti') {
       for (const m of state.movimenti) {
         if (!eInvestimento(m, state.conti)) continue;
         const conto = contoDiTrasferimento(m, state.conti);
@@ -375,12 +385,12 @@ function _contiCollassabiliHTML() {
         strumentiPerConto[conto][strum] = (strumentiPerConto[conto][strum] || 0) + m.imp;
       }
     }
-    const strumentiDi = (contoNome) => {
+    const strumentiDi = (contoNome, espanso) => {
       const s = strumentiPerConto[contoNome];
       if (!s) return '';
       const lista = Object.entries(s).sort((a, b) => b[1] - a[1]);
       if (!lista.length) return '';
-      return `<div class="strumenti-annidati">` + lista.map(([nome, v]) => `
+      return `<div class="strumenti-annidati coll${espanso ? ' open' : ''}" data-strum-di="${escapeHtml(contoNome)}">` + lista.map(([nome, v]) => `
         <div class="conto-riga strumento-riga" data-strumento="${escapeHtml(nome)}">
           <div class="conto-nome">${escapeHtml(nome)}</div>
           <div class="conto-saldo num">${fmtEUR(v)}</div>
@@ -388,25 +398,29 @@ function _contiCollassabiliHTML() {
         </div>`).join('') + `</div>`;
     };
 
+    // Contenuto SEMPRE renderizzato: aprire/chiudere è solo un classList.toggle
+    // (niente re-render dell'intera pagina: scroll e stato restano dove sono).
     html += `
       <div class="gruppo-conti">
-        <div class="gruppo-head" data-gruppo="${tipo}">
+        <div class="gruppo-head" data-gruppo="${tipo}" role="button" aria-expanded="${aperto}">
           <div class="gruppo-ic" style="background:${COLORE_ICONA[tipo]}">${ICONA_TIPO_ATT[tipo]}</div>
           <div class="gruppo-nome">${LABEL[tipo]} <span class="meta">· ${conti.length}</span></div>
           <div class="gruppo-tot num">${fmtEUR(tot)}</div>
-          <div class="gruppo-chev">${aperto ? '⌄' : '›'}</div>
+          <div class="gruppo-chev${aperto ? ' giu' : ''}">›</div>
         </div>
-        ${aperto ? conti.map(c => {
+        <div class="gruppo-body coll${aperto ? ' open' : ''}">
+        ${conti.map(c => {
           const haStrum = tipo === 'investimenti' && !!strumentiPerConto[c.nome];
           const espanso = _contiEspansi.has(c.nome);
           return `
-          <div class="conto-riga${haStrum ? ' conto-espandibile' : ''}" data-conto="${c.id}"${haStrum ? ` data-espandi="${escapeHtml(c.nome)}"` : ''}>
+          <div class="conto-riga${haStrum ? ' conto-espandibile' : ''}" data-conto="${c.id}"${haStrum ? ` data-espandi="${escapeHtml(c.nome)}" role="button" aria-expanded="${espanso}"` : ''}>
             <div class="conto-nome">${escapeHtml(c.nome)}</div>
             <div class="conto-saldo num">${fmtEUR(saldoStimato(c))}</div>
             <div class="conto-chev${haStrum && espanso ? ' giu' : ''}">›</div>
           </div>
-          ${haStrum && espanso ? strumentiDi(c.nome) : ''}`;
-        }).join('') : ''}
+          ${haStrum ? strumentiDi(c.nome, espanso) : ''}`;
+        }).join('')}
+        </div>
       </div>`;
   }
   return html;

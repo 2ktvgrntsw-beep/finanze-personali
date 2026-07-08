@@ -10,7 +10,7 @@ import { registraBackupExcelFatto, giorniDaUltimoBackupExcel, esportaJSON, impor
 import { applicaTagBulk, cercaMovimenti } from '../services/movimentiService.js';
 import { STORE_NAMES } from '../core/db.js';
 import { dbClear } from '../core/db.js';
-import { apriSheet } from './shared.js';
+import { apriSheet, conferma } from './shared.js';
 import { toast } from '../core/utils.js';
 
 export const renderImpostazioni = async (root) => {
@@ -44,11 +44,16 @@ export const renderImpostazioni = async (root) => {
       <button class="btn btn-secondary" id="bulk-tag">Applica tag in blocco</button>
     </div>
 
+    <div class="section-lbl"><span>Sezioni</span></div>
+    <div class="card" style="padding:0">
+      <div class="patrow" id="go-energia" style="cursor:pointer"><div class="icon" style="background:var(--surface-2)">${UI_SVG.fulmine}</div><div class="body"><div class="row1"><span class="name">Energia</span><span class="meta num">${state.bollette.length}</span></div></div><div class="chev">›</div></div>
+    </div>
+
     <div class="section-lbl"><span>Gestione</span></div>
     <div class="card" style="padding:0">
       <div class="patrow" id="go-conti" style="cursor:pointer"><div class="icon">${UI_SVG.conto}</div><div class="body"><div class="row1"><span class="name">Conti</span><span class="meta num">${nConti}</span></div></div><div class="chev">›</div></div>
       <div class="divider"></div>
-      <div class="patrow" id="go-cat" style="cursor:pointer"><div class="icon" style="background:var(--surface-2)">🗂️</div><div class="body"><div class="row1"><span class="name">Categorie</span><span class="meta num">${state.categorie.length}</span></div></div><div class="chev">›</div></div>
+      <div class="patrow" id="go-cat" style="cursor:pointer"><div class="icon" style="background:var(--surface-2)">${UI_SVG.tag}</div><div class="body"><div class="row1"><span class="name">Categorie</span><span class="meta num">${state.categorie.length}</span></div></div><div class="chev">›</div></div>
     </div>
 
     <div class="section-lbl"><span>Informazioni</span></div>
@@ -89,7 +94,7 @@ export const renderImpostazioni = async (root) => {
   root.querySelector('#import-btn').addEventListener('click', () => fileInp.click());
   fileInp.addEventListener('change', async () => {
     if (!fileInp.files.length) return;
-    if (!confirm('Il ripristino SOSTITUISCE i dati attuali con quelli presenti nel backup. Continuare?')) { fileInp.value = ''; return; }
+    if (!(await conferma('Il ripristino SOSTITUISCE i dati attuali con quelli presenti nel backup. Continuare?', { titolo: 'Ripristino backup', ok: 'Ripristina', danger: true }))) { fileInp.value = ''; return; }
     try {
       const file = fileInp.files[0];
       const isJSON = file.name.toLowerCase().endsWith('.json');
@@ -111,13 +116,14 @@ export const renderImpostazioni = async (root) => {
   root.querySelector('#bulk-tag').addEventListener('click', () => _bulkTag(root));
 
   // navigazione
+  root.querySelector('#go-energia').addEventListener('click', () => navigate('energia'));
   root.querySelector('#go-conti').addEventListener('click', () => navigate('conti'));
   root.querySelector('#go-cat').addEventListener('click', () => navigate('categorie'));
 
   // reset
   root.querySelector('#reset').addEventListener('click', async () => {
-    if (!confirm('Sicuro? Verranno eliminati TUTTI i dati in modo irreversibile.')) return;
-    if (!confirm('Ultima conferma: azzerare tutto?')) return;
+    if (!(await conferma('Verranno eliminati TUTTI i dati in modo irreversibile.', { titolo: 'Azzera tutto', ok: 'Continua', danger: true }))) return;
+    if (!(await conferma('Ultima conferma: azzerare davvero tutto?', { titolo: 'Azzera tutto', ok: 'Azzera tutto', danger: true }))) return;
     for (const s of STORE_NAMES) await dbClear(s);
     await refreshAll();
     toast('Dati azzerati');

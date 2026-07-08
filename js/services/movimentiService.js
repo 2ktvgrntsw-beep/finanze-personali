@@ -201,7 +201,24 @@ export const cercaMovimenti = (query, filtri = {}) => {
   const q = _norm((query || '').trim());
   const haFiltri = filtri.tipo || filtri.macro || filtri.cat || filtri.sub || filtri.conto || filtri.da || filtri.a || filtri.min != null || filtri.max != null;
   if (!q && !haFiltri) return { risultati: [], totali: { spese: 0, entrate: 0, trasf: 0 }, count: 0 };
-  const num = q ? parseFloat(q.replace(',', '.')) : NaN;
+
+  // Termini di ricerca: separati da virgola = logica OR (trova chi contiene ANCHE SOLO uno).
+  // "hotel, volo, marocco" -> match se il movimento contiene hotel OPPURE volo OPPURE marocco.
+  // Senza virgole si comporta come prima: un unico termine.
+  const termini = q ? q.split(',').map(t => t.trim()).filter(Boolean) : [];
+
+  // un singolo termine matcha un movimento se compare in uno qualsiasi dei campi
+  const terminMatch = (m, t) => {
+    const num = parseFloat(t.replace(',', '.'));
+    if (m.desc && _norm(m.desc).includes(t)) return true;
+    if (m.macro && _norm(m.macro).includes(t)) return true;
+    if (m.cat && _norm(m.cat).includes(t)) return true;
+    if (m.sub && _norm(m.sub).includes(t)) return true;
+    if (m.conto && _norm(m.conto).includes(t)) return true;
+    if (m.tag && m.tag.some(tag => _norm(tag).includes(t))) return true;
+    if (!isNaN(num) && Math.abs(m.imp - num) < 0.005) return true;
+    return false;
+  };
 
   const risultati = state.movimenti.filter(m => {
     // filtri strutturati (tutti in AND)
@@ -216,16 +233,9 @@ export const cercaMovimenti = (query, filtri = {}) => {
     if (filtri.a && m.data > filtri.a) return false;
     if (filtri.min != null && m.imp < filtri.min) return false;
     if (filtri.max != null && m.imp > filtri.max) return false;
-    // testo libero (se presente), senza accenti
-    if (!q) return true;
-    if (m.desc && _norm(m.desc).includes(q)) return true;
-    if (m.macro && _norm(m.macro).includes(q)) return true;
-    if (m.cat && _norm(m.cat).includes(q)) return true;
-    if (m.sub && _norm(m.sub).includes(q)) return true;
-    if (m.conto && _norm(m.conto).includes(q)) return true;
-    if (m.tag && m.tag.some(t => _norm(t).includes(q))) return true;
-    if (!isNaN(num) && Math.abs(m.imp - num) < 0.005) return true;
-    return false;
+    // testo libero: basta che UNO dei termini matchi (OR)
+    if (!termini.length) return true;
+    return termini.some(t => terminMatch(m, t));
   }).sort((a, b) => b.data.localeCompare(a.data));
 
   const totali = {

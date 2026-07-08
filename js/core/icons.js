@@ -44,6 +44,8 @@ export const UI_SVG = {
   lente: _svg('<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>'),
   descrizione: _svg('<path d="M4 7h16M4 12h16M4 17h10"/>'),
   conto: _svg('<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18"/>'),
+  fulmine: _svg('<path d="M13 2 4.5 13.5H11l-1 8.5L19.5 10H13z"/>'),
+  x: _svg('<path d="M18 6 6 18M6 6l12 12"/>'),
   tag: _svg('<path d="M7 7h.01M4 4h7l9 9-7 7-9-9z"/>'),
   importo: _svg('<path d="M12 3v18M8 7h5a2.5 2.5 0 0 1 0 5H9a2.5 2.5 0 0 0 0 5h6"/>'),
   ripeti: _svg('<path d="M4.5 12a7.5 7.5 0 0 1 13-5M19.5 12a7.5 7.5 0 0 1-13 5"/><path d="M17.5 3.5v3.5H14M6.5 20.5V17h3.5"/>'),
