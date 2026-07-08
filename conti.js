@@ -1,231 +1,369 @@
-// energiaBollette.js — Schermate di dettaglio della sezione Energia:
-// form inserimento/modifica bolletta, dettaglio singola bolletta, storico completo.
+// inserimento.js — Nuova operazione e modifica.
+// Righe compatte, data NATIVA iOS, tastierino che si chiude cambiando campo,
+// trasferimento con descrizione, suggerimenti a tendina che completano desc+categoria.
 
 import { state } from '../core/store.js';
-import { fmtEUR, escapeHtml, round2 } from '../core/utils.js';
-import { navigate, currentRoute } from '../core/router.js';
+import { fmtEUR, todayISO, fmtDataEstesa, escapeHtml, round2 } from '../core/utils.js';
+import { iconaMacro, UI_SVG } from '../core/icons.js';
+import { navigate } from '../core/router.js';
+import { safeWrite } from '../core/db.js';
+import { saveMovimento, deleteMovimento } from '../services/movimentiService.js';
+import { saveRicorrente } from '../services/ricorrentiService.js';
+import { suggerisciPerTesto, suggerisciTag } from '../services/suggerimentiService.js';
+import { apriSelettoreCategoria, apriSheet, conferma } from './shared.js';
 import { toast } from '../core/utils.js';
-import { safeWrite, dbAdd, dbDelete } from '../core/db.js';
-import { refreshAll } from '../core/store.js';
-import { conferma } from './shared.js';
-import {
-  bollettaById, kpiBolletta, composizioneBolletta, componiBolletta, giorniTra,
-  fornitoriUsati, bolletteComplete, aggregatoAnno, anniDisponibili, mese3, bolletteOrdinate,
-} from '../services/energiaService.js';
-import { _rigaBollettaHTML } from './energia.js';
 
-const FULMINE = '<svg viewBox="0 0 24 24"><path d="M13 2 4.5 13.5H11l-1 8.5L19.5 10H13z"/></svg>';
+let d = null;
 
-// ═══════════════════════════════════════════════════════════════════════════
-// FORM — inserimento / modifica bolletta
-// ═══════════════════════════════════════════════════════════════════════════
-export const renderBollettaForm = async (root) => {
-  const params = currentRoute().params || {};
-  const esistente = params.id ? bollettaById(params.id) : null;
-  document.getElementById('view-title').textContent = esistente ? 'Modifica bolletta' : 'Nuova bolletta';
+const nuovaBozza = () => ({
+  id: null, tipo: 'spesa', imp: 0, impStr: '0',
+  macro: '', cat: '', sub: '', conto: '', contoDest: '',
+  desc: '', tag: [], data: todayISO(), ripeti: null,
+});
 
-  const b = esistente || { tariffa: 'Bioraria' };
-  const fornitori = fornitoriUsati();
-  const val = (v) => v == null ? '' : String(v).replace('.', ',');
+export const renderInserimento = async (root, params = {}) => {
+  if (params.ric) {
+    // MODIFICA RICORRENZA nella stessa UI dell'inserimento (coerenza visiva):
+    // precompila tutto dalla ricorrenza; al salvataggio aggiorna la ricorrenza
+    // (nessun nuovo movimento viene creato).
+    const r = state.ricorrenti.find(x => x.id === params.ric);
+    if (r) {
+      d = {
+        ...nuovaBozza(),
+        ricEdit: r.id,
+        tipo: r.tipo || 'spesa', imp: r.imp, impStr: String(r.imp).replace('.', ','),
+        macro: r.macro || '', cat: r.cat || '', sub: r.sub || '',
+        conto: r.conto || '', contoDest: r.contoDest || '',
+        desc: r.desc || r.nome || '', tag: Array.isArray(r.tag) ? r.tag : [],
+        data: r.prossima || todayISO(),
+        ripeti: {
+          frequenza: r.frequenza, dataInizio: r.dataInizio || r.prossima,
+          fineTipo: r.fineTipo || 'mai', fineData: r.fineData || null, fineConteggio: r.fineConteggio || null,
+        },
+      };
+    } else d = nuovaBozza();
+  } else if (params.id) {
+    const m = state.movimenti.find(x => x.id === params.id);
+    d = m ? { ...nuovaBozza(), ...m, impStr: String(m.imp).replace('.', ','), id: m.id } : nuovaBozza();
+  } else {
+    d = nuovaBozza();
+    const liq = state.conti.find(c => c.tipo === 'liquidita');
+    if (liq) d.conto = liq.nome;
+  }
+  const _title = document.getElementById('view-title');
+  const _isModifica = d.ricEdit || params.id;
+  _title.textContent = d.ricEdit ? 'Modifica ricorrenza' : params.id ? 'Modifica' : 'Nuova operazione';
+  // in modifica: titolo visibile e centrato (non si sovrappone ad Annulla)
+  if (_isModifica) { _title.style.display = 'block'; _title.classList.add('center'); }
+  else { _title.classList.remove('center'); }
+  _render(root);
+};
 
-  root.innerHTML = `
-    <div class="card">
-      <div class="fld"><label>Fornitore</label>
-        <input id="f-forn" list="forn-list" value="${escapeHtml(b.fornitore || '')}" placeholder="Es. Enel, ENGIE…" class="sheet-input" autocomplete="off">
-        <datalist id="forn-list">${fornitori.map(f => `<option value="${escapeHtml(f)}">`).join('')}</datalist>
-      </div>
-      <div class="fld"><label>Offerta <span class="opt">(facoltativo)</span></label>
-        <input id="f-off" value="${escapeHtml(b.offerta || '')}" placeholder="Nome dell'offerta" class="sheet-input">
-      </div>
-      <div class="frow">
-        <div class="fld"><label>Periodo dal</label><input type="date" id="f-dal" value="${b.dal || ''}" class="sheet-input"></div>
-        <div class="fld"><label>al</label><input type="date" id="f-al" value="${b.al || ''}" class="sheet-input"></div>
-      </div>
-      <div class="fld"><label>Tipo tariffa</label>
-        <div class="seg-tab" id="f-tariffa">
-          <button data-t="Bioraria" class="${b.tariffa !== 'Monoraria' ? 'on' : ''}">Bioraria (F1/F2/F3)</button>
-          <button data-t="Monoraria" class="${b.tariffa === 'Monoraria' ? 'on' : ''}">Monoraria</button>
-        </div>
-      </div>
-      <div class="fld" id="f-fasce-wrap">
-        <label>Consumo per fascia (kWh)</label>
-        <div class="fasce-in">
-          <div class="fi"><label>F1</label><input type="text" inputmode="numeric" id="f-f1" value="${val(b.kwhF1)}" class="sheet-input"></div>
-          <div class="fi"><label>F2</label><input type="text" inputmode="numeric" id="f-f2" value="${val(b.kwhF2)}" class="sheet-input"></div>
-          <div class="fi"><label>F3</label><input type="text" inputmode="numeric" id="f-f3" value="${val(b.kwhF3)}" class="sheet-input"></div>
-        </div>
-      </div>
-      <div class="fld" id="f-tot-wrap" style="display:none">
-        <label>Consumo totale (kWh)</label>
-        <input type="text" inputmode="numeric" id="f-kwhtot" value="${val(b.kwhTot)}" class="sheet-input">
-      </div>
-      <div class="fld"><label>Totale bolletta (€)</label>
-        <input type="text" inputmode="decimal" id="f-tot" value="${val(b.totale)}" placeholder="0,00" class="sheet-input">
-      </div>
-    </div>
+const _render = (root) => {
+  const isTrasf = d.tipo === 'trasferimento';
+  const catLabel = d.macro ? [d.macro, d.cat, d.sub].filter(Boolean).join(' › ') : 'Seleziona categoria';
+  const impColor = d.tipo === 'entrata' ? 'var(--up)' : d.tipo === 'trasferimento' ? 'var(--transfer)' : 'var(--down)';
 
-    <div class="section-lbl"><span>Dettaglio costi <span class="opt">· facoltativo, per grafici più precisi</span></span></div>
-    <div class="card">
-      <div class="frow">
-        <div class="fld"><label>Materia energia (€)</label><input type="text" inputmode="decimal" id="f-materia" value="${val(b.materia)}" class="sheet-input" style="color:var(--blue-2)"></div>
-        <div class="fld"><label>Trasporto (€)</label><input type="text" inputmode="decimal" id="f-trasp" value="${val(b.trasporto)}" class="sheet-input"></div>
-      </div>
-      <div class="frow">
-        <div class="fld"><label>Oneri (€)</label><input type="text" inputmode="decimal" id="f-oneri" value="${val(b.oneri)}" class="sheet-input"></div>
-        <div class="fld"><label>Accise (€)</label><input type="text" inputmode="decimal" id="f-accise" value="${val(b.accise)}" class="sheet-input"></div>
-      </div>
-      <div class="fld"><label>IVA (€)</label><input type="text" inputmode="decimal" id="f-iva" value="${val(b.iva)}" class="sheet-input"></div>
-    </div>
-
-    <div style="margin-top:18px"><button class="btn btn-primary" id="f-salva">${esistente ? 'Salva modifiche' : 'Salva bolletta'}</button></div>
-    <p class="meta" style="text-align:center;margin-top:12px;line-height:1.5">Da questi dati l'app calcola in automatico<br><b style="color:var(--up)">€/kWh · €/giorno · ripartizione fasce · prezzo materia</b></p>
+  // righe conto/categoria a seconda del tipo (il trasferimento MANTIENE la descrizione)
+  const contoRow = isTrasf ? `
+    <div class="frow"><div class="fic">${UI_SVG.conto}</div><div class="fval" id="pick-conto">${d.conto ? escapeHtml(d.conto) : '<span class="fph">Da conto</span>'}</div></div>
+    <div class="frow"><div class="fic">➡️</div><div class="fval" id="pick-conto-dest">${d.contoDest ? escapeHtml(d.contoDest) : '<span class="fph">A conto</span>'}</div></div>
+  ` : `
+    <div class="frow"><div class="fic">${UI_SVG.conto}</div><div class="fval" id="pick-conto">${d.conto ? escapeHtml(d.conto) : '<span class="fph">Conto</span>'}</div></div>
+    <div class="frow"><div class="fic act">${UI_SVG.tag}</div><div class="fval" id="pick-cat">${d.macro ? escapeHtml(catLabel) : '<span class="fph">Seleziona categoria</span>'}</div>${d.macro ? '<div class="fclear" id="clear-cat">✕</div>' : ''}</div>
   `;
 
-  // toggle tariffa: mostra fasce (bioraria) o totale (monoraria)
-  let tariffa = b.tariffa === 'Monoraria' ? 'Monoraria' : 'Bioraria';
-  const applicaTariffa = () => {
-    root.querySelector('#f-fasce-wrap').style.display = tariffa === 'Monoraria' ? 'none' : 'block';
-    root.querySelector('#f-tot-wrap').style.display = tariffa === 'Monoraria' ? 'block' : 'none';
-  };
-  applicaTariffa();
-  root.querySelector('#f-tariffa').addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-t]'); if (!btn) return;
-    tariffa = btn.dataset.t;
-    root.querySelectorAll('#f-tariffa button').forEach(x => x.classList.toggle('on', x === btn));
-    applicaTariffa();
+  root.innerHTML = `
+    <div class="ins-compact">
+      ${contoRow}
+      <div class="frow">
+        <div class="fic">${UI_SVG.descrizione}</div>
+        <input class="ffld" id="fld-desc" placeholder="Descrizione" value="${escapeHtml(d.desc)}" autocomplete="off">
+        <div class="sugg-dropdown" id="sugg-dd"></div>
+      </div>
+      <div class="frow"><div class="fic">${UI_SVG.importo}</div><div class="fval famount" id="pick-imp" style="color:${impColor}">${escapeHtml(d.impStr)} €</div></div>
+      <div class="frow"><div class="fic">📅</div><input type="date" class="ffld fdate" id="fld-data" value="${d.data}"></div>
+      <div class="frow"><div class="fic">${UI_SVG.ripeti}</div><div class="fval ${d.ripeti ? '' : 'fph'}" id="pick-ripeti">${d.ripeti ? _labelRipeti(d.ripeti) : 'Ripeti'}</div>${d.ripeti ? '<div class="fclear" id="clear-ripeti">✕</div>' : ''}</div>
+      <div class="frow"><div class="fic">${UI_SVG.hashtag}</div><div class="fval ${d.tag.length ? '' : 'fph'}" id="pick-tag">${d.tag.length ? d.tag.map(escapeHtml).join(', ') : 'Tag (opzionale)'}</div></div>
+    </div>
+
+    <div class="type-switch-bottom">
+      <button data-t="spesa" class="${d.tipo === 'spesa' ? 'on' : ''}">Spesa</button>
+      <button data-t="entrata" class="${d.tipo === 'entrata' ? 'on en' : ''}">Entrata</button>
+      <button data-t="trasferimento" class="${d.tipo === 'trasferimento' ? 'on tr' : ''}">Trasferimento</button>
+    </div>
+
+    <div class="ins-actions">
+      ${d.id ? '<button class="btn btn-danger" id="del-mov">Elimina</button>' : ''}${d.ricEdit ? '<button class="btn btn-danger" id="del-ric">Elimina ricorrenza</button>' : ''}
+      <button class="btn btn-primary" id="salva">${d.id ? 'Salva modifiche' : 'Salva'}</button>
+    </div>
+
+    <div id="numpad-mount"></div>
+  `;
+
+  // descrizione + tendina
+  const fldDesc = root.querySelector('#fld-desc');
+  fldDesc.addEventListener('input', () => { d.desc = fldDesc.value; _mostraTendina(root); });
+  fldDesc.addEventListener('focus', () => { _chiudiTastierino(root); _mostraTendina(root); });
+
+  // data nativa
+  const fldData = root.querySelector('#fld-data');
+  fldData.addEventListener('change', () => { d.data = fldData.value || d.data; });
+  fldData.addEventListener('focus', () => _chiudiTastierino(root));
+
+  // tipo
+  root.querySelectorAll('.type-switch-bottom button').forEach(b => b.addEventListener('click', () => {
+    d.tipo = b.dataset.t;
+    if (d.tipo === 'trasferimento') { d.macro = 'Investimenti'; d.cat = ''; d.sub = ''; }
+    _render(root);
+  }));
+
+  // conto
+  root.querySelector('#pick-conto').addEventListener('click', () => { _chiudiTastierino(root); _pickConto(root, 'conto'); });
+  const pcd = root.querySelector('#pick-conto-dest');
+  if (pcd) pcd.addEventListener('click', () => { _chiudiTastierino(root); _pickConto(root, 'contoDest'); });
+
+  // categoria
+  const pc = root.querySelector('#pick-cat');
+  if (pc) pc.addEventListener('click', () => { _chiudiTastierino(root); apriSelettoreCategoria(sel => { d.macro = sel.macro; d.cat = sel.cat; d.sub = sel.sub; _render(root); }); });
+  const cc = root.querySelector('#clear-cat');
+  if (cc) cc.addEventListener('click', () => { d.macro = ''; d.cat = ''; d.sub = ''; _render(root); });
+
+  // importo (tastierino)
+  root.querySelector('#pick-imp').addEventListener('click', () => { fldDesc.blur(); _apriTastierino(root); });
+
+  // ripeti
+  root.querySelector('#pick-ripeti').addEventListener('click', () => { _chiudiTastierino(root); _pickRipeti(root); });
+  const cr = root.querySelector('#clear-ripeti');
+  if (cr) cr.addEventListener('click', () => { d.ripeti = null; _render(root); });
+
+  // tag
+  root.querySelector('#pick-tag').addEventListener('click', () => { _chiudiTastierino(root); _pickTag(root); });
+
+  // salva / elimina
+  root.querySelector('#salva').addEventListener('click', () => _salva());
+  const dr = root.querySelector('#del-ric');
+  if (dr) dr.addEventListener('click', async () => {
+    if (await conferma('Eliminare la ricorrenza? I movimenti già generati restano.', { danger: true, ok: 'Elimina' })) {
+      const { deleteRicorrente } = await import('../services/ricorrentiService.js');
+      await deleteRicorrente(d.ricEdit); toast('Eliminata'); d = null; navigate('ricorrenti');
+    }
   });
+  const dm = root.querySelector('#del-mov');
+  if (dm) dm.addEventListener('click', async () => { if (!(await conferma('Eliminare questo movimento?', { danger: true, ok: 'Elimina' }))) return; const ok = await safeWrite(() => deleteMovimento(d.id), 'Movimento non eliminato'); if (!ok) return; toast('Eliminato'); navigate('movimenti'); });
+};
 
-  root.querySelector('#f-salva').addEventListener('click', async () => {
-    const numF = (id) => { const v = root.querySelector(id).value.trim().replace(',', '.'); return v === '' ? null : parseFloat(v); };
-    const intF = (id) => { const v = root.querySelector(id).value.trim(); return v === '' ? 0 : parseInt(v) || 0; };
-    const forn = root.querySelector('#f-forn').value.trim();
-    const dal = root.querySelector('#f-dal').value, al = root.querySelector('#f-al').value;
-    const totale = numF('#f-tot');
+const _labelRipeti = (r) => {
+  const base = { giornaliera: 'Ogni giorno', settimanale: 'Ogni settimana', mensile: 'Ogni mese', annuale: 'Ogni anno' }[r.frequenza] || 'Ricorrente';
+  let fine = '';
+  if (r.fineTipo === 'data' && r.fineData) fine = ` · fino al ${r.fineData.split('-').reverse().join('/')}`;
+  else if (r.fineTipo === 'conteggio' && r.fineConteggio) fine = ` · ${r.fineConteggio} volte`;
+  return base + fine;
+};
 
-    if (!forn) { toast('Inserisci il fornitore'); return; }
-    if (!dal || !al) { toast('Inserisci il periodo'); return; }
-    if (al < dal) { toast('Il periodo "al" deve essere dopo "dal"'); return; }
-    if (!totale || totale <= 0) { toast('Inserisci il totale della bolletta'); return; }
+const _mostraTendina = (root) => {
+  const dd = root.querySelector('#sugg-dd');
+  if (!dd) return;
+  const formRows = dd.closest('.form-rows');
+  const sugg = suggerisciPerTesto(d.desc, 12);
+  if (!sugg.length || d.desc.trim().length < 2) { dd.innerHTML = ''; dd.style.display = 'none'; if (formRows) formRows.classList.remove('sugg-open'); return; }
+  dd.style.display = 'block';
+  if (formRows) formRows.classList.add('sugg-open');
+  dd.innerHTML = sugg.map((s, i) => {
+    const c = s.classificazione;
+    const label = [c.macro, c.cat].filter(Boolean).join(':') || c.tipo;
+    return `<div class="sugg-item" data-sugg="${i}"><b>${escapeHtml(s.desc)}</b><span>${escapeHtml(label)}</span></div>`;
+  }).join('');
+  dd.querySelectorAll('[data-sugg]').forEach(el => el.addEventListener('click', () => {
+    const s = sugg[parseInt(el.dataset.sugg)]; const c = s.classificazione;
+    d.desc = s.desc; d.macro = c.macro || d.macro; d.cat = c.cat || ''; d.sub = c.sub || '';
+    d.tipo = c.tipo || d.tipo; if (c.conto) d.conto = c.conto;
+    _render(root);
+  }));
+};
 
-    const dati = {
-      numero: esistente?.numero || null,
-      fornitore: forn, offerta: root.querySelector('#f-off').value.trim(),
-      dal, al, tariffa,
-      kwhF1: intF('#f-f1'), kwhF2: intF('#f-f2'), kwhF3: intF('#f-f3'),
-      kwhTot: tariffa === 'Monoraria' ? intF('#f-kwhtot') : 0,
-      totale,
-      materia: numF('#f-materia'), trasporto: numF('#f-trasp'),
-      oneri: numF('#f-oneri'), accise: numF('#f-accise'), iva: numF('#f-iva'),
+const _pickConto = (root, campo) => {
+  const conti = state.conti.filter(c => c.attivo !== false);
+  apriSheet(campo === 'contoDest' ? 'A quale conto' : 'Da quale conto', '', (body, chiudi) => {
+    body.innerHTML = conti.map(c => `<div class="mov" data-c="${escapeHtml(c.nome)}"><div class="ic">${UI_SVG.conto}</div><div class="body"><div class="d1">${escapeHtml(c.nome)}</div><div class="d2">${c.tipo}</div></div></div>`).join('');
+    body.querySelectorAll('[data-c]').forEach(el => el.addEventListener('click', () => { d[campo] = el.dataset.c; chiudi(); _render(root); }));
+  });
+};
+
+const _pickRipeti = (root) => {
+  const cur = d.ripeti || { frequenza: 'mensile', dataInizio: d.data, fineTipo: 'mai' };
+  apriSheet('Rendi ricorrente', `
+    <label class="meta">Frequenza</label>
+    <select id="r-freq" class="sheet-input">
+      <option value="giornaliera" ${cur.frequenza === 'giornaliera' ? 'selected' : ''}>Ogni giorno</option>
+      <option value="settimanale" ${cur.frequenza === 'settimanale' ? 'selected' : ''}>Ogni settimana</option>
+      <option value="mensile" ${cur.frequenza === 'mensile' ? 'selected' : ''}>Ogni mese</option>
+      <option value="annuale" ${cur.frequenza === 'annuale' ? 'selected' : ''}>Ogni anno</option>
+    </select>
+    <label class="meta">Inizia il</label>
+    <input type="date" id="r-inizio" value="${cur.dataInizio || d.data}" class="sheet-input">
+    <label class="meta">Termina</label>
+    <select id="r-fine-tipo" class="sheet-input">
+      <option value="mai" ${cur.fineTipo === 'mai' ? 'selected' : ''}>Mai</option>
+      <option value="data" ${cur.fineTipo === 'data' ? 'selected' : ''}>A una data</option>
+      <option value="conteggio" ${cur.fineTipo === 'conteggio' ? 'selected' : ''}>Dopo N volte</option>
+    </select>
+    <div id="r-fine-extra"></div>
+    <button class="btn btn-primary" id="r-ok" style="margin-top:8px">Conferma</button>
+  `, (body, chiudi) => {
+    const ftEl = body.querySelector('#r-fine-tipo'), extra = body.querySelector('#r-fine-extra');
+    const rExtra = () => {
+      if (ftEl.value === 'data') extra.innerHTML = `<label class="meta">Fino al</label><input type="date" id="r-fine-data" value="${cur.fineData || ''}" class="sheet-input">`;
+      else if (ftEl.value === 'conteggio') extra.innerHTML = `<label class="meta">Numero di volte</label><input type="number" id="r-fine-conteggio" value="${cur.fineConteggio || 12}" min="1" class="sheet-input">`;
+      else extra.innerHTML = '';
     };
-    if (dati.kwhTot === 0 && dati.kwhF1 + dati.kwhF2 + dati.kwhF3 === 0) { toast('Inserisci il consumo in kWh'); return; }
-
-    const obj = componiBolletta(dati, esistente?.id);
-    const ok = await safeWrite(async () => { await dbAdd('bollette', obj); await refreshAll(); }, esistente ? 'Modifiche non salvate' : 'Bolletta non salvata');
-    if (!ok) return;
-    toast(esistente ? 'Bolletta aggiornata' : 'Bolletta salvata');
-    navigate('energia');
+    ftEl.addEventListener('change', rExtra); rExtra();
+    body.querySelector('#r-ok').addEventListener('click', () => {
+      const ft = ftEl.value;
+      d.ripeti = {
+        frequenza: body.querySelector('#r-freq').value, dataInizio: body.querySelector('#r-inizio').value, fineTipo: ft,
+        fineData: ft === 'data' ? (body.querySelector('#r-fine-data')?.value || null) : null,
+        fineConteggio: ft === 'conteggio' ? (parseInt(body.querySelector('#r-fine-conteggio')?.value) || null) : null,
+      };
+      chiudi(); _render(root);
+    });
   });
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-// DETTAGLIO — singola bolletta
-// ═══════════════════════════════════════════════════════════════════════════
-export const renderBollettaDettaglio = async (root) => {
-  const params = currentRoute().params || {};
-  const b = bollettaById(params.id);
-  document.getElementById('view-title').textContent = 'Bolletta';
-  if (!b) { root.innerHTML = '<div class="empty" style="padding:40px">Bolletta non trovata</div>'; return; }
-
-  const k = kpiBolletta(b);
-  const comp = composizioneBolletta(b);
-  const totFasce = (b.kwhF1 || 0) + (b.kwhF2 || 0) + (b.kwhF3 || 0);
-  const pc = (v) => totFasce ? Math.round(v / totFasce * 100) : 0;
-  const [y1, m1, g1] = b.dal.split('-'); const [y2, m2, g2] = b.al.split('-');
-
-  root.innerHTML = `
-    <div class="det-hero">
-      <div class="forn"><b>${escapeHtml(b.fornitore)}</b>${b.offerta ? ' · ' + escapeHtml(b.offerta) : ''}</div>
-      <div class="imp num">${fmtEUR(b.totale)}</div>
-      <div class="per">${g1} ${mese3(+m1)} – ${g2} ${mese3(+m2)} ${y2} · ${b.giorni} giorni${b.tariffa ? ' · ' + escapeHtml(b.tariffa) : ''}</div>
-    </div>
-
-    <div class="det-grid">
-      <div class="det-cell"><div class="k">Consumo</div><div class="v num">${b.kwhTot}<span style="font-size:11px"> kWh</span></div></div>
-      <div class="det-cell"><div class="k">€/kWh medio</div><div class="v num">${k ? k.eurKwh.toFixed(3) : '—'}</div></div>
-      <div class="det-cell"><div class="k">€/giorno</div><div class="v num">${k && k.eurGiorno != null ? k.eurGiorno.toFixed(2) : '—'}</div></div>
-    </div>
-
-    ${totFasce > 0 ? `
-    <div class="section-lbl"><span>Consumo per fascia</span></div>
-    <div class="efasce">
-      <div class="efascia"><div class="dot" style="background:#1C3A6E"></div><div class="nm">F1 giorno</div><div class="pc num">${b.kwhF1 || 0}</div><div class="kw">${pc(b.kwhF1 || 0)}%</div></div>
-      <div class="efascia"><div class="dot" style="background:#2E9BFF"></div><div class="nm">F2 sera</div><div class="pc num">${b.kwhF2 || 0}</div><div class="kw">${pc(b.kwhF2 || 0)}%</div></div>
-      <div class="efascia"><div class="dot" style="background:#7B6CFF"></div><div class="nm">F3 notte</div><div class="pc num">${b.kwhF3 || 0}</div><div class="kw">${pc(b.kwhF3 || 0)}%</div></div>
-    </div>` : ''}
-
-    ${comp.length ? `
-    <div class="section-lbl"><span>Composizione della spesa</span></div>
-    <div class="card">
-      ${comp.map(v => `<div class="ecomp-row">
-        <div class="ecomp-nm">${escapeHtml(v.nome)}</div>
-        <div class="ecomp-bar"><div class="ecomp-fill" style="width:${v.pct}%;background:${v.colore}"></div></div>
-        <div class="ecomp-val num">${v.val.toFixed(2)}</div>
-      </div>`).join('')}
-    </div>` : ''}
-
-    ${b.note ? `<div class="enote">${escapeHtml(b.note)}</div>` : ''}
-
-    <div class="det-actions">
-      <button class="btn btn-secondary" id="d-mod">Modifica</button>
-      <button class="btn btn-danger" id="d-del">Elimina</button>
-    </div>
-  `;
-
-  root.querySelector('#d-mod').addEventListener('click', () => navigate('bolletta-nuova', { id: b.id }));
-  root.querySelector('#d-del').addEventListener('click', async () => {
-    if (!(await conferma('Eliminare questa bolletta?', { danger: true, ok: 'Elimina' }))) return;
-    const ok = await safeWrite(async () => { await dbDelete('bollette', b.id); await refreshAll(); }, 'Bolletta non eliminata');
-    if (!ok) return;
-    toast('Bolletta eliminata'); navigate('energia');
-  });
+const _pickTag = (root) => {
+  const render = (body, chiudi) => {
+    const esistenti = suggerisciTag('', 20);
+    body.innerHTML = `
+      <input id="tag-inp" placeholder="Uno o più tag, separati da virgola..." class="sheet-input" autocomplete="off">
+      <div class="chip-row" style="flex-wrap:wrap" id="tag-chips">
+        ${esistenti.map(t => `<div class="chip ${d.tag.includes(t) ? 'on' : ''}" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</div>`).join('')}
+      </div>
+      <button class="btn btn-primary" id="tag-ok" style="margin-top:16px">Fatto</button>`;
+    const inp = body.querySelector('#tag-inp');
+    // più tag in un colpo: separali con la VIRGOLA ("mare, famiglia, vacanza26")
+    const aggiungi = (testo) => {
+      const nuovi = testo.split(',').map(t => t.trim()).filter(Boolean);
+      if (nuovi.length) d.tag = Array.from(new Set([...d.tag, ...nuovi]));
+    };
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && inp.value.trim()) { aggiungi(inp.value); inp.value = ''; render(body, chiudi); } });
+    // filtro live dei suggerimenti mentre scrivi
+    inp.addEventListener('input', () => {
+      const filtrati = suggerisciTag(inp.value, 20);
+      body.querySelector('#tag-chips').innerHTML = filtrati.map(t => `<div class="chip ${d.tag.includes(t) ? 'on' : ''}" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</div>`).join('');
+      body.querySelectorAll('[data-tag]').forEach(el => el.addEventListener('click', () => { const t = el.dataset.tag; d.tag = d.tag.includes(t) ? d.tag.filter(x => x !== t) : [...d.tag, t]; render(body, chiudi); }));
+    });
+    body.querySelectorAll('[data-tag]').forEach(el => el.addEventListener('click', () => { const t = el.dataset.tag; d.tag = d.tag.includes(t) ? d.tag.filter(x => x !== t) : [...d.tag, t]; render(body, chiudi); }));
+    // "Fatto" raccoglie ANCHE il tag ancora scritto nell'input (senza Invio):
+    // prima si perdeva in silenzio — era il "tag non tenuto" segnalato.
+    body.querySelector('#tag-ok').addEventListener('click', () => {
+      if (inp.value.trim()) aggiungi(inp.value);
+      chiudi(); _render(root);
+    });
+  };
+  apriSheet('Tag', '', render);
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-// STORICO — tutte le bollette, raggruppate per anno, con filtro fornitore
-// ═══════════════════════════════════════════════════════════════════════════
-let _filtroForn = null;
+// Tastierino: si CHIUDE quando si tocca un altro campo (via _chiudiTastierino)
+const _chiudiTastierino = (root) => { const m = root.querySelector('#numpad-mount'); if (m) m.innerHTML = ''; };
 
-export const renderBolletteStorico = async (root) => {
-  document.getElementById('view-title').textContent = 'Storico';
-  const anni = anniDisponibili();
-  const fornitori = fornitoriUsati();
+const _apriTastierino = (root) => {
+  const mount = root.querySelector('#numpad-mount');
+  const tasti = ['7', '8', '9', '4', '5', '6', '1', '2', '3', ',', '0', '00'];
+  mount.innerHTML = `<div class="numpad">
+    ${tasti.map(t => `<button data-k="${t}">${t}</button>`).join('')
+      .replace('<button data-k="9">9</button>', '<button data-k="9">9</button><button class="sub" data-k="C">C</button>')
+      .replace('<button data-k="6">6</button>', '<button data-k="6">6</button><button class="sub" data-k="back">⌫</button>')
+      .replace('<button data-k="3">3</button>', '<button data-k="3">3</button><button class="ok" data-k="ok" style="grid-row:span 2">OK</button>')}
+  </div>`;
+  const upd = () => { d.imp = round2(parseFloat(d.impStr.replace(',', '.')) || 0); const el = root.querySelector('#pick-imp'); if (el) el.textContent = `${d.impStr} €`; };
+  mount.querySelectorAll('.numpad button').forEach(b => b.addEventListener('click', () => {
+    const k = b.dataset.k;
+    if (k === 'C') d.impStr = '0';
+    else if (k === 'back') d.impStr = d.impStr.length > 1 ? d.impStr.slice(0, -1) : '0';
+    else if (k === 'ok') { mount.innerHTML = ''; upd(); return; }
+    else if (k === ',') { if (!d.impStr.includes(',')) d.impStr += ','; }
+    else { d.impStr = d.impStr === '0' ? k : d.impStr + k; }
+    upd();
+  }));
+};
 
-  const bollFiltrate = (anno) => bolletteComplete()
-    .filter(b => b.al.startsWith(anno))
-    .filter(b => !_filtroForn || b.fornitore === _filtroForn);
+const _salva = async () => {
+  if (d.imp <= 0) { toast('Inserisci un importo'); return; }
+  if (d.tipo === 'trasferimento' && (!d.conto || !d.contoDest)) { toast('Scegli i conti'); return; }
+  if (d.tipo !== 'trasferimento' && !d.macro) { toast('Scegli una categoria'); return; }
 
-  root.innerHTML = `
-    <div class="efilters" id="efilters">
-      <div class="echip ${!_filtroForn ? 'on' : ''}" data-forn="">Tutti</div>
-      ${fornitori.map(f => `<div class="echip ${_filtroForn === f ? 'on' : ''}" data-forn="${escapeHtml(f)}">${escapeHtml(f)}</div>`).join('')}
-    </div>
-    ${anni.map(anno => {
-      const boll = bollFiltrate(anno);
-      if (!boll.length) return '';
-      const spesa = boll.reduce((s, b) => s + b.totale, 0);
-      const cons = boll.reduce((s, b) => s + b.kwhTot, 0);
-      return `<div class="eyear-group">
-        <div class="eyear-head"><span class="yy">${anno}</span><span class="yt num">${fmtEUR(spesa)} · ${cons.toLocaleString('it-IT')} kWh</span></div>
-        <div class="card" style="padding:0">${boll.map(b => _rigaBollettaHTML(b)).join('<div class="divider"></div>')}</div>
-      </div>`;
-    }).join('')}
-  `;
+  // ── MODIFICA RICORRENZA: aggiorna solo la ricorrenza, nessun movimento nuovo ──
+  if (d.ricEdit) {
+    const r = state.ricorrenti.find(x => x.id === d.ricEdit);
+    if (r) {
+      await saveRicorrente({
+        ...r,
+        nome: d.desc || r.nome, tipo: d.tipo, imp: d.imp,
+        macro: d.macro, cat: d.cat, sub: d.sub,
+        conto: d.conto, contoDest: d.contoDest, tag: d.tag, desc: d.desc,
+        frequenza: d.ripeti ? d.ripeti.frequenza : r.frequenza,
+        fineTipo: d.ripeti ? d.ripeti.fineTipo : r.fineTipo,
+        fineData: d.ripeti ? d.ripeti.fineData : r.fineData,
+        fineConteggio: d.ripeti ? d.ripeti.fineConteggio : r.fineConteggio,
+      });
+    }
+    toast('Ricorrenza aggiornata');
+    d = null;
+    if (history.length > 1) history.back(); else navigate('ricorrenti');
+    return;
+  }
 
-  root.querySelector('#efilters').addEventListener('click', (e) => {
-    const chip = e.target.closest('[data-forn]'); if (!chip) return;
-    _filtroForn = chip.dataset.forn || null;
-    renderBolletteStorico(root);
-  });
-  root.querySelectorAll('[data-bolletta]').forEach(el =>
-    el.addEventListener('click', () => navigate('bolletta-dettaglio', { id: el.dataset.bolletta })));
+  const wasTrasf = d.tipo === 'trasferimento';
+  const eraModifica = !!d.id;
+  const ok = await safeWrite(() => saveMovimento({
+    id: d.id, tipo: d.tipo, imp: d.imp, data: d.data,
+    macro: d.macro, cat: d.cat, sub: d.sub, conto: d.conto, contoDest: d.contoDest,
+    desc: d.desc, tag: d.tag,
+  }), eraModifica ? 'Modifiche non salvate' : 'Movimento non salvato');
+  // se la scrittura è fallita, NON navigo: l'utente vede il toast e può riprovare
+  // senza perdere ciò che ha inserito.
+  if (!ok) return;
+
+  // crea la ricorrenza se richiesta — ANCHE in modifica (bug precedente: solo su nuovo)
+  if (d.ripeti) {
+    // Il movimento appena salvato È la prima occorrenza della ricorrenza:
+    // la ricorrenza deve partire dall'occorrenza SUCCESSIVA, altrimenti il
+    // generatore ricreerebbe il movimento di oggi (doppione).
+    // Se invece la data di inizio è futura (oltre il movimento), parte da lì.
+    const copreMovimento = d.ripeti.dataInizio <= d.data;
+    const prossima = copreMovimento ? _occorrenzaSuccessiva(d.ripeti.dataInizio, d.ripeti.frequenza) : d.ripeti.dataInizio;
+    const okRic = await safeWrite(() => saveRicorrente({
+      nome: d.desc || d.macro, tipo: d.tipo, frequenza: d.ripeti.frequenza,
+      imp: d.imp, macro: d.macro, cat: d.cat, sub: d.sub,
+      conto: d.conto, contoDest: d.contoDest, tag: d.tag, desc: d.desc,
+      dataInizio: d.ripeti.dataInizio, prossima,
+      generati: copreMovimento ? 1 : 0,   // il movimento manuale conta come prima occorrenza
+      fineTipo: d.ripeti.fineTipo, fineData: d.ripeti.fineData, fineConteggio: d.ripeti.fineConteggio,
+    }), 'Ricorrenza non impostata');
+    toast(okRic ? 'Salvato e reso ricorrente' : 'Movimento salvato, ma ricorrenza non impostata');
+  } else {
+    toast(eraModifica ? 'Modifiche salvate' : 'Salvato');
+  }
+
+  d = null;
+  // se era una MODIFICA, torna da dove sei venuto (es. la ricerca coi risultati);
+  // se era un nuovo inserimento, vai alla pagina naturale.
+  if (eraModifica && history.length > 1) history.back();
+  else navigate(wasTrasf ? 'movimenti' : 'spese');
+};
+
+// Occorrenza successiva a una data, per frequenza (fine mese gestito: 31 gen -> 28 feb)
+const _occorrenzaSuccessiva = (dataISO, frequenza) => {
+  const [y, m, g] = dataISO.split('-').map(Number);
+  if (frequenza === 'giornaliera' || frequenza === 'settimanale') {
+    const d = new Date(y, m - 1, g + (frequenza === 'giornaliera' ? 1 : 7));
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  if (frequenza === 'annuale') {
+    const maxG = new Date(y + 1, m, 0).getDate();
+    return `${y + 1}-${String(m).padStart(2, '0')}-${String(Math.min(g, maxG)).padStart(2, '0')}`;
+  }
+  const ny = m === 12 ? y + 1 : y, nm = m === 12 ? 1 : m + 1;
+  const maxG = new Date(ny, nm, 0).getDate();
+  return `${ny}-${String(nm).padStart(2, '0')}-${String(Math.min(g, maxG)).padStart(2, '0')}`;
 };

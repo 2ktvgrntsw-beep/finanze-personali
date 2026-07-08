@@ -1,201 +1,172 @@
-// ricorrenti.js — Pagina Ricorrenti divisa in due: SPESE ricorrenti e ACCANTONAMENTI.
-// Due totali distinti. Modifica avanzata (importo col tastierino + ambito
-// "solo questa / future / anche passate").
+// energiaService.js — Logica di dominio della sezione Energia.
+// Separata dalla presentazione (come gli altri service): calcola KPI, aggregazioni
+// per anno, ripartizione fasce, serie prezzo. Il componente energia.js la consuma.
 
 import { state } from '../core/store.js';
-import { fmtEUR, escapeHtml, round2, todayISO } from '../core/utils.js';
-import { iconaMacro } from '../core/icons.js';
-import { ricorrentiAttive, saveRicorrente, deleteRicorrente, FREQUENZE } from '../services/ricorrentiService.js';
-import { applicaModificaAmbito } from '../services/movimentiService.js';
-import { apriSheet, apriSelettoreCategoria, apriDataNativa } from './shared.js';
-import { navigate } from '../core/router.js';
-import { safeWrite } from '../core/db.js';
-import { toast } from '../core/utils.js';
+import { round2 } from '../core/utils.js';
 
-const FREQ_LABEL = { giornaliera: 'Ogni giorno', settimanale: 'Ogni settimana', mensile: 'Ogni mese', annuale: 'Ogni anno' };
+// Tutte le bollette ordinate dalla più recente alla più vecchia.
+export const bolletteOrdinate = () => state.bollette.slice().sort((a, b) => (b.al || '').localeCompare(a.al || ''));
 
-// Totale di una ricorrenza NEL MESE CORRENTE: conteggio REALE delle occorrenze
-// (non proiezione media). 100€/settimana valgono 400€ o 500€ a seconda di quanti
-// lunedì/mercoledì ha davvero il mese — mai 433€ "medi" che non esistono.
-const _mensile = (r) => {
-  const oggi = new Date();
-  const anno = oggi.getFullYear(), mese = oggi.getMonth();   // mese corrente
-  const giorniNelMese = new Date(anno, mese + 1, 0).getDate();
+// Solo le bollette complete (con consumo e totale validi), ordinate.
+export const bolletteComplete = () => bolletteOrdinate().filter(b => b.completa && b.kwhTot > 0 && b.totale != null);
 
-  if (r.frequenza === 'mensile') return r.imp;
-  if (r.frequenza === 'giornaliera') return r.imp * giorniNelMese;
-  if (r.frequenza === 'annuale') {
-    // conta solo se l'anniversario cade nel mese corrente
-    const rif = r.prossima || r.dataInizio;
-    return rif && parseInt(rif.split('-')[1]) === mese + 1 ? r.imp : 0;
-  }
-  if (r.frequenza === 'settimanale') {
-    // quante volte cade il giorno-della-settimana della ricorrenza in questo mese
-    const rif = r.prossima || r.dataInizio;
-    if (!rif) return r.imp * 4;
-    const dow = new Date(rif + 'T00:00:00').getDay();
-    let count = 0;
-    for (let g = 1; g <= giorniNelMese; g++) if (new Date(anno, mese, g).getDay() === dow) count++;
-    return r.imp * count;
-  }
-  return r.imp;
-};
+// L'ultima bolletta completa (per l'hero).
+export const ultimaBolletta = () => bolletteComplete()[0] || null;
 
-export const renderRicorrenti = async (root) => {
-  const ric = ricorrentiAttive();
-  // divido: spese (spesa) vs accantonamenti/trasferimenti
-  const spese = ric.filter(r => r.tipo === 'spesa');
-  const trasf = ric.filter(r => r.tipo === 'trasferimento');
-  const entrate = ric.filter(r => r.tipo === 'entrata');
+// Anno di una bolletta (dall'anno di fine periodo).
+const annoDi = (b) => (b.al || '').slice(0, 4);
 
-  const totSpese = round2(spese.reduce((s, r) => s + _mensile(r), 0));
-  const totTrasf = round2(trasf.reduce((s, r) => s + _mensile(r), 0));
-
-  const rigaRic = (r) => {
-    const cls = r.tipo === 'trasferimento' ? 'tr' : r.tipo === 'entrata' ? 'en' : 'sp';
-    const icona = r.tipo === 'trasferimento' ? '💠' : (r.macro ? iconaMacro(r.macro) : '🔁');
-    const bg = r.tipo === 'trasferimento' ? 'rgba(61,182,255,.18)' : 'var(--surface-2)';
-    const freq = FREQ_LABEL[r.frequenza] || r.frequenza;
-    const extra = r.modalita === 'soglia' ? ` · a soglia ${fmtEUR(r.soglia)}` : '';
-    const segno = r.tipo === 'trasferimento' ? '⇄ ' : r.tipo === 'entrata' ? '+' : '−';
-    const dest = r.contoDest ? ' → ' + escapeHtml(r.contoDest) : '';
-    return `
-      <div class="recrow tipo-${r.tipo}" data-ric="${r.id}">
-        <div class="ic">${icona}</div>
-        <div class="body"><div class="d1">${escapeHtml(r.nome)}</div><div class="d2">${freq}${extra}${dest}</div></div>
-        <div class="amt ${cls} num">${segno}${fmtEUR(r.imp)}</div>
-      </div>`;
+// KPI derivati da una singola bolletta.
+export const kpiBolletta = (b) => {
+  if (!b || !b.kwhTot) return null;
+  return {
+    eurKwh: round2(b.totale / b.kwhTot),          // prezzo medio "tutto compreso"
+    eurGiorno: b.giorni ? round2(b.totale / b.giorni) : null,
+    materiaKwh: b.materia != null ? round2(b.materia / b.kwhTot) : null,  // prezzo su cui incidi
   };
-
-  root.innerHTML = `
-    <div class="rec-hero" style="display:flex;gap:0;padding:0;overflow:hidden">
-      <div style="flex:1;padding:20px 16px;border-right:1px solid rgba(255,255,255,.08)">
-        <div class="lbl" style="color:var(--txt-2);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;min-height:26px;display:flex;align-items:flex-end">Spese questo mese</div>
-        <div class="num" style="font-size:24px;font-weight:850;margin-top:4px;color:var(--down)">${fmtEUR(totSpese)}</div>
-        <div class="sub" style="font-size:11.5px;color:var(--txt-2);margin-top:2px">${spese.length} ricorrenze</div>
-      </div>
-      <div style="flex:1;padding:20px 16px">
-        <div class="lbl" style="color:var(--txt-2);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;min-height:26px;display:flex;align-items:flex-end">Accantonato questo mese</div>
-        <div class="num" style="font-size:24px;font-weight:850;margin-top:4px;color:var(--transfer)">${fmtEUR(totTrasf)}</div>
-        <div class="sub" style="font-size:11.5px;color:var(--txt-2);margin-top:2px">${trasf.length} trasferimenti</div>
-      </div>
-    </div>
-
-    ${spese.length ? `<div class="section-lbl"><span>Spese ricorrenti</span></div>${spese.map(rigaRic).join('')}` : ''}
-    ${trasf.length ? `<div class="section-lbl"><span>Accantonamenti e PAC</span></div>${trasf.map(rigaRic).join('')}` : ''}
-    ${entrate.length ? `<div class="section-lbl"><span>Entrate ricorrenti</span></div>${entrate.map(rigaRic).join('')}` : ''}
-    ${!ric.length ? '<div class="empty"><div class="big-ic">🔁</div>Nessuna ricorrenza.<br>Creane una col + qui sotto, o rendi ricorrente una spesa dall\u2019inserimento.</div>' : ''}
-
-    <div style="margin-top:20px" class="btn-row"><button class="btn btn-primary" id="nuova-ric">➕ Nuova ricorrenza</button></div>
-    <div style="margin-top:10px"><button class="btn btn-secondary" id="nuova-regola">⚙️ Nuova regola di accantonamento</button></div>
-  `;
-
-  root.querySelectorAll('[data-ric]').forEach(el => el.addEventListener('click', () => _modificaRic(root, el.dataset.ric)));
-  root.querySelector('#nuova-ric').addEventListener('click', () => _nuovaRicorrenza(root));
-  root.querySelector('#nuova-regola').addEventListener('click', () => _nuovaRegola(root));
 };
 
-// Modifica ricorrente COMPLETA (a due vie): tutti i campi editabili come una
-// normale operazione. Le ricorrenze collegate a mutuo/finanziamento rimandano
-// alla scheda del prestito (fonte di verità, protezione anti-doppioni).
-const _modificaRic = (root, id) => {
-  const r = state.ricorrenti.find(x => x.id === id);
-  if (!r) return;
+// Aggregato per un anno: spesa totale, consumo, media, ripartizione fasce.
+export const aggregatoAnno = (anno) => {
+  const boll = bolletteComplete().filter(b => annoDi(b) === String(anno));
+  if (!boll.length) return null;
+  const spesa = boll.reduce((s, b) => s + b.totale, 0);
+  const consumo = boll.reduce((s, b) => s + b.kwhTot, 0);
+  const giorni = boll.reduce((s, b) => s + (b.giorni || 0), 0);
+  const f1 = boll.reduce((s, b) => s + (b.kwhF1 || 0), 0);
+  const f2 = boll.reduce((s, b) => s + (b.kwhF2 || 0), 0);
+  const f3 = boll.reduce((s, b) => s + (b.kwhF3 || 0), 0);
+  return {
+    anno: String(anno), bollette: boll.length,
+    spesa: round2(spesa), consumo,
+    eurKwh: consumo ? round2(spesa / consumo) : 0,
+    eurGiorno: giorni ? round2(spesa / giorni) : 0,
+    fasce: { f1, f2, f3, tot: f1 + f2 + f3 },
+  };
+};
 
-  // ── Ricorrenza collegata a un prestito: rimando alla scheda ──
-  if (r.origineMutuo) {
-    const isMutuo = r.origineMutuo === 'mutuo-principale';
-    apriSheet(escapeHtml(r.nome), `
-      <p class="meta" style="margin-bottom:8px">🔗 Questa ricorrenza è <b>collegata al ${isMutuo ? 'Mutuo' : 'Finanziamento'}</b>: importo, date e classificazione seguono automaticamente la scheda del prestito.</p>
-      <p class="meta" style="margin-bottom:14px">Per modificarla (rata, conto, descrizione delle rate, categoria) apri la scheda: le modifiche si rifletteranno qui da sole.</p>
-      <button class="btn btn-primary" id="lr-apri">Apri la scheda del ${isMutuo ? 'Mutuo' : 'Finanziamento'}</button>
-    `, (body, chiudi) => {
-      body.querySelector('#lr-apri').addEventListener('click', () => { chiudi(); navigate(isMutuo ? 'mutuo' : 'finanziamenti'); });
-    });
-    return;
+// Elenco degli anni disponibili (dal più recente).
+export const anniDisponibili = () => {
+  const anni = new Set(bolletteComplete().map(annoDi));
+  return [...anni].sort((a, b) => b.localeCompare(a));
+};
+
+// Variazione percentuale anno su anno per un dato KPI ('spesa'|'consumo'|'eurKwh'|'eurGiorno').
+export const variazioneAnno = (anno, campo) => {
+  const cur = aggregatoAnno(anno), prev = aggregatoAnno(String(Number(anno) - 1));
+  if (!cur || !prev || !prev[campo]) return null;
+  return round2(((cur[campo] - prev[campo]) / prev[campo]) * 100);
+};
+
+// Serie temporale del prezzo (per la spike-line). tipo: 'materia' | 'totale'.
+// Ritorna [{ label, valore, fornitore }] dalla più vecchia alla più recente.
+// FILTRO OUTLIER: le bollette anomale (es. l'attivazione 2018 da 19 giorni con
+// conguagli: 0,767 €/kWh contro una mediana di ~0,13) schiaccerebbero tutto il
+// grafico rendendolo illeggibile. Escludo i punti oltre 3× la mediana: il picco
+// crisi 2022 (0,34) resta ben visibile, l'anomalia amministrativa no.
+export const seriePrezzo = (tipo = 'materia') => {
+  const boll = bolletteComplete().slice().reverse();  // cronologico
+  const out = [];
+  for (const b of boll) {
+    let v = null;
+    if (tipo === 'materia' && b.materia != null) v = b.materia / b.kwhTot;
+    else if (tipo === 'totale') v = b.totale / b.kwhTot;
+    if (v == null) continue;
+    const [y, m] = b.al.split('-');
+    out.push({ label: `${m}/${y.slice(2)}`, valore: round2v3(v), fornitore: b.fornitore });
   }
-
-  // ── Ricorrenza normale: STESSA UI dell'inserimento (coerenza visiva) ──
-  navigate('modifica', { ric: id });
+  if (out.length < 4) return out;
+  const ordinati = out.map(p => p.valore).sort((a, b) => a - b);
+  const mediana = ordinati[Math.floor(ordinati.length / 2)];
+  return out.filter(p => p.valore <= mediana * 3);
 };
 
+// arrotonda a 3 decimali (i prezzi €/kWh hanno bisogno del terzo decimale)
+const round2v3 = (v) => Math.round(v * 1000) / 1000;
 
-const _nuovaRicorrenza = (root) => {
-  const conti = state.conti.filter(c => c.attivo !== false).map(c => c.nome);
-  const oggi = todayISO();
-  apriSheet('Nuova ricorrenza', `
-    <label class="meta">Nome / descrizione</label>
-    <input id="nr-nome" placeholder="Es. Netflix, Palestra..." class="sheet-input">
-    <label class="meta">Tipo</label>
-    <select id="nr-tipo" class="sheet-input"><option value="spesa">Spesa</option><option value="entrata">Entrata</option><option value="trasferimento">Trasferimento</option></select>
-    <label class="meta">Importo (€)</label>
-    <input type="number" step="0.01" id="nr-imp" value="0" class="sheet-input">
-    <label class="meta">Conto</label>
-    <select id="nr-conto" class="sheet-input">${conti.map(c => `<option>${escapeHtml(c)}</option>`).join('')}</select>
-    <label class="meta">Frequenza</label>
-    <select id="nr-freq" class="sheet-input"><option value="mensile">Ogni mese</option><option value="settimanale">Ogni settimana</option><option value="giornaliera">Ogni giorno</option><option value="annuale">Ogni anno</option></select>
-    <label class="meta">Inizia il</label>
-    <input type="date" id="nr-inizio" value="${oggi}" class="sheet-input">
-    <label class="meta">Termina</label>
-    <select id="nr-fine-tipo" class="sheet-input"><option value="mai">Mai</option><option value="data">A una data</option><option value="conteggio">Dopo N volte</option></select>
-    <div id="nr-fine-extra"></div>
-    <button class="btn btn-primary" id="nr-ok" style="margin-top:8px">Crea ricorrenza</button>
-  `, (body, chiudi) => {
-    const ft = body.querySelector('#nr-fine-tipo'), extra = body.querySelector('#nr-fine-extra');
-    const rExtra = () => {
-      if (ft.value === 'data') extra.innerHTML = `<label class="meta">Fino al</label><input type="date" id="nr-fine-data" class="sheet-input">`;
-      else if (ft.value === 'conteggio') extra.innerHTML = `<label class="meta">Numero di volte</label><input type="number" id="nr-fine-cont" value="12" min="1" class="sheet-input">`;
-      else extra.innerHTML = '';
-    };
-    ft.addEventListener('change', rExtra); rExtra();
-    body.querySelector('#nr-ok').addEventListener('click', async () => {
-      const nome = body.querySelector('#nr-nome').value.trim() || 'Ricorrenza';
-      const imp = parseFloat(body.querySelector('#nr-imp').value) || 0;
-      if (imp <= 0) { toast('Inserisci un importo'); return; }
-      const inizio = body.querySelector('#nr-inizio').value;
-      const fineTipo = ft.value;
-      const ok = await safeWrite(() => saveRicorrente({
-        nome, desc: nome, tipo: body.querySelector('#nr-tipo').value, imp,
-        conto: body.querySelector('#nr-conto').value, frequenza: body.querySelector('#nr-freq').value,
-        dataInizio: inizio, prossima: inizio, fineTipo,
-        fineData: fineTipo === 'data' ? body.querySelector('#nr-fine-data')?.value : null,
-        fineConteggio: fineTipo === 'conteggio' ? parseInt(body.querySelector('#nr-fine-cont')?.value) : null,
-      }), 'Ricorrenza non creata');
-      if (!ok) return;
-      chiudi(); toast('Ricorrenza creata'); renderRicorrenti(root);
-    });
+// Serie consumo per fasce di un anno (per le barre impilate).
+// Ritorna [{ label, f1, f2, f3, tot }] in ordine cronologico.
+export const serieFasce = (anno) => {
+  const boll = bolletteComplete().filter(b => annoDi(b) === String(anno)).slice().reverse();
+  return boll.map(b => {
+    const [, m] = b.al.split('-');
+    return { label: mese3(parseInt(m)), f1: b.kwhF1 || 0, f2: b.kwhF2 || 0, f3: b.kwhF3 || 0, tot: b.kwhTot };
   });
 };
 
-const _nuovaRegola = (root) => {
-  const conti = state.conti.filter(c => c.attivo !== false).map(c => c.nome);
-  apriSheet('Nuova regola', `
-    <label class="meta">Nome</label>
-    <input id="g-nome" placeholder="Es. Accantono Satispay" class="sheet-input">
-    <label class="meta">Frequenza</label>
-    <select id="g-freq" class="sheet-input">${FREQUENZE.map(f => `<option value="${f}">${FREQ_LABEL[f]}</option>`).join('')}</select>
-    <label class="meta">Modalità</label>
-    <select id="g-mod" class="sheet-input"><option value="fisso">Importo fisso</option><option value="soglia">A soglia (riporta il conto a un valore)</option></select>
-    <label class="meta">Importo / Soglia (€)</label>
-    <input type="number" step="0.01" id="g-imp" value="0" class="sheet-input">
-    <label class="meta">Da conto</label>
-    <select id="g-da" class="sheet-input">${conti.map(c => `<option>${escapeHtml(c)}</option>`).join('')}</select>
-    <label class="meta">A conto</label>
-    <select id="g-a" class="sheet-input">${conti.map(c => `<option>${escapeHtml(c)}</option>`).join('')}</select>
-    <button class="btn btn-primary" id="g-ok" style="margin-top:8px">Crea regola</button>
-  `, (body, chiudi) => {
-    body.querySelector('#g-ok').addEventListener('click', async () => {
-      const nome = body.querySelector('#g-nome').value.trim() || 'Regola';
-      const mod = body.querySelector('#g-mod').value;
-      const imp = parseFloat(body.querySelector('#g-imp').value) || 0;
-      const ok = await safeWrite(() => saveRicorrente({
-        nome, desc: nome, tipo: 'trasferimento', frequenza: body.querySelector('#g-freq').value, modalita: mod,
-        imp: mod === 'soglia' ? 0 : imp, soglia: mod === 'soglia' ? imp : null,
-        conto: body.querySelector('#g-da').value, contoDest: body.querySelector('#g-a').value,
-        macro: 'Investimenti', isRegola: true, prossima: todayISO(), dataInizio: todayISO(),
-      }), 'Regola non creata');
-      if (!ok) return;
-      chiudi(); toast('Regola creata'); renderRicorrenti(root);
-    });
-  });
+// Ripartizione fasce media sulle ultime N bollette (per i riquadri).
+export const ripartizioneFasce = (nUltime = 6) => {
+  const boll = bolletteComplete().slice(0, nUltime);
+  const f1 = boll.reduce((s, b) => s + (b.kwhF1 || 0), 0);
+  const f2 = boll.reduce((s, b) => s + (b.kwhF2 || 0), 0);
+  const f3 = boll.reduce((s, b) => s + (b.kwhF3 || 0), 0);
+  const tot = f1 + f2 + f3 || 1;
+  return {
+    f1, f2, f3, tot,
+    p1: Math.round(f1 / tot * 100), p2: Math.round(f2 / tot * 100), p3: Math.round(f3 / tot * 100),
+  };
 };
+
+// Composizione della spesa di una bolletta (per il dettaglio).
+export const composizioneBolletta = (b) => {
+  const voci = [
+    { nome: 'Materia energia', val: b.materia, colore: '#2E9BFF' },
+    { nome: 'Trasporto/contatore', val: b.trasporto, colore: '#5FC3FF' },
+    { nome: 'IVA', val: b.iva, colore: '#7B6CFF' },
+    { nome: 'Oneri di sistema', val: b.oneri, colore: '#9D8FFF' },
+    { nome: 'Accise', val: b.accise, colore: '#22E39A' },
+  ].filter(v => v.val != null && v.val > 0);
+  const somma = voci.reduce((s, v) => s + v.val, 0) || 1;
+  return voci.map(v => ({ ...v, pct: Math.round(v.val / somma * 100) }));
+};
+
+// Statistiche globali (per eventuali insight).
+export const statisticheGlobali = () => {
+  const boll = bolletteComplete();
+  return {
+    nBollette: state.bollette.length,
+    spesaTotale: round2(boll.reduce((s, b) => s + b.totale, 0)),
+    consumoTotale: boll.reduce((s, b) => s + b.kwhTot, 0),
+    fornitori: [...new Set(boll.map(b => b.fornitore))],
+  };
+};
+
+const MESI3 = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
+export const mese3 = (m) => MESI3[m - 1] || '';
+
+// Trova una bolletta per id.
+export const bollettaById = (id) => state.bollette.find(b => b.id === id) || null;
+
+// Numero di giorni tra due date ISO (inclusivo del giorno finale).
+export const giorniTra = (dal, al) => {
+  const d1 = new Date(dal), d2 = new Date(al);
+  return Math.round((d2 - d1) / 86400000) + 1;
+};
+
+// Costruisce l'oggetto bolletta normalizzato dai dati del form (per il salvataggio).
+// I KPI (€/kWh ecc.) NON si salvano: sono derivati e ricalcolati dal service.
+export const componiBolletta = (d, idEsistente) => {
+  const kwhF1 = d.kwhF1 || 0, kwhF2 = d.kwhF2 || 0, kwhF3 = d.kwhF3 || 0;
+  const kwhTot = d.tariffa === 'Monoraria' && d.kwhTot ? d.kwhTot : (kwhF1 + kwhF2 + kwhF3);
+  return {
+    id: idEsistente || `${d.dal}_MAN_${Date.now().toString(36)}`,
+    numero: d.numero || null,
+    dal: d.dal, al: d.al,
+    giorni: giorniTra(d.dal, d.al),
+    fornitore: d.fornitore, offerta: d.offerta || null, tariffa: d.tariffa || 'Bioraria',
+    kwhTot, kwhF1, kwhF2, kwhF3,
+    totale: round2(d.totale),
+    materia: d.materia != null ? round2(d.materia) : null,
+    trasporto: d.trasporto != null ? round2(d.trasporto) : null,
+    oneri: d.oneri != null ? round2(d.oneri) : null,
+    accise: d.accise != null ? round2(d.accise) : null,
+    iva: d.iva != null ? round2(d.iva) : null,
+    completa: true,
+    note: d.note || null,
+    origine: 'manuale',
+  };
+};
+
+// Elenco fornitori già usati (per l'autocompletamento nel form).
+export const fornitoriUsati = () => [...new Set(state.bollette.map(b => b.fornitore).filter(Boolean))].sort();

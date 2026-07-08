@@ -1,230 +1,173 @@
-// ricerca.js — Ricerca full-text con totale aggregato + selezione multipla e
-// modifica massiva di qualsiasi campo (categoria, conto, da/a conto, descrizione, tag).
+// impostazioni.js — Impostazioni: backup/recovery Excel, bulk tag, gestione dati.
 
-import { fmtEUR, escapeHtml, fmtDataEstesa } from '../core/utils.js';
-import { iconaMacro, iconaTipo, UI_SVG } from '../core/icons.js';
+import { UI_SVG } from '../core/icons.js';
+import { state, refreshAll } from '../core/store.js';
+import { APP_VERSION } from '../core/version.js';
+import { escapeHtml, fmtEUR, fmtDataEstesa } from '../core/utils.js';
 import { navigate } from '../core/router.js';
-import { state } from '../core/store.js';
-import { cercaMovimenti } from '../services/movimentiService.js';
-import { categorieDi, sottocategorieDi } from '../services/categorieService.js';
-import { creaSelezione } from './selezioneMultipla.js';
+import { esportaBackup, importaBackup } from '../services/excelService.js';
+import { registraBackupExcelFatto, giorniDaUltimoBackupExcel, esportaJSON, importaJSON } from '../services/backupService.js';
+import { applicaTagBulk, cercaMovimenti } from '../services/movimentiService.js';
+import { STORE_NAMES } from '../core/db.js';
+import { dbClear } from '../core/db.js';
+import { apriSheet, conferma } from './shared.js';
+import { toast } from '../core/utils.js';
 
-let _ultimiRisultati = [];
-let _sel = null;   // controller selezione multipla condiviso
-// STATO PERSISTENTE: query e filtri sopravvivono alla navigazione — tornando
-// dalla modifica di un movimento ritrovi la ricerca esattamente com'era.
-let _q = '';
-let _filtri = { tipo: '', macro: '', cat: '', sub: '', conto: '', da: '', a: '', min: '', max: '' };
-let _filtriAperti = false;
+export const renderImpostazioni = async (root) => {
+  document.getElementById('view-title').textContent = 'Impostazioni';
 
-export const renderRicerca = async (root, params = {}) => {
-  document.getElementById('view-title').textContent = 'Cerca';
-  if (_sel) _sel.esciSilenzioso();
+  const nMov = state.movimenti.length;
+  const nConti = state.conti.length;
+  const nTag = state.tag.length;
 
-  // La ricerca riparte PULITA a ogni ingresso: query e filtri non devono
-  // sopravvivere al cambio pagina. Fanno eccezione SOLO i parametri passati
-  // esplicitamente (es. arrivo da Analisi con categoria preimpostata).
-  const arrivaConFiltri = params.macro !== undefined || params.cat !== undefined ||
-    params.sub !== undefined || params.da !== undefined || params.a !== undefined ||
-    params.tipo !== undefined || params.conto !== undefined;
-
-  if (params.q) _q = params.q; else if (!arrivaConFiltri) _q = '';
-
-  if (arrivaConFiltri) {
-    _filtri = {
-      tipo: params.tipo || '', macro: params.macro || '', cat: params.cat || '', sub: params.sub || '',
-      conto: params.conto || '', da: params.da || '', a: params.a || '', min: '', max: '',
-    };
-    _filtriAperti = false;
-  } else {
-    // nessun parametro: azzero i filtri della sessione precedente
-    _filtri = { tipo: '', macro: '', cat: '', sub: '', conto: '', da: '', a: '', min: '', max: '' };
-    _filtriAperti = false;
-  }
-
-  const nFiltri = Object.values(_filtri).filter(v => v !== '').length;
-  const macros = [...new Set(state.movimenti.map(m => m.macro).filter(Boolean))].sort();
-  const conti = state.conti.filter(c => c.attivo !== false).map(c => c.nome);
+  const giorniBackup = await giorniDaUltimoBackupExcel();
+  const promemoriaBackup = giorniBackup === null
+    ? '<span style="color:var(--down)">Non hai ancora mai esportato un backup.</span>'
+    : giorniBackup > 7
+      ? `<span style="color:var(--down)">Ultimo backup: ${giorniBackup} giorni fa — è ora di rifarlo.</span>`
+      : `Ultimo backup: ${giorniBackup === 0 ? 'oggi' : giorniBackup + ' giorni fa'} ✓`;
 
   root.innerHTML = `
-    <div class="searchbar">
-      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-      <input id="q" placeholder="Cerca (usa la virgola: hotel, volo, treno)" value="${escapeHtml(_q)}" autocomplete="off">
-      <button id="q-clear" class="q-clear" aria-label="Cancella ricerca" style="display:${_q ? 'flex' : 'none'}">
-        <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
-      </button>
-      <button id="toggle-filtri" class="filtri-btn ${nFiltri ? 'on' : ''}">Filtri${nFiltri ? ' · ' + nFiltri : ''}</button>
+    <div class="section-lbl"><span>Backup e ripristino</span></div>
+    <div class="card">
+      <p class="meta" style="margin-bottom:8px">I tuoi dati vivono solo su questo dispositivo. L'app fa un <b>backup automatico interno</b> a ogni avvio, ma per essere davvero al sicuro esporta ogni tanto un file: è l'unico che sopravvive se iOS libera spazio.</p>
+      <p class="meta" style="margin-bottom:14px">${promemoriaBackup}</p>
+      <button class="btn btn-primary" id="export-json" style="margin-bottom:10px">Backup completo (JSON) — consigliato</button>
+      <button class="btn btn-secondary" id="export" style="margin-bottom:10px">Esporta Excel (per consultazione)</button>
+      <button class="btn btn-secondary" id="import-btn">Ripristina da backup (.json o .xlsx)</button>
+      <input type="file" id="import-file" accept=".json,.xlsx,.xls" style="display:none">
     </div>
-    <div id="pannello-filtri" style="display:${_filtriAperti ? 'block' : 'none'}" class="card filtri-card">
-      <div class="filtri-riga">
-        <label class="meta">Tipo</label>
-        <div class="chip-row">
-          ${[['', 'Tutti'], ['spesa', 'Spese'], ['entrata', 'Entrate'], ['trasferimento', 'Accant.']].map(([v, l]) =>
-            `<div class="chip ${_filtri.tipo === v ? 'on' : ''}" data-ftipo="${v}">${l}</div>`).join('')}
-        </div>
-      </div>
-      <div class="filtri-riga filtri-2col">
-        <div><label class="meta">Macro-categoria</label>
-          <select id="f-macro" class="sheet-input">
-            <option value="">Tutte</option>
-            ${macros.map(m => `<option ${_filtri.macro === m ? 'selected' : ''}>${escapeHtml(m)}</option>`).join('')}
-          </select></div>
-        <div><label class="meta">Conto</label>
-          <select id="f-conto" class="sheet-input">
-            <option value="">Tutti</option>
-            ${conti.map(c => `<option ${_filtri.conto === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
-          </select></div>
-      </div>
-      <div class="filtri-riga filtri-2col">
-        <div><label class="meta">Categoria</label>
-          <select id="f-cat" class="sheet-input" ${_filtri.macro ? '' : 'disabled'}>
-            <option value="">Tutte</option>
-            ${_filtri.macro ? categorieDi(_filtri.macro).map(c => `<option ${_filtri.cat === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('') : ''}
-          </select></div>
-        <div><label class="meta">Sottocategoria</label>
-          <select id="f-sub" class="sheet-input" ${_filtri.cat ? '' : 'disabled'}>
-            <option value="">Tutte</option>
-            <option value="__vuota__" ${_filtri.sub === '__vuota__' ? 'selected' : ''}>— Senza sottocategoria —</option>
-            ${_filtri.macro && _filtri.cat ? sottocategorieDi(_filtri.macro, _filtri.cat).map(s => `<option ${_filtri.sub === s ? 'selected' : ''}>${escapeHtml(s)}</option>`).join('') : ''}
-          </select></div>
-      </div>
-      <div class="filtri-riga filtri-2col">
-        <div><label class="meta">Dal</label><input type="date" id="f-da" value="${_filtri.da}" class="sheet-input"></div>
-        <div><label class="meta">Al</label><input type="date" id="f-a" value="${_filtri.a}" class="sheet-input"></div>
-      </div>
-      <div class="filtri-riga filtri-2col">
-        <div><label class="meta">Importo min €</label><input type="text" inputmode="decimal" id="f-min" value="${_filtri.min}" class="sheet-input" placeholder="—"></div>
-        <div><label class="meta">Importo max €</label><input type="text" inputmode="decimal" id="f-max" value="${_filtri.max}" class="sheet-input" placeholder="—"></div>
-      </div>
-      <button class="btn btn-ghost" id="f-reset" style="margin-top:6px;font-size:13px">Azzera filtri</button>
+
+    <div class="section-lbl"><span>Tag</span></div>
+    <div class="card">
+      <p class="meta" style="margin-bottom:14px">Applica un tag in blocco a più movimenti passati (es. tutte le spese di un viaggio).</p>
+      <button class="btn btn-secondary" id="bulk-tag">Applica tag in blocco</button>
     </div>
-    <div id="ris"></div>
+
+    <div class="section-lbl"><span>Sezioni</span></div>
+    <div class="card" style="padding:0">
+      <div class="patrow" id="go-energia" style="cursor:pointer"><div class="icon" style="background:var(--surface-2)">${UI_SVG.fulmine}</div><div class="body"><div class="row1"><span class="name">Energia</span><span class="meta num">${state.bollette.length}</span></div></div><div class="chev">›</div></div>
+    </div>
+
+    <div class="section-lbl"><span>Gestione</span></div>
+    <div class="card" style="padding:0">
+      <div class="patrow" id="go-conti" style="cursor:pointer"><div class="icon">${UI_SVG.conto}</div><div class="body"><div class="row1"><span class="name">Conti</span><span class="meta num">${nConti}</span></div></div><div class="chev">›</div></div>
+      <div class="divider"></div>
+      <div class="patrow" id="go-cat" style="cursor:pointer"><div class="icon" style="background:var(--surface-2)">${UI_SVG.tag}</div><div class="body"><div class="row1"><span class="name">Categorie</span><span class="meta num">${state.categorie.length}</span></div></div><div class="chev">›</div></div>
+    </div>
+
+    <div class="section-lbl"><span>Informazioni</span></div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;padding:5px 0"><span class="meta">Movimenti</span><span class="num">${nMov}</span></div>
+      <div style="display:flex;justify-content:space-between;padding:5px 0"><span class="meta">Tag</span><span class="num">${nTag}</span></div>
+      <div style="display:flex;justify-content:space-between;padding:5px 0"><span class="meta">Versione</span><span>${APP_VERSION}</span></div>
+    </div>
+
+    <div style="margin-top:20px"><button class="btn btn-danger" id="reset">Azzera tutti i dati</button></div>
+    <p class="meta" style="text-align:center;margin-top:16px;opacity:.6">Finanze Personali · offline · nessun dato lascia il dispositivo</p>
   `;
 
-  const inp = root.querySelector('#q');
-  const box = root.querySelector('#ris');
-
-  const filtriNumerici = () => ({
-    ..._filtri,
-    min: _filtri.min !== '' ? parseFloat(String(_filtri.min).replace(',', '.')) : null,
-    max: _filtri.max !== '' ? parseFloat(String(_filtri.max).replace(',', '.')) : null,
+  // export JSON (formato di recovery primario: nativo, senza librerie)
+  root.querySelector('#export-json').addEventListener('click', async () => {
+    try {
+      await esportaJSON();
+      await registraBackupExcelFatto();
+      toast('Backup JSON esportato ✓');
+    } catch (e) { console.error('Errore export JSON:', e); toast('Errore: ' + (e.message || e)); }
   });
 
-  const clearBtn = root.querySelector('#q-clear');
+  // export Excel (per consultazione; richiede la libreria dal CDN la prima volta online)
+  root.querySelector('#export').addEventListener('click', async () => {
+    try {
+      if (!window.XLSX) { toast('Libreria Excel non disponibile offline: usa il backup JSON, oppure riapri l\u2019app con connessione.'); return; }
+      await esportaBackup();
+      await registraBackupExcelFatto();
+      toast('Backup Excel esportato ✓');
+    } catch (e) {
+      console.error('Errore export backup:', e);
+      toast('Errore export: ' + (e.message || e));
+    }
+  });
 
-  // controller selezione multipla: onChange ri-esegue la ricerca (che ridisegna la lista)
-  if (!_sel) _sel = creaSelezione(() => esegui());
+  // import
+  const fileInp = root.querySelector('#import-file');
+  root.querySelector('#import-btn').addEventListener('click', () => fileInp.click());
+  fileInp.addEventListener('change', async () => {
+    if (!fileInp.files.length) return;
+    if (!(await conferma('Il ripristino SOSTITUISCE i dati attuali con quelli presenti nel backup. Continuare?', { titolo: 'Ripristino backup', ok: 'Ripristina', danger: true }))) { fileInp.value = ''; return; }
+    try {
+      const file = fileInp.files[0];
+      const isJSON = file.name.toLowerCase().endsWith('.json');
+      if (!isJSON && !window.XLSX) { toast('Per i file Excel serve la connessione la prima volta. Usa un backup .json.'); fileInp.value = ''; return; }
+      const r = isJSON ? await importaJSON(file) : await importaBackup(file);
+      let msg = `Ripristinati ${r.movimenti} movimenti`;
+      if (r.preservati && r.preservati.length) {
+        const nomi = { mutuo: 'mutuo', finanziamenti: 'finanziamenti', ricorrenti: 'ricorrenti', eventiMutuo: 'eventi', tag: 'tag' };
+        const lista = r.preservati.map(s => nomi[s] || s).filter(Boolean);
+        if (lista.length) msg += ` · ${lista.join(', ')} mantenuti dal dispositivo`;
+      }
+      toast(msg);
+      navigate('spese');
+    } catch (e) { console.error('Errore import:', e); toast('Errore import: ' + (e.message || e)); }
+    fileInp.value = '';
+  });
 
-  const esegui = () => {
-    _q = inp.value;
-    if (clearBtn) clearBtn.style.display = _q ? 'flex' : 'none';
-    const { risultati, totali, count } = cercaMovimenti(_q, filtriNumerici());
-    _ultimiRisultati = risultati;
-    const attivi = Object.values(_filtri).some(v => v !== '');
-    if (!_q.trim() && !attivi) { box.innerHTML = '<div class="empty">Scrivi qualcosa o apri i Filtri per cercare tra tutti i tuoi movimenti</div>'; return; }
-    if (!count) { box.innerHTML = `<div class="empty"><div class="big-ic">${UI_SVG.lente}</div>Nessun risultato</div>`; return; }
+  // bulk tag
+  root.querySelector('#bulk-tag').addEventListener('click', () => _bulkTag(root));
 
-    // totali SEPARATI per tipo: la somma è sempre leggibile anche con risultati misti
-    const pezzi = [];
-    if (totali.spese > 0) pezzi.push(`<span class="sp num">−${fmtEUR(totali.spese)}</span> spese`);
-    if (totali.entrate > 0) pezzi.push(`<span class="en num">+${fmtEUR(totali.entrate)}</span> entrate`);
-    if (totali.trasf > 0) pezzi.push(`<span class="tr num">⇄ ${fmtEUR(totali.trasf)}</span> accantonati`);
+  // navigazione
+  root.querySelector('#go-energia').addEventListener('click', () => navigate('energia'));
+  root.querySelector('#go-conti').addEventListener('click', () => navigate('conti'));
+  root.querySelector('#go-cat').addEventListener('click', () => navigate('categorie'));
 
-    const selMode = _sel && _sel.attiva();
-    const toolbar = selMode
-      ? _sel.toolbarHTML()
-      : `<div class="search-summary"><div class="summary-head"><div class="n">${count} movimenti trovati</div>${count ? `<button class="sel-mini" id="attiva-sel" aria-label="Seleziona risultati"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 12l2.2 2.2L15.5 9.5"/></svg></button>` : ''}</div><div style="font-size:14.5px;line-height:1.7">${pezzi.join(' · ') || '—'}</div></div>`;
+  // reset
+  root.querySelector('#reset').addEventListener('click', async () => {
+    if (!(await conferma('Verranno eliminati TUTTI i dati in modo irreversibile.', { titolo: 'Azzera tutto', ok: 'Continua', danger: true }))) return;
+    if (!(await conferma('Ultima conferma: azzerare davvero tutto?', { titolo: 'Azzera tutto', ok: 'Azzera tutto', danger: true }))) return;
+    for (const s of STORE_NAMES) await dbClear(s);
+    await refreshAll();
+    toast('Dati azzerati');
+    location.reload();
+  });
+};
 
-    box.innerHTML = toolbar + '<div>' + risultati.slice(0, 300).map(m => {
-      const segno = m.tipo === 'spesa' ? '−' : m.tipo === 'entrata' ? '+' : '⇄ ';
-      const cls = m.tipo === 'spesa' ? 'sp' : m.tipo === 'entrata' ? 'en' : 'tr';
-      const icona = m.macro ? iconaMacro(m.macro) : iconaTipo(m.tipo);
-      const classif = [m.macro, m.cat, m.sub].filter(Boolean).join(' › ') || m.tipo;
-      const isSel = selMode && _sel.ha(m.id);
-      return `<div class="mov tipo-${m.tipo} ${selMode ? 'selectable' : ''} ${isSel ? 'sel' : ''}" data-mov="${m.id}">
-        ${selMode ? `<div class="selbox">${isSel ? '✓' : ''}</div>` : ''}
-        <div class="ic">${icona}</div>
-        <div class="body"><div class="d1">${escapeHtml(m.desc || classif)}</div><div class="d2"><span class="cls">${escapeHtml(classif)}</span> <span class="cnt">· ${fmtDataEstesa(m.data)}${m.conto ? ' · ' + escapeHtml(m.conto) : ''}</span></div></div>
-        <div class="amt ${cls} num">${segno}${fmtEUR(m.imp)}</div>
-      </div>`;
-    }).join('') + '</div>';
+// Bulk tag: cerca -> seleziona risultati -> applica tag
+const _bulkTag = (root) => {
+  apriSheet('Applica tag in blocco', `
+    <label class="meta">1. Cerca i movimenti (descrizione, categoria...)</label>
+    <div class="searchbar" style="margin:8px 0 12px"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input id="bt-q" placeholder="Es. Palermo, hotel..." autocomplete="off"></div>
+    <div id="bt-ris" style="max-height:300px;overflow-y:auto"></div>
+    <label class="meta" style="margin-top:12px;display:block">2. Tag da applicare</label>
+    <input id="bt-tag" placeholder="Es. SiciliaLuglio2025" style="width:100%;padding:13px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);color:var(--txt);font-size:16px;margin:8px 0 12px">
+    <button class="btn btn-primary" id="bt-ok">Applica a tutti i selezionati</button>
+  `, (body, chiudi) => {
+    const q = body.querySelector('#bt-q');
+    const ris = body.querySelector('#bt-ris');
+    let selezionati = new Set();
 
-    // interazioni righe: tap (modifica o toggle selezione) + long-press (avvia selezione)
-    box.querySelectorAll('[data-mov]').forEach(el => {
-      const id = el.dataset.mov;
-      let longTimer = null, longFired = false;
-      const clearLong = () => { if (longTimer) { clearTimeout(longTimer); longTimer = null; } };
-      const start = () => {
-        longFired = false;
-        if (!_sel.attiva()) longTimer = setTimeout(() => {
-          longFired = true;
-          if (navigator.vibrate) navigator.vibrate(15);
-          _sel.avvia(id);
-        }, 500);
-      };
-      el.addEventListener('touchstart', start, { passive: true });
-      el.addEventListener('touchend', clearLong);
-      el.addEventListener('touchmove', clearLong, { passive: true });
-      el.addEventListener('mousedown', start);
-      el.addEventListener('mouseup', clearLong);
-      el.addEventListener('mouseleave', clearLong);
-      el.addEventListener('click', () => {
-        if (longFired) return;
-        if (_sel.attiva()) { _sel.toggle(id); return; }
-        navigate('modifica', { id });
-      });
+    const cerca = () => {
+      const { risultati } = cercaMovimenti(q.value);
+      if (!q.value.trim()) { ris.innerHTML = '<div class="meta" style="padding:8px">Scrivi per cercare</div>'; return; }
+      ris.innerHTML = risultati.slice(0, 100).map(m => `
+        <div class="mov" data-id="${m.id}" style="cursor:pointer">
+          <div class="ic" style="font-size:14px">${selezionati.has(m.id) ? '✅' : '⬜'}</div>
+          <div class="body"><div class="d1">${escapeHtml(m.desc || m.cat)}</div><div class="d2">${fmtDataEstesa(m.data)} · ${fmtEUR(m.imp)}</div></div>
+        </div>`).join('');
+      ris.querySelectorAll('[data-id]').forEach(el => el.addEventListener('click', () => {
+        const id = el.dataset.id;
+        if (selezionati.has(id)) selezionati.delete(id); else selezionati.add(id);
+        cerca();
+      }));
+    };
+    q.addEventListener('input', cerca);
+    cerca();
+
+    body.querySelector('#bt-ok').addEventListener('click', async () => {
+      const tag = body.querySelector('#bt-tag').value.trim();
+      if (!tag) { toast('Inserisci un tag'); return; }
+      if (!selezionati.size) { toast('Seleziona almeno un movimento'); return; }
+      const n = await applicaTagBulk(Array.from(selezionati), tag);
+      chiudi(); toast(`Tag applicato a ${n} movimenti`);
     });
-
-    const attiva = box.querySelector('#attiva-sel');
-    if (attiva) attiva.addEventListener('click', () => _sel.avvia());
-    if (selMode) _sel.bindToolbar(box, risultati.map(m => m.id));
-  };
-
-  inp.addEventListener('input', esegui);
-
-  // X per cancellare rapidamente la ricerca
-  if (clearBtn) clearBtn.addEventListener('click', () => {
-    inp.value = '';
-    _q = '';
-    esegui();
-    inp.focus();
   });
-
-  // pannello filtri
-  root.querySelector('#toggle-filtri').addEventListener('click', () => {
-    _filtriAperti = !_filtriAperti;
-    root.querySelector('#pannello-filtri').style.display = _filtriAperti ? 'block' : 'none';
-  });
-  root.querySelectorAll('[data-ftipo]').forEach(el => el.addEventListener('click', () => {
-    _filtri.tipo = el.dataset.ftipo;
-    root.querySelectorAll('[data-ftipo]').forEach(x => x.classList.toggle('on', x.dataset.ftipo === _filtri.tipo));
-    esegui();
-  }));
-  const bindFiltro = (sel, campo) => {
-    const el = root.querySelector(sel);
-    if (el) el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => { _filtri[campo] = el.value; esegui(); });
-  };
-  // macro: cambia -> azzera cat/sub e ri-renderizza (per popolare i menu a cascata)
-  const elMacro = root.querySelector('#f-macro');
-  if (elMacro) elMacro.addEventListener('change', () => {
-    _filtri.macro = elMacro.value; _filtri.cat = ''; _filtri.sub = '';
-    renderRicerca(root);
-  });
-  // cat: cambia -> azzera sub e ri-renderizza
-  const elCat = root.querySelector('#f-cat');
-  if (elCat) elCat.addEventListener('change', () => {
-    _filtri.cat = elCat.value; _filtri.sub = '';
-    renderRicerca(root);
-  });
-  bindFiltro('#f-sub', 'sub'); bindFiltro('#f-conto', 'conto');
-  bindFiltro('#f-da', 'da'); bindFiltro('#f-a', 'a');
-  bindFiltro('#f-min', 'min'); bindFiltro('#f-max', 'max');
-  root.querySelector('#f-reset').addEventListener('click', () => {
-    _filtri = { tipo: '', macro: '', cat: '', sub: '', conto: '', da: '', a: '', min: '', max: '' };
-    renderRicerca(root);
-  });
-
-  esegui();
-  // il focus solo quando parti da zero: tornando dalla modifica NON ruba la vista dei risultati
-  if (!_q && !Object.values(_filtri).some(v => v !== '')) setTimeout(() => inp.focus(), 100);
 };

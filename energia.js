@@ -1,142 +1,164 @@
-// drill.js — Drill-down adattivo nelle categorie, con navigazione tra i periodi.
-// Params: macro (obbligatorio), cat (opzionale), periodo, mese.
-// A ogni livello: navigatore mese/anno con frecce (per confrontare i periodi al volo)
-// e card [Totale] [vs media] [vs precedente], come nella home.
+// selezioneMultipla.js — Selezione multipla di operazioni + modifica massiva.
+// Modulo CONDIVISO: usato da ricerca, elenco movimenti e (via navigazione) analisi.
+// Prima questa logica viveva solo dentro ricerca.js; estrarla evita di duplicarla
+// su ogni elenco e garantisce che il comportamento sia identico ovunque.
+//
+// Uso in un componente con una lista di movimenti:
+//   const sel = creaSelezione(() => rerenderDellaLista());
+//   ... nel render di ogni riga: aggiungi classe/checkbox se sel.attiva()
+//   ... long-press su una riga -> sel.avvia(id); tap in modo selezione -> sel.toggle(id)
+//   ... toolbar: sel.toolbarHTML(totaleVisibili)
+//   ... bind pulsanti toolbar: sel.bindToolbar(root, idsVisibili)
 
-import { state, movimentiDelMese } from '../core/store.js';
-import { fmtEUR, fmtPct, nomeMese, escapeHtml } from '../core/utils.js';
-import { iconaMacro } from '../core/icons.js';
-import { navigate, buildHash } from '../core/router.js';
-import { aggregaPerLivello, soloSpese } from '../services/movimentiService.js';
-import { categoriaHaSub } from '../services/categorieService.js';
-import { abilitaSwipeIndietro } from './shared.js';
+import { state } from '../core/store.js';
+import { escapeHtml, toast } from '../core/utils.js';
+import { apriSheet, apriSelettoreCategoria, conferma } from './shared.js';
+import { modificaMassiva, applicaTagBulk, deleteMovimento } from '../services/movimentiService.js';
+import { safeWrite } from '../core/db.js';
+import { UI_SVG } from '../core/icons.js';
 
-const movimentiPeriodo = (periodo, mese) => {
-  if (periodo === 'anno') return state.movimenti.filter(m => m.data.startsWith(mese.slice(0, 4)));
-  if (periodo === 'settimana') {
-    const oggi = new Date(); const s = new Date(); s.setDate(oggi.getDate() - 6);
-    return state.movimenti.filter(m => m.data >= s.toISOString().slice(0, 10));
-  }
-  return movimentiDelMese(mese);
+// Crea un controller di selezione. `onChange` viene chiamato quando serve
+// ri-renderizzare la lista (dopo un toggle, un avvio/uscita selezione, o una modifica).
+export const creaSelezione = (onChange) => {
+  let attiva = false;
+  const scelti = new Set();
+
+  const api = {
+    attiva: () => attiva,
+    ha: (id) => scelti.has(id),
+    size: () => scelti.size,
+    ids: () => Array.from(scelti),
+
+    // avvia la modalità selezione con un primo elemento (da long-press)
+    avvia(id) {
+      attiva = true;
+      if (id) scelti.add(id);
+      onChange();
+    },
+    // aggiunge/toglie un elemento (tap quando la modalità è attiva)
+    toggle(id) {
+      if (scelti.has(id)) scelti.delete(id); else scelti.add(id);
+      if (scelti.size === 0) attiva = false;   // svuotata: esco dalla modalità
+      onChange();
+    },
+    esci() { attiva = false; scelti.clear(); onChange(); },
+    esciSilenzioso() { attiva = false; scelti.clear(); },   // reset senza ri-render (all'ingresso pagina)
+    selezionaTutti(ids) {
+      if (ids.every(id => scelti.has(id))) scelti.clear();   // già tutti -> deseleziona
+      else ids.forEach(id => scelti.add(id));
+      onChange();
+    },
+
+    // barra in cima alla lista quando la modalità è attiva
+    toolbarHTML() {
+      return `<div class="sel-toolbar">
+        <button class="sel-esci" id="sel-esci" aria-label="Annulla selezione">${UI_SVG.x || '✕'}</button>
+        <span class="sel-count">${scelti.size} selezionati</span>
+        <div class="sel-actions">
+          <button class="sel-tutti" id="sel-tutti">Tutti</button>
+          <button class="sel-modifica" id="sel-modifica" ${scelti.size ? '' : 'disabled'}>Modifica</button>
+        </div>
+      </div>`;
+    },
+
+    // collega i pulsanti della toolbar. `idsVisibili` = tutti gli id attualmente in lista.
+    bindToolbar(root, idsVisibili) {
+      const esci = root.querySelector('#sel-esci');
+      if (esci) esci.addEventListener('click', () => api.esci());
+      const tutti = root.querySelector('#sel-tutti');
+      if (tutti) tutti.addEventListener('click', () => api.selezionaTutti(idsVisibili));
+      const mod = root.querySelector('#sel-modifica');
+      if (mod) mod.addEventListener('click', () => {
+        if (!scelti.size) { toast('Seleziona almeno un\'operazione'); return; }
+        _apriModificaMassiva(api, onChange);
+      });
+    },
+  };
+  return api;
 };
 
-export const renderDrill = async (root, params) => {
-  const { macro, cat, periodo = 'mese', mese } = params;
-  const movs = movimentiPeriodo(periodo, mese);
-  const [anno, meseNum] = mese.split('-');
+// Sheet: scegli QUALE campo modificare in blocco. Riusa i servizi esistenti.
+const _apriModificaMassiva = (sel, refresh) => {
+  const n = sel.size();
+  const finito = (msg) => { toast(msg); sel.esci(); };
+  apriSheet(`Modifica ${n} operazioni`, `
+    <p class="conferma-testo" style="margin-bottom:14px">Scegli cosa modificare sulle operazioni selezionate.</p>
+    <button class="btn btn-secondary mm-btn" id="mm-cat">${UI_SVG.tag} Categoria</button>
+    <button class="btn btn-secondary mm-btn" id="mm-conto">${UI_SVG.conto} Conto</button>
+    <button class="btn btn-secondary mm-btn" id="mm-desc">${UI_SVG.descrizione} Descrizione</button>
+    <button class="btn btn-secondary mm-btn" id="mm-tag">${UI_SVG.hashtag} Aggiungi tag</button>
+    <button class="btn btn-secondary mm-btn" id="mm-tipo">${UI_SVG.ripeti || ''} Tipo operazione</button>
+    <button class="btn btn-danger mm-btn" id="mm-del">Elimina le ${n} operazioni</button>
+  `, (body, chiudi) => {
+    const ids = sel.ids();
 
-  // livello corrente: se ho cat -> mostro sub; altrimenti -> mostro cat
-  const livello = cat ? 'sub' : 'cat';
-  const filtro = cat ? { macro, cat } : { macro };
-  const righe = aggregaPerLivello(movs, livello, filtro);
-
-  // totali del ramo corrente nel periodo selezionato
-  let ramo = soloSpese(movs).filter(m => m.macro === macro);
-  if (cat) ramo = ramo.filter(m => m.cat === cat);
-  const totRamo = ramo.reduce((s, m) => s + m.imp, 0);
-
-  // ── vs media e vs precedente, calcolati sullo STESSO ramo su tutto lo storico ──
-  const perPeriodo = {};
-  for (const m of soloSpese(state.movimenti)) {
-    if (m.macro !== macro) continue;
-    if (cat && m.cat !== cat) continue;
-    const k = periodo === 'anno' ? m.data.slice(0, 4) : (m.annomese || m.data.slice(0, 7));
-    perPeriodo[k] = (perPeriodo[k] || 0) + m.imp;
-  }
-  const chiaveCorrente = periodo === 'anno' ? anno : mese;
-  const altre = Object.keys(perPeriodo).filter(k => k !== chiaveCorrente);
-  const media = altre.length ? altre.reduce((s, k) => s + perPeriodo[k], 0) / altre.length : 0;
-  let chiavePrec;
-  if (periodo === 'anno') chiavePrec = String(parseInt(anno) - 1);
-  else { const d = new Date(parseInt(anno), parseInt(meseNum) - 2, 1); chiavePrec = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
-  const valPrec = perPeriodo[chiavePrec] || 0;
-
-  const deltaCell = (rif, lbl) => {
-    if (periodo === 'settimana' || rif <= 0) return `<div class="cell"><div class="lbl">${lbl}</div><div class="val sa num">—</div></div>`;
-    const pct = Math.round((totRamo - rif) / rif * 100);
-    const diff = totRamo - rif;
-    return `<div class="cell"><div class="lbl">${lbl}</div><div class="val num ${pct <= 0 ? 'en' : 'sp'}">${pct > 0 ? '+' : ''}${pct}%</div><div class="delta num" style="color:var(--txt-2)">${diff > 0 ? '+' : '−'}${fmtEUR(Math.abs(diff))}</div></div>`;
-  };
-
-  // il nome del ramo vive DENTRO la card statistiche (header pulito col solo back)
-  document.getElementById('view-title').textContent = '';
-  const suDiLivello = () => {
-    if (cat) location.hash = buildHash('drill', { macro, periodo, mese });
-    else history.back();
-  };
-
-  const maxTot = righe.length ? righe[0].totale : 1;
-
-  const righeHTML = righe.length ? righe.map(r => {
-    const chiave = r.chiave === '(senza)' ? '' : r.chiave;
-    const foglia = livello === 'sub' || (livello === 'cat' && !categoriaHaSub(macro, chiave));
-    const drillTarget = foglia
-      ? buildHash('movimenti', { macro, cat: livello === 'cat' ? chiave : cat, sub: livello === 'sub' ? chiave : '', periodo, mese })
-      : buildHash('drill', { macro, cat: chiave, periodo, mese });
-    const movTarget = buildHash('movimenti', {
-      macro, cat: livello === 'cat' ? chiave : cat, sub: livello === 'sub' ? chiave : '', periodo, mese,
+    body.querySelector('#mm-cat').addEventListener('click', () => {
+      chiudi();
+      apriSelettoreCategoria(async (s) => {
+        const k = await modificaMassiva(ids, { macro: s.macro, cat: s.cat, sub: s.sub });
+        finito(`Categoria aggiornata su ${k} operazioni`); refresh();
+      });
     });
-    return `
-      <div class="catrow">
-        <div class="icon" data-href="${movTarget}">${livello === 'cat' ? iconaMacro(macro) : '🏷️'}</div>
-        <div class="body" data-href="${drillTarget}">
-          <div class="row1">
-            <span class="name">${escapeHtml(r.chiave)}</span>
-            <span class="right"><span class="amt num">${fmtEUR(r.totale)}</span><span class="pct num">${fmtPct(r.pct)}</span></span>
-          </div>
-          <div class="bar"><span style="width:${Math.max(1.5, r.totale / maxTot * 100)}%"></span></div>
-        </div>
-        <div class="chev" data-href="${drillTarget}">›</div>
-      </div>`;
-  }).join('') : '<div class="empty">Nessuna spesa in questo ramo</div>';
 
-  const labelPeriodo = periodo === 'anno' ? anno : periodo === 'mese' ? `${nomeMese(parseInt(meseNum) - 1)} ${anno}` : 'Ultimi 7 giorni';
+    body.querySelector('#mm-conto').addEventListener('click', () => {
+      chiudi(); _scegliConto('Sposta su quale conto?', async (conto) => {
+        const k = await modificaMassiva(ids, { conto });
+        finito(`Conto aggiornato su ${k} operazioni`); refresh();
+      });
+    });
 
-  root.innerHTML = `
-    <div class="mov-sticky">
-      ${periodo !== 'settimana' ? `
-        <div class="month-nav" style="margin:4px 0">
-          <button class="arr" id="d-prev">‹</button>
-          <div class="m">${labelPeriodo}</div>
-          <button class="arr" id="d-next">›</button>
-        </div>` : `<div class="month-nav" style="margin:4px 0"><div class="m">${labelPeriodo}</div></div>`}
-      <div class="triple" style="flex-direction:column;padding:0;margin:6px 0 4px">
-        <div class="card-crumb card-crumb-center" id="d-crumb">
-          ${cat ? '<span class="cc-up">‹</span>' : ''}
-          <span class="cc-nome">${escapeHtml(cat || macro)}</span>
-          ${cat ? `<span class="cc-ctx">${escapeHtml(macro)}</span>` : ''}
-        </div>
-        <div style="display:flex;width:100%">
-        <div class="cell"><div class="lbl">Spese</div><div class="val sp num">${fmtEUR(totRamo)}</div></div>
-        ${deltaCell(media, 'vs media')}
-        ${deltaCell(valPrec, periodo === 'anno' ? 'vs anno prec.' : 'vs mese prec.')}
-        </div>
-      </div>
-    </div>
-    <div class="section-lbl"><span>${cat ? 'Sottocategorie di ' + escapeHtml(cat) : 'Categorie di ' + escapeHtml(macro)}</span></div>
-    ${righeHTML}
-    <div style="margin-top:20px">
-      <button class="btn btn-secondary" data-href="${buildHash('movimenti', { macro, cat: cat || '', periodo, mese })}">Vedi tutti i movimenti di ${escapeHtml(cat || macro)}</button>
-    </div>
-  `;
+    body.querySelector('#mm-desc').addEventListener('click', () => {
+      chiudi();
+      apriSheet('Nuova descrizione', `<input id="mm-desc-inp" placeholder="Descrizione" class="sheet-input"><button class="btn btn-primary" id="mm-desc-ok" style="margin-top:10px">Applica</button>`, (b2, c2) => {
+        b2.querySelector('#mm-desc-ok').addEventListener('click', async () => {
+          const desc = b2.querySelector('#mm-desc-inp').value.trim();
+          if (!desc) return;
+          const k = await modificaMassiva(ids, { desc });
+          c2(); finito(`Descrizione aggiornata su ${k} operazioni`); refresh();
+        });
+      });
+    });
 
-  // frecce: cambiano il periodo restando nello STESSO ramo (via hash, così il back funziona)
-  const sposta = (delta) => {
-    let nuovoMese;
-    if (periodo === 'anno') nuovoMese = `${parseInt(anno) + delta}-${meseNum}`;
-    else { const d = new Date(parseInt(anno), parseInt(meseNum) - 1 + delta, 1); nuovoMese = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
-    location.hash = buildHash('drill', { macro, cat: cat || '', periodo, mese: nuovoMese });
-  };
-  const dp = root.querySelector('#d-prev'), dn = root.querySelector('#d-next');
-  if (dp) dp.addEventListener('click', () => sposta(-1));
-  if (dn) dn.addEventListener('click', () => sposta(1));
-  // percorso nella card: TAP per risalire; SWIPE destro fa lo stesso
-  root.querySelector('#d-crumb').addEventListener('click', suDiLivello);
-  abilitaSwipeIndietro(root, suDiLivello);
+    body.querySelector('#mm-tag').addEventListener('click', () => {
+      chiudi();
+      apriSheet('Aggiungi tag', `<input id="mm-tag-inp" placeholder="Nome tag" class="sheet-input"><button class="btn btn-primary" id="mm-tag-ok" style="margin-top:10px">Applica</button>`, (b2, c2) => {
+        b2.querySelector('#mm-tag-ok').addEventListener('click', async () => {
+          const tag = b2.querySelector('#mm-tag-inp').value.trim();
+          if (!tag) return;
+          const k = await applicaTagBulk(ids, tag);
+          c2(); finito(`Tag applicato a ${k} operazioni`); refresh();
+        });
+      });
+    });
 
-  // navigazione via data-href
-  root.querySelectorAll('[data-href]').forEach(el => el.addEventListener('click', (e) => {
-    e.stopPropagation();
-    location.hash = el.dataset.href;
-  }));
+    body.querySelector('#mm-tipo').addEventListener('click', () => {
+      chiudi();
+      apriSheet('Cambia tipo', `
+        <button class="btn btn-secondary mm-btn" id="t-spesa">Spesa</button>
+        <button class="btn btn-secondary mm-btn" id="t-entrata">Entrata</button>
+        <button class="btn btn-secondary mm-btn" id="t-trasf">Trasferimento</button>
+      `, (b2, c2) => {
+        const applica = async (tipo) => { const k = await modificaMassiva(ids, { tipo }); c2(); finito(`Tipo aggiornato su ${k} operazioni`); refresh(); };
+        b2.querySelector('#t-spesa').addEventListener('click', () => applica('spesa'));
+        b2.querySelector('#t-entrata').addEventListener('click', () => applica('entrata'));
+        b2.querySelector('#t-trasf').addEventListener('click', () => applica('trasferimento'));
+      });
+    });
+
+    body.querySelector('#mm-del').addEventListener('click', async () => {
+      chiudi();
+      if (!(await conferma(`Eliminare le ${ids.length} operazioni selezionate? L'azione non è reversibile.`, { danger: true, ok: 'Elimina tutte' }))) return;
+      const ok = await safeWrite(async () => { for (const id of ids) await deleteMovimento(id); }, 'Eliminazione non riuscita');
+      if (!ok) return;
+      finito(`${ids.length} operazioni eliminate`); refresh();
+    });
+  });
+};
+
+const _scegliConto = (titolo, onPick) => {
+  const conti = state.conti.filter(c => c.attivo !== false);
+  apriSheet(titolo, '', (body, chiudi) => {
+    body.innerHTML = conti.map(c => `<div class="mov" data-c="${escapeHtml(c.nome)}"><div class="ic">${UI_SVG.conto}</div><div class="body"><div class="d1">${escapeHtml(c.nome)}</div><div class="d2">${escapeHtml(c.tipo)}</div></div></div>`).join('');
+    body.querySelectorAll('[data-c]').forEach(el => el.addEventListener('click', () => { const nome = el.dataset.c; chiudi(); onPick(nome); }));
+  });
 };

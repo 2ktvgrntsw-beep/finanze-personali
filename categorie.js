@@ -1,129 +1,265 @@
-// mutuo.js — Scheda mutuo: stato, piano di ammortamento, eventi.
+// energia.js — Sezione Energia: monitoraggio spesa e consumo di energia elettrica.
+// Home con hero ultima bolletta, KPI, barre fasce per anno, spike-line prezzo,
+// ripartizione fasce e storico recente. Slegata dalle spese (store dedicato).
 
 import { state } from '../core/store.js';
-import { fmtEUR, escapeHtml, fmtData } from '../core/utils.js';
-import { statoPrestito, saveMutuo, saveEventoMutuo, eventiMutuo, deleteEventoMutuo } from '../services/prestitiService.js';
-import { apriSheet, apriDataNativa, montaTastierino, apriSelettoreCategoria, conferma } from './shared.js';
-import { toast } from '../core/utils.js';
+import { fmtEUR, escapeHtml } from '../core/utils.js';
+import { navigate } from '../core/router.js';
+import { costruisciSparkline, agganciaSparkline } from '../core/sparkline.js';
+import {
+  ultimaBolletta, kpiBolletta, aggregatoAnno, anniDisponibili, variazioneAnno,
+  seriePrezzo, serieFasce, ripartizioneFasce, bolletteComplete, statisticheGlobali, mese3,
+} from '../services/energiaService.js';
 
-export const renderMutuo = async (root) => {
-  document.getElementById('view-title').textContent = 'Mutuo';
-  const m = state.mutuo;
-  if (!m || !m.importo_iniziale) { root.innerHTML = '<div class="empty">Nessun mutuo configurato</div><div style="margin-top:16px"><button class="btn btn-primary" id="setup">Configura mutuo</button></div>'; root.querySelector('#setup').addEventListener('click', () => _edit(root)); return; }
+const FULMINE = '<svg viewBox="0 0 24 24"><path d="M13 2 4.5 13.5H11l-1 8.5L19.5 10H13z"/></svg>';
 
-  const s = statoPrestito(m, state.eventiMutuo);
-  const eventi = eventiMutuo();
+// stato modulo
+let _annoFasce = null;         // anno selezionato per le barre fasce
+let _annoKpi = null;           // anno selezionato per le card KPI
+let _tipoPrezzo = 'materia';   // 'materia' | 'totale' per la spike-line
+
+const _fmtPeriodo = (dal, al) => {
+  const [, m1, g1] = dal.split('-'); const [, m2, g2] = al.split('-');
+  return `${g1}/${m1}–${g2}/${m2}`;
+};
+const _fmtVar = (v) => v == null ? '' : `${v > 0 ? '+' : ''}${v.toFixed(0)}%`;
+const _clsVar = (v, inverti = false) => {
+  if (v == null) return '';
+  const negativoBuono = !inverti;   // per spesa/consumo/prezzo: scendere è positivo (verde)
+  const buono = negativoBuono ? v < 0 : v > 0;
+  return buono ? 'down' : 'up';     // .down=verde .up=rosso (coerente con l'app)
+};
+
+export const renderEnergia = async (root) => {
+  document.getElementById('view-title').textContent = 'Energia';
+
+  const boll = bolletteComplete();
+  if (!boll.length) {
+    root.innerHTML = `<div class="card" style="text-align:center;padding:40px 20px">
+      <div class="big-ic">${FULMINE}</div>
+      <p class="meta" style="margin:12px 0 18px">Non hai ancora nessuna bolletta registrata.</p>
+      <button class="btn btn-primary" id="add-boll" style="width:auto;display:inline-flex;padding:11px 20px">Aggiungi la prima bolletta</button>
+    </div>`;
+    root.querySelector('#add-boll').addEventListener('click', () => navigate('bolletta-nuova'));
+    return;
+  }
+
+  const anni = anniDisponibili();
+  if (_annoFasce == null || !anni.includes(_annoFasce)) _annoFasce = anni[0];
+  if (_annoKpi == null || !anni.includes(_annoKpi)) _annoKpi = anni[0];
+
+  const u = ultimaBolletta();
+  const k = kpiBolletta(u);
+
+  const rip = ripartizioneFasce(6);
+  const stats = statisticheGlobali();
 
   root.innerHTML = `
-    <div class="net-card">
-      <div class="lbl">Debito residuo${m.quota_utente < 100 ? ` (tua quota ${m.quota_utente}%)` : ''}</div>
-      <div class="big num">${fmtEUR(s.residuo * (m.quota_utente || 100) / 100)}</div>
-      <div class="progress-big"><span style="width:${s.pctCompletamento}%"></span></div>
-      <div class="delta" style="color:var(--up)">${s.pctCompletamento}% restituito · ${fmtEUR(s.restituito * (m.quota_utente || 100) / 100)} di ${fmtEUR(m.importo_iniziale * (m.quota_utente || 100) / 100)}</div>
-      <div class="sub">
-        <div><span class="lbl2">Rata</span><b class="num">${fmtEUR(s.quotaUtente)}</b></div>
-        <div><span class="lbl2">Rate</span><b class="num">${s.ratePagate}/${s.rateTotali}</b></div>
-        <div><span class="lbl2">Fine</span><b style="font-size:13px">${fmtData(s.dataFine)}</b></div>
+    <!-- HERO ultima bolletta -->
+    <div class="net-card energia-hero">
+      <div class="net-row">
+        <div class="ehero-forn">Ultima bolletta · <b>${escapeHtml(u.fornitore)}</b>${u.offerta ? `<br><span class="meta">${escapeHtml(u.offerta)}</span>` : ''}</div>
+        ${u.tariffa ? `<span class="ebadge">${escapeHtml(u.tariffa)}</span>` : ''}
+      </div>
+      <div class="ehero-imp num">${fmtEUR(u.totale)}</div>
+      <div class="ehero-meta">
+        <div><div class="k">Periodo</div><div class="v num">${_fmtPeriodo(u.dal, u.al)}</div></div>
+        <div><div class="k">Consumo</div><div class="v num">${u.kwhTot} kWh</div></div>
+        <div><div class="k">€/kWh</div><div class="v num">${k.eurKwh.toFixed(3)}</div></div>
       </div>
     </div>
 
-    <div class="section-lbl"><span>Dettagli</span><span style="color:var(--accent);font-size:11px;cursor:pointer" id="edit">Modifica</span></div>
+    <!-- SELETTORE ANNO per le card KPI -->
+    <div class="section-lbl" style="margin-top:14px"><span>Riepilogo anno</span>
+      <div class="eyear" id="ekpi-year">
+        <button id="ekpi-prev" aria-label="Anno precedente">‹</button>
+        <span class="num" id="ekpi-lbl">${_annoKpi}</span>
+        <button id="ekpi-next" aria-label="Anno successivo">›</button>
+      </div>
+    </div>
+    <!-- KPI (aggiornate dal selettore, delta vs anno precedente) -->
+    <div class="ekpis" id="ekpis"></div>
+
+    <!-- BARRE FASCE per anno -->
+    <div class="section-lbl"><span>Consumo per fasce</span>
+      <div class="eyear" id="eyear">
+        <button id="eyear-prev" aria-label="Anno precedente">‹</button>
+        <span class="num" id="eyear-lbl">${_annoFasce}</span>
+        <button id="eyear-next" aria-label="Anno successivo">›</button>
+      </div>
+    </div>
     <div class="card">
-      <div style="display:flex;justify-content:space-between;padding:6px 0"><span class="meta">Importo iniziale</span><span class="num">${fmtEUR(m.importo_iniziale)}</span></div>
-      <div style="display:flex;justify-content:space-between;padding:6px 0"><span class="meta">Tasso annuo</span><span class="num">${m.tasso}%</span></div>
-      <div style="display:flex;justify-content:space-between;padding:6px 0"><span class="meta">Durata</span><span class="num">${m.durata_mesi} mesi</span></div>
-      <div style="display:flex;justify-content:space-between;padding:6px 0"><span class="meta">Prossima rata</span><span class="num">${s.prossimaData ? fmtData(s.prossimaData) : '—'}</span></div>
-      ${m.banca ? `<div style="display:flex;justify-content:space-between;padding:6px 0"><span class="meta">Banca</span><span>${escapeHtml(m.banca)}</span></div>` : ''}
+      <div class="elegend">
+        <span><i style="background:#1C3A6E"></i>F1 giorno</span>
+        <span><i style="background:#2E9BFF"></i>F2 sera</span>
+        <span><i style="background:#7B6CFF"></i>F3 notte</span>
+      </div>
+      <div class="estack" id="estack"></div>
     </div>
 
-    <div class="section-lbl"><span>Eventi</span><span style="color:var(--accent);font-size:11px;cursor:pointer" id="add-ev">+ Estinzione parziale</span></div>
-    ${eventi.length ? eventi.map(e => `<div class="recrow" data-ev="${e.id}"><div class="ic" style="background:var(--up-bg)">💸</div><div class="body"><div class="d1">${e.tipo === 'estinzione_parziale' ? 'Estinzione parziale' : e.tipo}</div><div class="d2">${fmtData(e.data)}</div></div><div class="amt num">−${fmtEUR(e.importo)}</div></div>`).join('') : '<div class="meta" style="padding:4px">Nessun evento straordinario</div>'}
+    <!-- SPIKE-LINE prezzo -->
+    <div class="section-lbl"><span>Prezzo energia nel tempo</span>
+      <div class="eprice-toggle" id="eprice-toggle">
+        <button data-p="materia" class="${_tipoPrezzo === 'materia' ? 'on' : ''}">Materia</button>
+        <button data-p="totale" class="${_tipoPrezzo === 'totale' ? 'on' : ''}">Totale</button>
+      </div>
+    </div>
+    <div class="card">
+      <div id="eprice-chart"></div>
+      <div class="eprice-note">${_tipoPrezzo === 'materia'
+        ? 'Prezzo <b>materia energia</b> (€/kWh): la voce su cui incidi cambiando fornitore. Il resto (trasporto, oneri, imposte) è fisso.'
+        : 'Prezzo <b>totale</b> (€/kWh): tutto compreso, comprese le voci fisse di sistema.'}</div>
+    </div>
 
-    <div class="section-lbl"><span>Piano di ammortamento</span><span style="color:var(--accent);font-size:11px;cursor:pointer" id="toggle-piano">Mostra piano</span></div>
-    <div id="piano-mount"></div>
+    <!-- RIPARTIZIONE fasce media -->
+    <div class="section-lbl"><span>Ripartizione media</span></div>
+    <div class="efasce">
+      <div class="efascia"><div class="dot" style="background:#1C3A6E"></div><div class="nm">F1</div><div class="pc num">${rip.p1}%</div><div class="kw num">${rip.f1} kWh</div></div>
+      <div class="efascia"><div class="dot" style="background:#2E9BFF"></div><div class="nm">F2</div><div class="pc num">${rip.p2}%</div><div class="kw num">${rip.f2} kWh</div></div>
+      <div class="efascia"><div class="dot" style="background:#7B6CFF"></div><div class="nm">F3</div><div class="pc num">${rip.p3}%</div><div class="kw num">${rip.f3} kWh</div></div>
+    </div>
+
+    <!-- STORICO recente -->
+    <div class="section-lbl"><span>Storico bollette</span><span class="act" id="vedi-storico">Tutte (${state.bollette.length}) ›</span></div>
+    <div class="card" style="padding:0">
+      ${boll.slice(0, 4).map(b => _rigaBollettaHTML(b)).join('<div class="divider"></div>')}
+    </div>
+
+    <div style="text-align:center;margin-top:18px">
+      <button class="btn btn-primary" id="add-boll" style="width:auto;display:inline-flex;padding:12px 22px;gap:8px">
+        <svg viewBox="0 0 24 24" style="width:18px;height:18px;stroke:#fff;fill:none;stroke-width:2.2"><path d="M12 5v14M5 12h14"/></svg>
+        Aggiungi bolletta
+      </button>
+    </div>
   `;
 
-  root.querySelector('#edit').addEventListener('click', () => _edit(root));
-  root.querySelector('#add-ev').addEventListener('click', () => _addEvento(root));
-  root.querySelectorAll('[data-ev]').forEach(el => el.addEventListener('click', async () => { if (await conferma('Eliminare questo evento?', { danger: true, ok: 'Elimina' })) { await deleteEventoMutuo(el.dataset.ev); toast('Eliminato'); renderMutuo(root); } }));
+  _renderKpi(root);
+  _renderBarreFasce(root);
+  _renderSpike(root);
 
-  // piano nascosto, si apre al click
-  const togglePiano = root.querySelector('#toggle-piano');
-  const pianoMount = root.querySelector('#piano-mount');
-  togglePiano.addEventListener('click', () => {
-    if (pianoMount.innerHTML) { pianoMount.innerHTML = ''; togglePiano.textContent = 'Mostra piano'; return; }
-    togglePiano.textContent = 'Nascondi piano';
-    pianoMount.innerHTML = `<div class="card" style="max-height:360px;overflow-y:auto">
-      ${s.piano.filter((_, i) => i < 360).map(r => `
-        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);opacity:${r.pagata ? '.5' : '1'}">
-          <span class="meta">${r.n}. ${fmtData(r.data)}</span>
-          <span style="font-size:12px" class="num">C ${fmtEUR(r.quotaCapitale)} · I ${fmtEUR(r.quotaInteressi)}</span>
-        </div>`).join('')}
+  // navigazione anno per le card KPI (mutazione locale, niente re-render pagina)
+  root.querySelector('#ekpi-prev').addEventListener('click', () => {
+    const i = anni.indexOf(_annoKpi);
+    if (i < anni.length - 1) { _annoKpi = anni[i + 1]; root.querySelector('#ekpi-lbl').textContent = _annoKpi; _renderKpi(root); }
+  });
+  root.querySelector('#ekpi-next').addEventListener('click', () => {
+    const i = anni.indexOf(_annoKpi);
+    if (i > 0) { _annoKpi = anni[i - 1]; root.querySelector('#ekpi-lbl').textContent = _annoKpi; _renderKpi(root); }
+  });
+
+  // navigazione anni (barre)
+  root.querySelector('#eyear-prev').addEventListener('click', () => {
+    const i = anni.indexOf(_annoFasce);
+    if (i < anni.length - 1) { _annoFasce = anni[i + 1]; root.querySelector('#eyear-lbl').textContent = _annoFasce; _renderBarreFasce(root); }
+  });
+  root.querySelector('#eyear-next').addEventListener('click', () => {
+    const i = anni.indexOf(_annoFasce);
+    if (i > 0) { _annoFasce = anni[i - 1]; root.querySelector('#eyear-lbl').textContent = _annoFasce; _renderBarreFasce(root); }
+  });
+
+  // toggle prezzo materia/totale
+  root.querySelector('#eprice-toggle').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-p]'); if (!btn) return;
+    _tipoPrezzo = btn.dataset.p;
+    renderEnergia(root);
+  });
+
+  // storico + aggiungi + righe
+  root.querySelector('#vedi-storico').addEventListener('click', () => navigate('bollette-storico'));
+  root.querySelector('#add-boll').addEventListener('click', () => navigate('bolletta-nuova'));
+  root.querySelectorAll('[data-bolletta]').forEach(el =>
+    el.addEventListener('click', () => navigate('bolletta-dettaglio', { id: el.dataset.bolletta })));
+};
+
+// riga bolletta riutilizzabile (home + storico)
+export const _rigaBollettaHTML = (b) => {
+  const [y1, m1] = b.dal.split('-'); const [y2, m2] = b.al.split('-');
+  const periodo = y1 === y2 ? `${mese3(+m1)} – ${mese3(+m2)} ${y2}` : `${mese3(+m1)} ${y1} – ${mese3(+m2)} ${y2}`;
+  return `<div class="eboll" data-bolletta="${escapeHtml(b.id)}">
+    <div class="eboll-ic">${FULMINE}</div>
+    <div class="eboll-body">
+      <div class="eboll-r1"><span class="eboll-nm">${periodo}</span><span class="eboll-imp num">${fmtEUR(b.totale)}</span></div>
+      <div class="eboll-r2"><span class="eboll-sub">${escapeHtml(b.fornitore)}</span><span class="eboll-kwh num">${b.kwhTot} kWh</span></div>
+    </div>
+    <div class="eboll-chev">›</div>
+  </div>`;
+};
+
+// Card KPI dell'anno selezionato, con variazioni rispetto all'anno precedente.
+const _renderKpi = (root) => {
+  const agg = aggregatoAnno(_annoKpi);
+  const cont = root.querySelector('#ekpis');
+  if (!agg) { cont.innerHTML = `<div class="empty" style="grid-column:1/-1;padding:20px 0">Nessuna bolletta nel ${_annoKpi}</div>`; return; }
+  const prec = Number(_annoKpi) - 1;
+  const vGiorno = variazioneAnno(_annoKpi, 'eurGiorno');
+  const vPrezzo = variazioneAnno(_annoKpi, 'eurKwh');
+  const vSpesa = variazioneAnno(_annoKpi, 'spesa');
+  const vCons = variazioneAnno(_annoKpi, 'consumo');
+  cont.innerHTML = `
+    <div class="ekpi"><div class="k">Costo/giorno</div><div class="v num">${fmtEUR(agg.eurGiorno)}</div>${vGiorno != null ? `<div class="d ${_clsVar(vGiorno)}">${_fmtVar(vGiorno)} vs ${prec}</div>` : ''}</div>
+    <div class="ekpi"><div class="k">Prezzo medio</div><div class="v num">${agg.eurKwh.toFixed(3)}<small> €/kWh</small></div>${vPrezzo != null ? `<div class="d ${_clsVar(vPrezzo)}">${_fmtVar(vPrezzo)} vs ${prec}</div>` : ''}</div>
+    <div class="ekpi"><div class="k">Spesa ${_annoKpi}</div><div class="v num">${fmtEUR(agg.spesa)}</div>${vSpesa != null ? `<div class="d ${_clsVar(vSpesa)}">${_fmtVar(vSpesa)} vs ${prec}</div>` : ''}</div>
+    <div class="ekpi"><div class="k">Consumo ${_annoKpi}</div><div class="v num">${agg.consumo.toLocaleString('it-IT')}<small> kWh</small></div>${vCons != null ? `<div class="d ${_clsVar(vCons)}">${_fmtVar(vCons)} vs ${prec}</div>` : ''}</div>`;
+};
+
+const _renderBarreFasce = (root) => {
+  const dati = serieFasce(_annoFasce);
+  const cont = root.querySelector('#estack');
+  if (!dati.length) { cont.innerHTML = '<div class="empty" style="padding:30px 0">Nessun dato per il ' + _annoFasce + '</div>'; return; }
+  const maxT = Math.max(...dati.map(d => d.tot), 1);
+  cont.innerHTML = dati.map((d, i) => {
+    const H = (d.tot / maxT * 100).toFixed(1);
+    const h1 = d.tot ? (d.f1 / d.tot * 100).toFixed(1) : 0;
+    const h2 = d.tot ? (d.f2 / d.tot * 100).toFixed(1) : 0;
+    const h3 = d.tot ? (d.f3 / d.tot * 100).toFixed(1) : 0;
+    return `<div class="escol" data-fasce-idx="${i}">
+      <div class="estot num">${d.tot}</div>
+      <div class="ebar-wrap" style="height:${H}%">
+        <div class="ebar-seg" style="height:${h1}%;background:#1C3A6E"></div>
+        <div class="ebar-seg" style="height:${h2}%;background:#2E9BFF"></div>
+        <div class="ebar-seg" style="height:${h3}%;background:#7B6CFF"></div>
+      </div>
+      <div class="eslbl">${escapeHtml(d.label)}</div>
     </div>`;
-  });
-};
+  }).join('') + `<div class="efasce-tip" id="efasce-tip"></div>`;
 
-const _edit = (root) => {
-  const m = state.mutuo || { nome: 'Mutuo', importo_iniziale: 0, tasso: 0, durata_mesi: 0, rata: 0, data_inizio: '2020-01-01', quota_utente: 100, banca: '', giorno_addebito: 1, sub: 'Rata Mutuo', macro: 'Casa', conto: '' };
-  const conti = state.conti.filter(c => c.attivo !== false).map(c => c.nome);
-  const tmp = { data_inizio: m.data_inizio, macro: m.macro || 'Casa', cat: m.cat || '', sub: m.sub || 'Rata Mutuo' };
-  const vals = { importo: String(m.importo_iniziale).replace('.', ','), tasso: String(m.tasso).replace('.', ','), rata: String(m.rata).replace('.', ','), durata: String(m.durata_mesi), quota: String(m.quota_utente) };
-  const txtInput = (label, id, val) => `<label class="meta">${label}</label><input type="text" inputmode="decimal" id="${id}" value="${escapeHtml(val)}" class="sheet-input">`;
-
-  apriSheet('Modifica mutuo', `
-    <label class="meta">Nome</label><input id="m-nome" value="${escapeHtml(m.nome)}" class="sheet-input">
-    ${txtInput('Importo iniziale (€)', 'm-imp', vals.importo)}
-    ${txtInput('Tasso annuo (%)', 'm-tasso', vals.tasso)}
-    ${txtInput('Durata (mesi)', 'm-durata', vals.durata)}
-    ${txtInput('Rata (€)', 'm-rata', vals.rata)}
-    <label class="meta">Data inizio</label><button type="button" id="m-data-btn" class="sheet-input" style="text-align:left;cursor:pointer">${_fmtDMutuo(tmp.data_inizio)}</button>
-    ${txtInput('Tua quota (%)', 'm-quota', vals.quota)}
-    <label class="meta">Banca</label><input id="m-banca" value="${escapeHtml(m.banca || '')}" class="sheet-input">
-    <div class="divider" style="margin:14px 0"></div>
-    <label class="meta">Conto da cui esce la rata</label>
-    <select id="m-conto" class="sheet-input">${conti.map(c => `<option ${c === m.conto ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}</select>
-    <label class="meta">Classificazione delle rate generate</label>
-    <button type="button" id="m-cat-btn" class="sheet-input" style="text-align:left;cursor:pointer">${[tmp.macro, tmp.cat, tmp.sub].filter(Boolean).join(' › ') || 'Scegli'}</button>
-    <label class="meta">Descrizione delle rate generate</label>
-    <input id="m-descmov" value="${escapeHtml(m.descMovimento || '')}" placeholder="Vuota = come le rate storiche (solo classificazione)" class="sheet-input">
-    <p class="meta" style="font-size:11px;margin:4px 0 12px;opacity:.8">Le rate future compariranno tra le spese con questa classificazione e descrizione, dalla prossima scadenza in avanti (le rate passate restano quelle già nello storico). Per cambiare anche le passate usa la modifica massiva dal Cerca.</p>
-    <button class="btn btn-primary" id="m-ok" style="margin-top:8px">Salva</button>
-  `, (body, chiudi) => {
-    body.querySelector('#m-data-btn').addEventListener('click', () => apriDataNativa(tmp.data_inizio, (nd) => { tmp.data_inizio = nd; body.querySelector('#m-data-btn').textContent = _fmtDMutuo(nd); }));
-    body.querySelector('#m-cat-btn').addEventListener('click', () => apriSelettoreCategoria(sel => { tmp.macro = sel.macro; tmp.cat = sel.cat; tmp.sub = sel.sub; body.querySelector('#m-cat-btn').textContent = [sel.macro, sel.cat, sel.sub].filter(Boolean).join(' › '); }));
-
-    body.querySelector('#m-ok').addEventListener('click', async () => {
-      const num = (fid) => parseFloat(String(body.querySelector('#' + fid).value).replace(',', '.')) || 0;
-      await saveMutuo({
-        nome: body.querySelector('#m-nome').value, importo_iniziale: num('m-imp'),
-        tasso: num('m-tasso'), durata_mesi: parseInt(body.querySelector('#m-durata').value) || 0,
-        rata: num('m-rata'), data_inizio: tmp.data_inizio,
-        quota_utente: num('m-quota') || 100, banca: body.querySelector('#m-banca').value,
-        giorno_addebito: m.giorno_addebito || 1, conto: body.querySelector('#m-conto').value,
-        macro: tmp.macro, cat: tmp.cat, sub: tmp.sub, descMovimento: body.querySelector('#m-descmov').value.trim(),
-      });
-      chiudi(); toast('Salvato'); renderMutuo(root);
+  // tap su una barra -> popup con i valori assoluti delle tre fasce
+  const tip = cont.querySelector('#efasce-tip');
+  let tipAperto = -1;
+  cont.querySelectorAll('[data-fasce-idx]').forEach(col => {
+    col.addEventListener('click', () => {
+      const i = parseInt(col.dataset.fasceIdx);
+      if (tipAperto === i) { tip.classList.remove('on'); tipAperto = -1; return; }  // secondo tap: chiude
+      tipAperto = i;
+      const d = dati[i];
+      tip.innerHTML = `<div class="et-title">${escapeHtml(d.label)} · <span class="num">${d.tot} kWh</span></div>
+        <div class="et-row"><i style="background:#1C3A6E"></i>F1 giorno <b class="num">${d.f1} kWh</b></div>
+        <div class="et-row"><i style="background:#2E9BFF"></i>F2 sera <b class="num">${d.f2} kWh</b></div>
+        <div class="et-row"><i style="background:#7B6CFF"></i>F3 notte <b class="num">${d.f3} kWh</b></div>`;
+      // posiziono sopra la colonna toccata, con flip se troppo a destra
+      const colRect = col.getBoundingClientRect();
+      const contRect = cont.getBoundingClientRect();
+      const centro = colRect.left - contRect.left + colRect.width / 2;
+      tip.classList.add('on');
+      const tw = tip.offsetWidth;
+      let left = centro - tw / 2;
+      left = Math.max(0, Math.min(contRect.width - tw, left));
+      tip.style.left = left + 'px';
     });
   });
 };
 
-const _fmtDMutuo = (iso) => { if (!iso) return ''; const [a, mm, g] = iso.split('-'); return `${g}/${mm}/${a}`; };
-
-const _addEvento = (root) => {
-  const tmp = { data: new Date().toISOString().slice(0, 10) };
-  apriSheet('Estinzione parziale', `
-    <label class="meta">Importo estinto (€)</label>
-    <input type="text" inputmode="decimal" id="e-imp" value="" placeholder="0,00" class="sheet-input">
-    <label class="meta">Data</label>
-    <button type="button" id="e-data-btn" class="sheet-input" style="text-align:left;cursor:pointer">${_fmtDMutuo(tmp.data)}</button>
-    <button class="btn btn-primary" id="e-ok" style="margin-top:8px">Registra</button>
-  `, (body, chiudi) => {
-    body.querySelector('#e-data-btn').addEventListener('click', () => apriDataNativa(tmp.data, (nd) => { tmp.data = nd; body.querySelector('#e-data-btn').textContent = _fmtDMutuo(nd); }));
-    body.querySelector('#e-ok').addEventListener('click', async () => {
-      const imp = parseFloat(String(body.querySelector('#e-imp').value).replace(',', '.')) || 0;
-      if (imp <= 0) { toast('Inserisci un importo'); return; }
-      await saveEventoMutuo({ tipo: 'estinzione_parziale', importo: imp, data: tmp.data, riferimento: 'mutuo-principale' });
-      chiudi(); toast('Registrato'); renderMutuo(root);
-    });
+const _renderSpike = (root) => {
+  const serie = seriePrezzo(_tipoPrezzo);
+  const cont = root.querySelector('#eprice-chart');
+  if (serie.length < 2) { cont.innerHTML = '<div class="empty" style="padding:20px 0">Storico insufficiente</div>'; return; }
+  const punti = serie.map(s => ({ label: s.label, valore: s.valore }));
+  const { svg, dataAttr } = costruisciSparkline(punti, {
+    vw: 320, vh: 130, padX: 10, padTop: 14, padBot: 26,
+    idLinea: 'enprice', idArea: 'enpricea',
+    coloreLinea0: '#2E9BFF', coloreLinea1: '#22E39A',
+    larghezzaLinea: 2.2, mostraEtichette: true, mostraUltimoPunto: true,
   });
+  cont.innerHTML = `<div class="spark spark-energia" ${dataAttr}>${svg}<div class="spark-vline"></div><div class="spark-tip"></div></div>`;
+  agganciaSparkline(cont.querySelector('.spark'), (v) => v.toFixed(3) + ' €/kWh');
 };

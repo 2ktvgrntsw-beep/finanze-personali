@@ -1,369 +1,461 @@
-// inserimento.js — Nuova operazione e modifica.
-// Righe compatte, data NATIVA iOS, tastierino che si chiude cambiando campo,
-// trasferimento con descrizione, suggerimenti a tendina che completano desc+categoria.
+// patrimonio.js — Vista Patrimonio: netto, composizione, conti, debiti.
+// Stessa grammatica a barre della home, ma le barre pesano sul patrimonio.
+// I valori (casa, saldi conti) si modificano toccandoli direttamente (no icone matita).
 
 import { state } from '../core/store.js';
-import { fmtEUR, todayISO, fmtDataEstesa, escapeHtml, round2 } from '../core/utils.js';
+import { dbGet, dbAdd, dbDelete, safeWrite } from '../core/db.js';
+import { contoDiTrasferimento, eInvestimento, strumentoDiTrasferimento } from '../services/attribuzioneInvestimenti.js';
+import { costruisciSparkline, agganciaSparkline } from '../core/sparkline.js';
+import { fmtEUR, fmtEUR0, escapeHtml, todayISO, nomeMese } from '../core/utils.js';
 import { iconaMacro, UI_SVG } from '../core/icons.js';
 import { navigate } from '../core/router.js';
-import { safeWrite } from '../core/db.js';
-import { saveMovimento, deleteMovimento } from '../services/movimentiService.js';
-import { saveRicorrente } from '../services/ricorrentiService.js';
-import { suggerisciPerTesto, suggerisciTag } from '../services/suggerimentiService.js';
-import { apriSelettoreCategoria, apriSheet, conferma } from './shared.js';
+import { saldoStimato, saveConto, LABEL_TIPO } from '../services/contiService.js';
+import {
+  totaleAttivita, totalePassivita, patrimonioNetto, composizioneAttivita, patrimonioLiquido,
+  salvaSnapshotMese, snapshotMeseMancante, serieStoricoPatrimonio,
+} from '../services/patrimonioService.js';
+import { statoPrestito } from '../services/prestitiService.js';
+import { apriSheet } from './shared.js';
 import { toast } from '../core/utils.js';
 
-let d = null;
-
-const nuovaBozza = () => ({
-  id: null, tipo: 'spesa', imp: 0, impStr: '0',
-  macro: '', cat: '', sub: '', conto: '', contoDest: '',
-  desc: '', tag: [], data: todayISO(), ripeti: null,
-});
-
-export const renderInserimento = async (root, params = {}) => {
-  if (params.ric) {
-    // MODIFICA RICORRENZA nella stessa UI dell'inserimento (coerenza visiva):
-    // precompila tutto dalla ricorrenza; al salvataggio aggiorna la ricorrenza
-    // (nessun nuovo movimento viene creato).
-    const r = state.ricorrenti.find(x => x.id === params.ric);
-    if (r) {
-      d = {
-        ...nuovaBozza(),
-        ricEdit: r.id,
-        tipo: r.tipo || 'spesa', imp: r.imp, impStr: String(r.imp).replace('.', ','),
-        macro: r.macro || '', cat: r.cat || '', sub: r.sub || '',
-        conto: r.conto || '', contoDest: r.contoDest || '',
-        desc: r.desc || r.nome || '', tag: Array.isArray(r.tag) ? r.tag : [],
-        data: r.prossima || todayISO(),
-        ripeti: {
-          frequenza: r.frequenza, dataInizio: r.dataInizio || r.prossima,
-          fineTipo: r.fineTipo || 'mai', fineData: r.fineData || null, fineConteggio: r.fineConteggio || null,
-        },
-      };
-    } else d = nuovaBozza();
-  } else if (params.id) {
-    const m = state.movimenti.find(x => x.id === params.id);
-    d = m ? { ...nuovaBozza(), ...m, impStr: String(m.imp).replace('.', ','), id: m.id } : nuovaBozza();
-  } else {
-    d = nuovaBozza();
-    const liq = state.conti.find(c => c.tipo === 'liquidita');
-    if (liq) d.conto = liq.nome;
-  }
-  const _title = document.getElementById('view-title');
-  const _isModifica = d.ricEdit || params.id;
-  _title.textContent = d.ricEdit ? 'Modifica ricorrenza' : params.id ? 'Modifica' : 'Nuova operazione';
-  // in modifica: titolo visibile e centrato (non si sovrappone ad Annulla)
-  if (_isModifica) { _title.style.display = 'block'; _title.classList.add('center'); }
-  else { _title.classList.remove('center'); }
-  _render(root);
+const ICONA_TIPO_ATT = { asset: UI_SVG.casa || iconaMacro('Casa'), investimenti: UI_SVG.investimento, risparmio: UI_SVG.risparmio, liquidita: UI_SVG.conto };
+const COLORE_ICONA = {
+  asset: 'rgba(110,91,255,.18)', investimenti: 'rgba(61,182,255,.18)',
+  risparmio: 'rgba(47,208,138,.16)', liquidita: 'var(--surface-2)',
 };
 
-const _render = (root) => {
-  const isTrasf = d.tipo === 'trasferimento';
-  const catLabel = d.macro ? [d.macro, d.cat, d.sub].filter(Boolean).join(' › ') : 'Seleziona categoria';
-  const impColor = d.tipo === 'entrata' ? 'var(--up)' : d.tipo === 'trasferimento' ? 'var(--transfer)' : 'var(--down)';
+// stato dei gruppi conti aperti (default: tutti chiusi per compattezza)
+const _gruppiAperti = new Set();
+const _contiEspansi = new Set();   // conti investimento con strumenti annidati aperti
+let _graficoPatAperto = false;     // grafico andamento: nascosto di default, apribile da icona
+let _filtroPatAperto = false;      // finestrella filtro categorie del totale
+const _tipiEsclusi = new Set();    // tipi esclusi dal totale/grafico (es. 'asset' per togliere la casa)
+let _obiettivoLiquido = null;      // obiettivo di patrimonio liquido per l'anno in corso (€)
+const CHIAVE_OBIETTIVO = 'obiettivo_liquido';
+// ordine dei 4 gruppi patrimoniali (persistito in meta); default sotto
+const ORDINE_DEFAULT = ['liquidita', 'risparmio', 'investimenti', 'asset'];
+let _ordineGruppi = ORDINE_DEFAULT.slice();
+const CHIAVE_ORDINE = 'ordine_gruppi_patrimonio';
 
-  // righe conto/categoria a seconda del tipo (il trasferimento MANTIENE la descrizione)
-  const contoRow = isTrasf ? `
-    <div class="frow"><div class="fic">${UI_SVG.conto}</div><div class="fval" id="pick-conto">${d.conto ? escapeHtml(d.conto) : '<span class="fph">Da conto</span>'}</div></div>
-    <div class="frow"><div class="fic">➡️</div><div class="fval" id="pick-conto-dest">${d.contoDest ? escapeHtml(d.contoDest) : '<span class="fph">A conto</span>'}</div></div>
-  ` : `
-    <div class="frow"><div class="fic">${UI_SVG.conto}</div><div class="fval" id="pick-conto">${d.conto ? escapeHtml(d.conto) : '<span class="fph">Conto</span>'}</div></div>
-    <div class="frow"><div class="fic act">${UI_SVG.tag}</div><div class="fval" id="pick-cat">${d.macro ? escapeHtml(catLabel) : '<span class="fph">Seleziona categoria</span>'}</div>${d.macro ? '<div class="fclear" id="clear-cat">✕</div>' : ''}</div>
-  `;
+export const renderPatrimonio = async (root) => {
+  // carico l'ordine gruppi salvato (una volta)
+  try {
+    const rec = await dbGet('meta', CHIAVE_ORDINE);
+    if (rec && Array.isArray(rec.valore) && rec.valore.length === 4) _ordineGruppi = rec.valore;
+  } catch { /* default */ }
+  // carico l'obiettivo di patrimonio liquido salvato
+  try {
+    const rec = await dbGet('meta', CHIAVE_OBIETTIVO);
+    if (rec && typeof rec.valore === 'number') _obiettivoLiquido = rec.valore;
+    if (rec && rec.anno && rec.anno !== new Date().getFullYear()) _obiettivoLiquido = null; // obiettivo di un altro anno: azzero
+  } catch { /* nessun obiettivo */ }
+  const esclusi = [..._tipiEsclusi];
+  const netto = patrimonioNetto(esclusi);
+  const att = totaleAttivita(esclusi);
+  const pass = totalePassivita(esclusi);
+
+  // conti per lo strip orizzontale
+  const contiAttivi = state.conti.filter(c => c.attivo !== false);
+
+  // debiti (mutuo + finanziamenti)
+  const debiti = [];
+  if (state.mutuo) {
+    const s = statoPrestito(state.mutuo, state.eventiMutuo);
+    if (s) debiti.push({ nome: state.mutuo.nome || 'Mutuo', residuo: s.residuo * (state.mutuo.quota_utente || 100) / 100, icona: UI_SVG.casa || iconaMacro('Casa'), max: state.mutuo.importo_iniziale });
+  }
+  for (const f of state.finanziamenti) {
+    if (f.attivo === false) continue;
+    const s = statoPrestito(f, []);
+    if (s) debiti.push({ nome: f.nome, residuo: s.residuo * (f.quota_utente || 100) / 100, icona: UI_SVG.excel, max: f.importo_iniziale });
+  }
+  const maxDeb = debiti.length ? Math.max(...debiti.map(x => x.max)) : 1;
+
+  const NOMI_TIPO = { liquidita: 'Liquidità', risparmio: 'Risparmio', investimenti: 'Investimenti', asset: 'Beni / Asset' };
+  const tipiDisponibili = composizioneAttivita().map(r => r.tipo);
+  const filtroAttivo = _tipiEsclusi.size > 0;
+
+  // card obiettivo patrimonio liquido (anno in corso)
+  const liquidoAttuale = patrimonioLiquido();
+  const annoCorrente = new Date().getFullYear();
+  const cardObiettivo = _obiettivoLiquidoHTML(liquidoAttuale, annoCorrente);
 
   root.innerHTML = `
-    <div class="ins-compact">
-      ${contoRow}
-      <div class="frow">
-        <div class="fic">${UI_SVG.descrizione}</div>
-        <input class="ffld" id="fld-desc" placeholder="Descrizione" value="${escapeHtml(d.desc)}" autocomplete="off">
-        <div class="sugg-dropdown" id="sugg-dd"></div>
+    <div class="net-card">
+      <div class="net-icons">
+        <button class="net-ic ${_graficoPatAperto ? 'on' : ''}" id="grafico-pat" aria-label="Andamento" title="Andamento">
+          <svg viewBox="0 0 24 24"><path d="M4 18l5-6 4 4 6-8"/><path d="M3 21h18"/></svg>
+        </button>
       </div>
-      <div class="frow"><div class="fic">${UI_SVG.importo}</div><div class="fval famount" id="pick-imp" style="color:${impColor}">${escapeHtml(d.impStr)} €</div></div>
-      <div class="frow"><div class="fic">📅</div><input type="date" class="ffld fdate" id="fld-data" value="${d.data}"></div>
-      <div class="frow"><div class="fic">${UI_SVG.ripeti}</div><div class="fval ${d.ripeti ? '' : 'fph'}" id="pick-ripeti">${d.ripeti ? _labelRipeti(d.ripeti) : 'Ripeti'}</div>${d.ripeti ? '<div class="fclear" id="clear-ripeti">✕</div>' : ''}</div>
-      <div class="frow"><div class="fic">${UI_SVG.hashtag}</div><div class="fval ${d.tag.length ? '' : 'fph'}" id="pick-tag">${d.tag.length ? d.tag.map(escapeHtml).join(', ') : 'Tag (opzionale)'}</div></div>
+      <div class="lbl">Patrimonio netto${filtroAttivo ? ' · filtrato' : ''}</div>
+      <div class="big num">${fmtEUR(netto)}</div>
+      <div class="sub">
+        <div><span class="lbl2">Attività</span><b class="num">${fmtEUR(att)}</b></div>
+        <div><span class="lbl2">Passività</span><b class="neg num">${pass > 0 ? '−' : ''}${fmtEUR(pass)}</b></div>
+      </div>
+      <div class="net-filtro ${_filtroPatAperto ? 'open' : ''}" id="net-filtro">
+        <div class="net-filtro-tit">Includi nel totale</div>
+        ${tipiDisponibili.map(t => `
+          <label class="net-filtro-riga">
+            <span>${NOMI_TIPO[t] || t}</span>
+            <input type="checkbox" data-tipo-filtro="${t}" ${_tipiEsclusi.has(t) ? '' : 'checked'}>
+          </label>`).join('')}
+      </div>
     </div>
 
-    <div class="type-switch-bottom">
-      <button data-t="spesa" class="${d.tipo === 'spesa' ? 'on' : ''}">Spesa</button>
-      <button data-t="entrata" class="${d.tipo === 'entrata' ? 'on en' : ''}">Entrata</button>
-      <button data-t="trasferimento" class="${d.tipo === 'trasferimento' ? 'on tr' : ''}">Trasferimento</button>
+    <div class="grafico-pat-wrap ${_graficoPatAperto ? 'open' : ''}" id="grafico-pat-wrap">
+      ${_graficoLineaHTML(esclusi)}
     </div>
 
-    <div class="ins-actions">
-      ${d.id ? '<button class="btn btn-danger" id="del-mov">Elimina</button>' : ''}${d.ricEdit ? '<button class="btn btn-danger" id="del-ric">Elimina ricorrenza</button>' : ''}
-      <button class="btn btn-primary" id="salva">${d.id ? 'Salva modifiche' : 'Salva'}</button>
-    </div>
+    ${cardObiettivo}
 
-    <div id="numpad-mount"></div>
+    ${_contiCollassabiliHTML()}
+
+    ${snapshotMeseMancante() && !filtroAttivo ? '<div style="text-align:center;margin:10px 0"><button class="btn btn-secondary" id="snap" style="width:auto;display:inline-flex;padding:9px 16px;font-size:13px">Salva rilevazione di oggi</button></div>' : ''}
+
+    ${debiti.length ? `
+      <div class="section-lbl"><span>Debiti</span></div>
+      ${debiti.map(x => `
+        <div class="patrow">
+          <div class="icon" style="background:rgba(255,107,94,.15)">${x.icona}</div>
+          <div class="body" data-debito="${escapeHtml(x.nome)}">
+            <div class="row1"><span class="name">${escapeHtml(x.nome)}</span><span class="amt neg num">−${fmtEUR(x.residuo)}</span></div>
+            <div class="bar red"><span style="width:${Math.max(1.5, x.residuo / maxDeb * 100)}%"></span></div>
+          </div>
+        </div>`).join('')}` : ''}
+
+    <div class="section-lbl"><span>Sezioni</span></div>
+    <div class="btn-row" style="flex-wrap:wrap;gap:10px">
+      <button class="btn btn-secondary" data-go="conti" style="flex:1 1 45%">Conti</button>
+      <button class="btn btn-secondary" data-go="mutuo" style="flex:1 1 45%">Mutuo</button>
+      <button class="btn btn-secondary" data-go="finanziamenti" style="flex:1 1 45%">Finanziamenti</button>
+      <button class="btn btn-secondary" data-go="investimenti" style="flex:1 1 45%">Investimenti</button>
+    </div>
   `;
 
-  // descrizione + tendina
-  const fldDesc = root.querySelector('#fld-desc');
-  fldDesc.addEventListener('input', () => { d.desc = fldDesc.value; _mostraTendina(root); });
-  fldDesc.addEventListener('focus', () => { _chiudiTastierino(root); _mostraTendina(root); });
+  // snapshot
+  const snap = root.querySelector('#snap');
+  if (snap) snap.addEventListener('click', async () => { await salvaSnapshotMese(); toast('Rilevazione salvata'); renderPatrimonio(root); });
 
-  // data nativa
-  const fldData = root.querySelector('#fld-data');
-  fldData.addEventListener('change', () => { d.data = fldData.value || d.data; });
-  fldData.addEventListener('focus', () => _chiudiTastierino(root));
-
-  // tipo
-  root.querySelectorAll('.type-switch-bottom button').forEach(b => b.addEventListener('click', () => {
-    d.tipo = b.dataset.t;
-    if (d.tipo === 'trasferimento') { d.macro = 'Investimenti'; d.cat = ''; d.sub = ''; }
-    _render(root);
+  // gruppi conti collassabili: SOLO mutazione locale (scroll e stato restano fermi)
+  root.querySelectorAll('[data-gruppo]').forEach(el => el.addEventListener('click', () => {
+    const tipo = el.dataset.gruppo;
+    const aperto = !_gruppiAperti.has(tipo);
+    if (aperto) _gruppiAperti.add(tipo); else _gruppiAperti.delete(tipo);
+    const body = el.parentElement.querySelector('.gruppo-body');
+    if (body) body.classList.toggle('open', aperto);
+    const chev = el.querySelector('.gruppo-chev');
+    if (chev) chev.classList.toggle('giu', aperto);
+    el.setAttribute('aria-expanded', String(aperto));
   }));
-
-  // conto
-  root.querySelector('#pick-conto').addEventListener('click', () => { _chiudiTastierino(root); _pickConto(root, 'conto'); });
-  const pcd = root.querySelector('#pick-conto-dest');
-  if (pcd) pcd.addEventListener('click', () => { _chiudiTastierino(root); _pickConto(root, 'contoDest'); });
-
-  // categoria
-  const pc = root.querySelector('#pick-cat');
-  if (pc) pc.addEventListener('click', () => { _chiudiTastierino(root); apriSelettoreCategoria(sel => { d.macro = sel.macro; d.cat = sel.cat; d.sub = sel.sub; _render(root); }); });
-  const cc = root.querySelector('#clear-cat');
-  if (cc) cc.addEventListener('click', () => { d.macro = ''; d.cat = ''; d.sub = ''; _render(root); });
-
-  // importo (tastierino)
-  root.querySelector('#pick-imp').addEventListener('click', () => { fldDesc.blur(); _apriTastierino(root); });
-
-  // ripeti
-  root.querySelector('#pick-ripeti').addEventListener('click', () => { _chiudiTastierino(root); _pickRipeti(root); });
-  const cr = root.querySelector('#clear-ripeti');
-  if (cr) cr.addEventListener('click', () => { d.ripeti = null; _render(root); });
-
-  // tag
-  root.querySelector('#pick-tag').addEventListener('click', () => { _chiudiTastierino(root); _pickTag(root); });
-
-  // salva / elimina
-  root.querySelector('#salva').addEventListener('click', () => _salva());
-  const dr = root.querySelector('#del-ric');
-  if (dr) dr.addEventListener('click', async () => {
-    if (await conferma('Eliminare la ricorrenza? I movimenti già generati restano.', { danger: true, ok: 'Elimina' })) {
-      const { deleteRicorrente } = await import('../services/ricorrentiService.js');
-      await deleteRicorrente(d.ricEdit); toast('Eliminata'); d = null; navigate('ricorrenti');
+  // tap su singolo conto -> modifica
+  root.querySelectorAll('[data-conto]').forEach(el => el.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const c = state.conti.find(x => x.id === el.dataset.conto);
+    // conto investimento CON strumenti -> espande/collassa l'annidamento (mutazione locale)
+    if (el.dataset.espandi) {
+      const nome = el.dataset.espandi;
+      const espanso = !_contiEspansi.has(nome);
+      if (espanso) _contiEspansi.add(nome); else _contiEspansi.delete(nome);
+      const blocco = root.querySelector(`.strumenti-annidati[data-strum-di="${CSS.escape(nome)}"]`);
+      if (blocco) blocco.classList.toggle('open', espanso);
+      const chev = el.querySelector('.conto-chev');
+      if (chev) chev.classList.toggle('giu', espanso);
+      el.setAttribute('aria-expanded', String(espanso));
+      return;
     }
-  });
-  const dm = root.querySelector('#del-mov');
-  if (dm) dm.addEventListener('click', async () => { if (!(await conferma('Eliminare questo movimento?', { danger: true, ok: 'Elimina' }))) return; const ok = await safeWrite(() => deleteMovimento(d.id), 'Movimento non eliminato'); if (!ok) return; toast('Eliminato'); navigate('movimenti'); });
-};
-
-const _labelRipeti = (r) => {
-  const base = { giornaliera: 'Ogni giorno', settimanale: 'Ogni settimana', mensile: 'Ogni mese', annuale: 'Ogni anno' }[r.frequenza] || 'Ricorrente';
-  let fine = '';
-  if (r.fineTipo === 'data' && r.fineData) fine = ` · fino al ${r.fineData.split('-').reverse().join('/')}`;
-  else if (r.fineTipo === 'conteggio' && r.fineConteggio) fine = ` · ${r.fineConteggio} volte`;
-  return base + fine;
-};
-
-const _mostraTendina = (root) => {
-  const dd = root.querySelector('#sugg-dd');
-  if (!dd) return;
-  const formRows = dd.closest('.form-rows');
-  const sugg = suggerisciPerTesto(d.desc, 12);
-  if (!sugg.length || d.desc.trim().length < 2) { dd.innerHTML = ''; dd.style.display = 'none'; if (formRows) formRows.classList.remove('sugg-open'); return; }
-  dd.style.display = 'block';
-  if (formRows) formRows.classList.add('sugg-open');
-  dd.innerHTML = sugg.map((s, i) => {
-    const c = s.classificazione;
-    const label = [c.macro, c.cat].filter(Boolean).join(':') || c.tipo;
-    return `<div class="sugg-item" data-sugg="${i}"><b>${escapeHtml(s.desc)}</b><span>${escapeHtml(label)}</span></div>`;
-  }).join('');
-  dd.querySelectorAll('[data-sugg]').forEach(el => el.addEventListener('click', () => {
-    const s = sugg[parseInt(el.dataset.sugg)]; const c = s.classificazione;
-    d.desc = s.desc; d.macro = c.macro || d.macro; d.cat = c.cat || ''; d.sub = c.sub || '';
-    d.tipo = c.tipo || d.tipo; if (c.conto) d.conto = c.conto;
-    _render(root);
+    // conto investimento SENZA strumenti annidati -> dettaglio con grafico; altri -> modifica saldo
+    if (c && c.tipo === 'investimenti') navigate('dettaglio-investimento', { conto: c.nome });
+    else _modificaConto(root, el.dataset.conto);
   }));
-};
 
-const _pickConto = (root, campo) => {
-  const conti = state.conti.filter(c => c.attivo !== false);
-  apriSheet(campo === 'contoDest' ? 'A quale conto' : 'Da quale conto', '', (body, chiudi) => {
-    body.innerHTML = conti.map(c => `<div class="mov" data-c="${escapeHtml(c.nome)}"><div class="ic">${UI_SVG.conto}</div><div class="body"><div class="d1">${escapeHtml(c.nome)}</div><div class="d2">${c.tipo}</div></div></div>`).join('');
-    body.querySelectorAll('[data-c]').forEach(el => el.addEventListener('click', () => { d[campo] = el.dataset.c; chiudi(); _render(root); }));
+  // tap su strumento di investimento -> pagina dettaglio con grafico andamento
+  root.querySelectorAll('[data-strumento]').forEach(el => el.addEventListener('click', (e) => { e.stopPropagation(); navigate('dettaglio-investimento', { strumento: el.dataset.strumento }); }));
+
+  // riordino conti
+  const rio = root.querySelector('#riordina-conti');
+  if (rio) rio.addEventListener('click', () => _riordinaConti(root));
+
+  // tap su tipo attività -> dettaglio conti di quel tipo
+  root.querySelectorAll('[data-tipo]').forEach(el => el.addEventListener('click', () => navigate('conti', { tipo: el.dataset.tipo })));
+
+  // navigazione sezioni
+  root.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => navigate(b.dataset.go)));
+
+  // toggle grafico andamento patrimonio (icona nella net-card)
+  const gBtn = root.querySelector('#grafico-pat');
+  const gWrap = root.querySelector('#grafico-pat-wrap');
+  if (gBtn && gWrap) gBtn.addEventListener('click', () => {
+    _graficoPatAperto = !_graficoPatAperto;
+    gWrap.classList.toggle('open', _graficoPatAperto);
+    gBtn.classList.toggle('on', _graficoPatAperto);
+    if (_graficoPatAperto) _agganciaGraficoPat(root);
   });
-};
 
-const _pickRipeti = (root) => {
-  const cur = d.ripeti || { frequenza: 'mensile', dataInizio: d.data, fineTipo: 'mai' };
-  apriSheet('Rendi ricorrente', `
-    <label class="meta">Frequenza</label>
-    <select id="r-freq" class="sheet-input">
-      <option value="giornaliera" ${cur.frequenza === 'giornaliera' ? 'selected' : ''}>Ogni giorno</option>
-      <option value="settimanale" ${cur.frequenza === 'settimanale' ? 'selected' : ''}>Ogni settimana</option>
-      <option value="mensile" ${cur.frequenza === 'mensile' ? 'selected' : ''}>Ogni mese</option>
-      <option value="annuale" ${cur.frequenza === 'annuale' ? 'selected' : ''}>Ogni anno</option>
-    </select>
-    <label class="meta">Inizia il</label>
-    <input type="date" id="r-inizio" value="${cur.dataInizio || d.data}" class="sheet-input">
-    <label class="meta">Termina</label>
-    <select id="r-fine-tipo" class="sheet-input">
-      <option value="mai" ${cur.fineTipo === 'mai' ? 'selected' : ''}>Mai</option>
-      <option value="data" ${cur.fineTipo === 'data' ? 'selected' : ''}>A una data</option>
-      <option value="conteggio" ${cur.fineTipo === 'conteggio' ? 'selected' : ''}>Dopo N volte</option>
-    </select>
-    <div id="r-fine-extra"></div>
-    <button class="btn btn-primary" id="r-ok" style="margin-top:8px">Conferma</button>
-  `, (body, chiudi) => {
-    const ftEl = body.querySelector('#r-fine-tipo'), extra = body.querySelector('#r-fine-extra');
-    const rExtra = () => {
-      if (ftEl.value === 'data') extra.innerHTML = `<label class="meta">Fino al</label><input type="date" id="r-fine-data" value="${cur.fineData || ''}" class="sheet-input">`;
-      else if (ftEl.value === 'conteggio') extra.innerHTML = `<label class="meta">Numero di volte</label><input type="number" id="r-fine-conteggio" value="${cur.fineConteggio || 12}" min="1" class="sheet-input">`;
-      else extra.innerHTML = '';
-    };
-    ftEl.addEventListener('change', rExtra); rExtra();
-    body.querySelector('#r-ok').addEventListener('click', () => {
-      const ft = ftEl.value;
-      d.ripeti = {
-        frequenza: body.querySelector('#r-freq').value, dataInizio: body.querySelector('#r-inizio').value, fineTipo: ft,
-        fineData: ft === 'data' ? (body.querySelector('#r-fine-data')?.value || null) : null,
-        fineConteggio: ft === 'conteggio' ? (parseInt(body.querySelector('#r-fine-conteggio')?.value) || null) : null,
-      };
-      chiudi(); _render(root);
+  // toggle finestrella filtro categorie — il pulsante ora è nell'HEADER, a sinistra del titolo
+  const fBtn = document.getElementById('btn-filtro-pat');
+  const fBox = root.querySelector('#net-filtro');
+  if (fBtn) {
+    fBtn.classList.toggle('on', _filtroPatAperto || _tipiEsclusi.size > 0);
+    // rimpiazzo il listener clonando per non accumulare handler tra i re-render
+    const fresh = fBtn.cloneNode(true);
+    fBtn.parentNode.replaceChild(fresh, fBtn);
+    fresh.style.display = 'flex';
+    fresh.addEventListener('click', () => {
+      _filtroPatAperto = !_filtroPatAperto;
+      if (fBox) fBox.classList.toggle('open', _filtroPatAperto);
+      fresh.classList.toggle('on', _filtroPatAperto || _tipiEsclusi.size > 0);
     });
-  });
-};
+  }
 
-const _pickTag = (root) => {
-  const render = (body, chiudi) => {
-    const esistenti = suggerisciTag('', 20);
-    body.innerHTML = `
-      <input id="tag-inp" placeholder="Uno o più tag, separati da virgola..." class="sheet-input" autocomplete="off">
-      <div class="chip-row" style="flex-wrap:wrap" id="tag-chips">
-        ${esistenti.map(t => `<div class="chip ${d.tag.includes(t) ? 'on' : ''}" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</div>`).join('')}
-      </div>
-      <button class="btn btn-primary" id="tag-ok" style="margin-top:16px">Fatto</button>`;
-    const inp = body.querySelector('#tag-inp');
-    // più tag in un colpo: separali con la VIRGOLA ("mare, famiglia, vacanza26")
-    const aggiungi = (testo) => {
-      const nuovi = testo.split(',').map(t => t.trim()).filter(Boolean);
-      if (nuovi.length) d.tag = Array.from(new Set([...d.tag, ...nuovi]));
-    };
-    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && inp.value.trim()) { aggiungi(inp.value); inp.value = ''; render(body, chiudi); } });
-    // filtro live dei suggerimenti mentre scrivi
-    inp.addEventListener('input', () => {
-      const filtrati = suggerisciTag(inp.value, 20);
-      body.querySelector('#tag-chips').innerHTML = filtrati.map(t => `<div class="chip ${d.tag.includes(t) ? 'on' : ''}" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</div>`).join('');
-      body.querySelectorAll('[data-tag]').forEach(el => el.addEventListener('click', () => { const t = el.dataset.tag; d.tag = d.tag.includes(t) ? d.tag.filter(x => x !== t) : [...d.tag, t]; render(body, chiudi); }));
-    });
-    body.querySelectorAll('[data-tag]').forEach(el => el.addEventListener('click', () => { const t = el.dataset.tag; d.tag = d.tag.includes(t) ? d.tag.filter(x => x !== t) : [...d.tag, t]; render(body, chiudi); }));
-    // "Fatto" raccoglie ANCHE il tag ancora scritto nell'input (senza Invio):
-    // prima si perdeva in silenzio — era il "tag non tenuto" segnalato.
-    body.querySelector('#tag-ok').addEventListener('click', () => {
-      if (inp.value.trim()) aggiungi(inp.value);
-      chiudi(); _render(root);
-    });
-  };
-  apriSheet('Tag', '', render);
-};
-
-// Tastierino: si CHIUDE quando si tocca un altro campo (via _chiudiTastierino)
-const _chiudiTastierino = (root) => { const m = root.querySelector('#numpad-mount'); if (m) m.innerHTML = ''; };
-
-const _apriTastierino = (root) => {
-  const mount = root.querySelector('#numpad-mount');
-  const tasti = ['7', '8', '9', '4', '5', '6', '1', '2', '3', ',', '0', '00'];
-  mount.innerHTML = `<div class="numpad">
-    ${tasti.map(t => `<button data-k="${t}">${t}</button>`).join('')
-      .replace('<button data-k="9">9</button>', '<button data-k="9">9</button><button class="sub" data-k="C">C</button>')
-      .replace('<button data-k="6">6</button>', '<button data-k="6">6</button><button class="sub" data-k="back">⌫</button>')
-      .replace('<button data-k="3">3</button>', '<button data-k="3">3</button><button class="ok" data-k="ok" style="grid-row:span 2">OK</button>')}
-  </div>`;
-  const upd = () => { d.imp = round2(parseFloat(d.impStr.replace(',', '.')) || 0); const el = root.querySelector('#pick-imp'); if (el) el.textContent = `${d.impStr} €`; };
-  mount.querySelectorAll('.numpad button').forEach(b => b.addEventListener('click', () => {
-    const k = b.dataset.k;
-    if (k === 'C') d.impStr = '0';
-    else if (k === 'back') d.impStr = d.impStr.length > 1 ? d.impStr.slice(0, -1) : '0';
-    else if (k === 'ok') { mount.innerHTML = ''; upd(); return; }
-    else if (k === ',') { if (!d.impStr.includes(',')) d.impStr += ','; }
-    else { d.impStr = d.impStr === '0' ? k : d.impStr + k; }
-    upd();
+  // checkbox categorie: includi/escludi dal totale + grafico
+  root.querySelectorAll('[data-tipo-filtro]').forEach(cb => cb.addEventListener('change', () => {
+    const t = cb.dataset.tipoFiltro;
+    if (cb.checked) _tipiEsclusi.delete(t); else _tipiEsclusi.add(t);
+    _filtroPatAperto = true;   // tieni aperta la finestrella
+    renderPatrimonio(root);
   }));
+
+  // aggancio grafico interattivo (se aperto)
+  if (_graficoPatAperto) _agganciaGraficoPat(root);
+
+  // obiettivo liquido: apri lo sheet per impostarlo/modificarlo
+  const setObBtn = root.querySelector('#set-obiettivo');
+  if (setObBtn) setObBtn.addEventListener('click', () => _impostaObiettivo(root));
 };
 
-const _salva = async () => {
-  if (d.imp <= 0) { toast('Inserisci un importo'); return; }
-  if (d.tipo === 'trasferimento' && (!d.conto || !d.contoDest)) { toast('Scegli i conti'); return; }
-  if (d.tipo !== 'trasferimento' && !d.macro) { toast('Scegli una categoria'); return; }
+// interattività del grafico patrimonio: delega al modulo condiviso sparkline.js
+const _agganciaGraficoPat = (root) => {
+  agganciaSparkline(root.querySelector('.spark-pat'), fmtEUR);
+};
 
-  // ── MODIFICA RICORRENZA: aggiorna solo la ricorrenza, nessun movimento nuovo ──
-  if (d.ricEdit) {
-    const r = state.ricorrenti.find(x => x.id === d.ricEdit);
-    if (r) {
-      await saveRicorrente({
-        ...r,
-        nome: d.desc || r.nome, tipo: d.tipo, imp: d.imp,
-        macro: d.macro, cat: d.cat, sub: d.sub,
-        conto: d.conto, contoDest: d.contoDest, tag: d.tag, desc: d.desc,
-        frequenza: d.ripeti ? d.ripeti.frequenza : r.frequenza,
-        fineTipo: d.ripeti ? d.ripeti.fineTipo : r.fineTipo,
-        fineData: d.ripeti ? d.ripeti.fineData : r.fineData,
-        fineConteggio: d.ripeti ? d.ripeti.fineConteggio : r.fineConteggio,
+// Riordino dei 4 GRUPPI patrimoniali (liquidità, risparmio, investimenti, asset).
+// Frecce su/giù: affidabili su mobile, salvate in meta.
+const _riordinaConti = (root) => {
+  const NOMI = { liquidita: 'Liquidità', risparmio: 'Risparmio', investimenti: 'Investimenti', asset: 'Beni / Asset' };
+  let ordine = _ordineGruppi.slice();
+
+  apriSheet('Riordina gruppi', '', (body, chiudi) => {
+    const disegna = () => {
+      body.innerHTML = `
+        <p class="meta" style="margin-bottom:12px">Usa le frecce per cambiare l'ordine dei gruppi in Patrimonio.</p>
+        <div id="rio-lista">${ordine.map((tipo, i) => `
+          <div class="rio-riga">
+            <div class="ic">${ICONA_TIPO_ATT[tipo] || UI_SVG.conto}</div>
+            <div class="body"><div class="d1">${NOMI[tipo]}</div></div>
+            <div class="rio-frecce">
+              <button class="rio-su" data-i="${i}" ${i === 0 ? 'disabled' : ''}>▲</button>
+              <button class="rio-giu" data-i="${i}" ${i === ordine.length - 1 ? 'disabled' : ''}>▼</button>
+            </div>
+          </div>`).join('')}</div>
+        <button class="btn btn-primary" id="rio-ok" style="margin-top:16px">Fatto</button>`;
+
+      body.querySelectorAll('.rio-su').forEach(b => b.addEventListener('click', () => {
+        const i = +b.dataset.i; if (i > 0) { [ordine[i - 1], ordine[i]] = [ordine[i], ordine[i - 1]]; disegna(); }
+      }));
+      body.querySelectorAll('.rio-giu').forEach(b => b.addEventListener('click', () => {
+        const i = +b.dataset.i; if (i < ordine.length - 1) { [ordine[i + 1], ordine[i]] = [ordine[i], ordine[i + 1]]; disegna(); }
+      }));
+      body.querySelector('#rio-ok').addEventListener('click', async () => {
+        _ordineGruppi = ordine.slice();
+        try { await dbAdd('meta', { chiave: CHIAVE_ORDINE, valore: _ordineGruppi }); } catch { /* ignore */ }
+        chiudi(); toast('Ordine salvato'); renderPatrimonio(root);
       });
+    };
+    disegna();
+  });
+};
+
+// Bottom sheet per modificare un conto (saldo/valore) — sostituisce l'icona matita
+const _modificaConto = (root, contoId) => {
+  const c = state.conti.find(x => x.id === contoId);
+  if (!c) return;
+  const isAsset = c.tipo === 'asset';
+  apriSheet(escapeHtml(c.nome), `
+    <p class="meta" style="margin-bottom:14px">${isAsset ? 'Valore attuale del bene (aggiornalo a mano quando cambia).' : 'Saldo di partenza: da qui l’app aggiorna il saldo automaticamente coi movimenti che assegni a questo conto.'}</p>
+    <label class="meta">${isAsset ? 'Valore' : 'Saldo iniziale'} (€)</label>
+    <input type="number" step="0.01" id="c-saldo" value="${c.saldo_iniziale}" style="width:100%;padding:14px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);color:var(--txt);font-size:18px;font-weight:700;margin:8px 0 4px">
+    ${!isAsset ? `<label class="meta">Data del saldo</label><input type="date" id="c-data" value="${c.data_saldo}" class="sheet-input">` : ''}
+    ${isAsset ? `<label class="meta">Posseduto dal</label><input type="date" id="c-possesso" value="${c.possessoData || c.data_saldo || ''}" class="sheet-input"><p class="meta" style="font-size:11px;margin-bottom:8px">Da questa data il bene compare nel grafico dell'andamento patrimonio.</p>` : ''}
+    <button class="btn btn-primary" id="c-ok" style="margin-top:16px">Salva</button>
+  `, (body, chiudi) => {
+    body.querySelector('#c-ok').addEventListener('click', async () => {
+      const nuovo = parseFloat(body.querySelector('#c-saldo').value) || 0;
+      const nuovaData = body.querySelector('#c-data') ? body.querySelector('#c-data').value : c.data_saldo;
+      const possesso = body.querySelector('#c-possesso') ? body.querySelector('#c-possesso').value : c.possessoData;
+      const ok = await safeWrite(() => saveConto({ ...c, saldo_iniziale: nuovo, data_saldo: nuovaData, possessoData: possesso }), 'Valore non aggiornato');
+      if (!ok) return;
+      chiudi(); toast('Aggiornato'); renderPatrimonio(root);
+    });
+  });
+};
+
+// Sezione conti collassabile per tipo. Nel gruppo Investimenti mostra anche gli
+// strumenti (PAC, Crypto, Azioni sciolte) ricavati dai trasferimenti. I conti sono
+// riordinabili (campo 'ordine').
+// Sheet per impostare/modificare l'obiettivo di patrimonio liquido dell'anno.
+const _impostaObiettivo = (root) => {
+  const anno = new Date().getFullYear();
+  const valoreCorrente = _obiettivoLiquido != null ? String(_obiettivoLiquido).replace('.', ',') : '';
+  apriSheet(`Obiettivo liquido ${anno}`, `
+    <p class="meta" style="margin-bottom:10px;line-height:1.5">Quanto vuoi avere in liquidità, risparmio e investimenti entro fine ${anno}? (esclusi i beni come la casa)</p>
+    <label class="meta">Obiettivo (€)</label>
+    <input type="text" inputmode="decimal" id="ob-val" value="${valoreCorrente}" placeholder="Es. 50000" class="sheet-input">
+    <div class="btn-row">
+      ${_obiettivoLiquido != null ? '<button class="btn btn-danger" id="ob-del">Rimuovi</button>' : ''}
+      <button class="btn btn-primary" id="ob-ok">Salva</button>
+    </div>
+  `, (body, chiudi) => {
+    body.querySelector('#ob-ok').addEventListener('click', async () => {
+      const val = parseFloat(String(body.querySelector('#ob-val').value).replace(',', '.'));
+      if (!val || val <= 0) { toast('Inserisci un importo valido'); return; }
+      const ok = await safeWrite(() => dbAdd('meta', { chiave: CHIAVE_OBIETTIVO, valore: val, anno }), 'Obiettivo non salvato');
+      if (!ok) return;
+      _obiettivoLiquido = val;
+      chiudi(); toast('Obiettivo salvato'); renderPatrimonio(root);
+    });
+    const del = body.querySelector('#ob-del');
+    if (del) del.addEventListener('click', async () => {
+      const ok = await safeWrite(() => dbDelete('meta', CHIAVE_OBIETTIVO), 'Obiettivo non rimosso');
+      if (!ok) return;
+      _obiettivoLiquido = null;
+      chiudi(); toast('Obiettivo rimosso'); renderPatrimonio(root);
+    });
+  });
+};
+
+// Card OBIETTIVO patrimonio liquido per l'anno in corso: confronto tra il liquido
+// attuale (liquidità+risparmio+investimenti) e l'obiettivo impostato dall'utente.
+function _obiettivoLiquidoHTML(liquidoAttuale, anno) {
+  if (_obiettivoLiquido == null) {
+    // nessun obiettivo: invito a impostarlo
+    return `<div class="card obiettivo-card">
+      <div class="obiettivo-head">
+        <div class="obiettivo-tit">Obiettivo liquido ${anno}</div>
+        <button class="obiettivo-set" id="set-obiettivo">Imposta</button>
+      </div>
+      <div class="obiettivo-vuoto">Imposta un traguardo di patrimonio liquido per quest'anno e segui i progressi.</div>
+      <div class="obiettivo-attuale">Liquido attuale: <b class="num">${fmtEUR(liquidoAttuale)}</b></div>
+    </div>`;
+  }
+  const pct = _obiettivoLiquido > 0 ? Math.min(100, (liquidoAttuale / _obiettivoLiquido) * 100) : 0;
+  const raggiunto = liquidoAttuale >= _obiettivoLiquido;
+  const manca = Math.max(0, _obiettivoLiquido - liquidoAttuale);
+  return `<div class="card obiettivo-card">
+    <div class="obiettivo-head">
+      <div class="obiettivo-tit">Obiettivo liquido ${anno}</div>
+      <button class="obiettivo-set" id="set-obiettivo">Modifica</button>
+    </div>
+    <div class="obiettivo-cifre">
+      <div><span class="lbl2">Attuale</span><b class="num">${fmtEUR(liquidoAttuale)}</b></div>
+      <div style="text-align:right"><span class="lbl2">Obiettivo</span><b class="num">${fmtEUR(_obiettivoLiquido)}</b></div>
+    </div>
+    <div class="obiettivo-barra"><div class="obiettivo-fill ${raggiunto ? 'done' : ''}" style="width:${pct.toFixed(1)}%"></div></div>
+    <div class="obiettivo-foot">
+      ${raggiunto
+        ? `<span class="obiettivo-ok">🎉 Obiettivo raggiunto! (${pct.toFixed(0)}%)</span>`
+        : `<span>${pct.toFixed(0)}% raggiunto</span><span class="obiettivo-manca">mancano ${fmtEUR(manca)}</span>`}
+    </div>
+  </div>`;
+}
+
+function _contiCollassabiliHTML() {
+  const perTipo = contiPerTipoLocale();
+  const ordine = _ordineGruppi;
+  const LABEL = { liquidita: 'Liquidità', risparmio: 'Risparmio', investimenti: 'Investimenti', asset: 'Beni / Asset' };
+  let html = '<div class="section-lbl"><span>I tuoi conti</span><span style="color:var(--accent);font-size:11px;cursor:pointer" id="riordina-conti">Riordina</span></div>';
+  for (const tipo of ordine) {
+    let conti = perTipo[tipo] || [];
+    if (!conti.length) continue;
+    // ordina per campo 'ordine' (se impostato), altrimenti lascia l'ordine naturale
+    conti = conti.slice().sort((a, b) => (a.ordine ?? 999) - (b.ordine ?? 999));
+    const tot = conti.reduce((s, c) => s + saldoStimato(c), 0);
+    const aperto = _gruppiAperti.has(tipo);
+
+    // per gli investimenti: strumenti annidati SOTTO il conto di riferimento.
+    // L'attribuzione conto/strumento usa la FONTE UNICA (attribuzioneInvestimenti.js),
+    // condivisa con la pagina di dettaglio: così i numeri non possono divergere.
+    let strumentiPerConto = {};
+    if (tipo === 'investimenti') {
+      for (const m of state.movimenti) {
+        if (!eInvestimento(m, state.conti)) continue;
+        const conto = contoDiTrasferimento(m, state.conti);
+        if (!conto) continue;  // non attribuibile: lo salto (evita "Altro" rumoroso)
+        const strum = strumentoDiTrasferimento(m, conto);
+        strumentiPerConto[conto] = strumentiPerConto[conto] || {};
+        strumentiPerConto[conto][strum] = (strumentiPerConto[conto][strum] || 0) + m.imp;
+      }
     }
-    toast('Ricorrenza aggiornata');
-    d = null;
-    if (history.length > 1) history.back(); else navigate('ricorrenti');
-    return;
-  }
+    const strumentiDi = (contoNome, espanso) => {
+      const s = strumentiPerConto[contoNome];
+      if (!s) return '';
+      const lista = Object.entries(s).sort((a, b) => b[1] - a[1]);
+      if (!lista.length) return '';
+      return `<div class="strumenti-annidati coll${espanso ? ' open' : ''}" data-strum-di="${escapeHtml(contoNome)}">` + lista.map(([nome, v]) => `
+        <div class="conto-riga strumento-riga" data-strumento="${escapeHtml(nome)}">
+          <div class="conto-nome">${escapeHtml(nome)}</div>
+          <div class="conto-saldo num">${fmtEUR(v)}</div>
+          <div class="conto-chev">›</div>
+        </div>`).join('') + `</div>`;
+    };
 
-  const wasTrasf = d.tipo === 'trasferimento';
-  const eraModifica = !!d.id;
-  const ok = await safeWrite(() => saveMovimento({
-    id: d.id, tipo: d.tipo, imp: d.imp, data: d.data,
-    macro: d.macro, cat: d.cat, sub: d.sub, conto: d.conto, contoDest: d.contoDest,
-    desc: d.desc, tag: d.tag,
-  }), eraModifica ? 'Modifiche non salvate' : 'Movimento non salvato');
-  // se la scrittura è fallita, NON navigo: l'utente vede il toast e può riprovare
-  // senza perdere ciò che ha inserito.
-  if (!ok) return;
-
-  // crea la ricorrenza se richiesta — ANCHE in modifica (bug precedente: solo su nuovo)
-  if (d.ripeti) {
-    // Il movimento appena salvato È la prima occorrenza della ricorrenza:
-    // la ricorrenza deve partire dall'occorrenza SUCCESSIVA, altrimenti il
-    // generatore ricreerebbe il movimento di oggi (doppione).
-    // Se invece la data di inizio è futura (oltre il movimento), parte da lì.
-    const copreMovimento = d.ripeti.dataInizio <= d.data;
-    const prossima = copreMovimento ? _occorrenzaSuccessiva(d.ripeti.dataInizio, d.ripeti.frequenza) : d.ripeti.dataInizio;
-    const okRic = await safeWrite(() => saveRicorrente({
-      nome: d.desc || d.macro, tipo: d.tipo, frequenza: d.ripeti.frequenza,
-      imp: d.imp, macro: d.macro, cat: d.cat, sub: d.sub,
-      conto: d.conto, contoDest: d.contoDest, tag: d.tag, desc: d.desc,
-      dataInizio: d.ripeti.dataInizio, prossima,
-      generati: copreMovimento ? 1 : 0,   // il movimento manuale conta come prima occorrenza
-      fineTipo: d.ripeti.fineTipo, fineData: d.ripeti.fineData, fineConteggio: d.ripeti.fineConteggio,
-    }), 'Ricorrenza non impostata');
-    toast(okRic ? 'Salvato e reso ricorrente' : 'Movimento salvato, ma ricorrenza non impostata');
-  } else {
-    toast(eraModifica ? 'Modifiche salvate' : 'Salvato');
+    // Contenuto SEMPRE renderizzato: aprire/chiudere è solo un classList.toggle
+    // (niente re-render dell'intera pagina: scroll e stato restano dove sono).
+    html += `
+      <div class="gruppo-conti">
+        <div class="gruppo-head" data-gruppo="${tipo}" role="button" aria-expanded="${aperto}">
+          <div class="gruppo-ic" style="background:${COLORE_ICONA[tipo]}">${ICONA_TIPO_ATT[tipo]}</div>
+          <div class="gruppo-nome">${LABEL[tipo]} <span class="meta">· ${conti.length}</span></div>
+          <div class="gruppo-tot num">${fmtEUR(tot)}</div>
+          <div class="gruppo-chev${aperto ? ' giu' : ''}">›</div>
+        </div>
+        <div class="gruppo-body coll${aperto ? ' open' : ''}">
+        ${conti.map(c => {
+          const haStrum = tipo === 'investimenti' && !!strumentiPerConto[c.nome];
+          const espanso = _contiEspansi.has(c.nome);
+          return `
+          <div class="conto-riga${haStrum ? ' conto-espandibile' : ''}" data-conto="${c.id}"${haStrum ? ` data-espandi="${escapeHtml(c.nome)}" role="button" aria-expanded="${espanso}"` : ''}>
+            <div class="conto-nome">${escapeHtml(c.nome)}</div>
+            <div class="conto-saldo num">${fmtEUR(saldoStimato(c))}</div>
+            <div class="conto-chev${haStrum && espanso ? ' giu' : ''}">›</div>
+          </div>
+          ${haStrum ? strumentiDi(c.nome, espanso) : ''}`;
+        }).join('')}
+        </div>
+      </div>`;
   }
+  return html;
+}
 
-  d = null;
-  // se era una MODIFICA, torna da dove sei venuto (es. la ricerca coi risultati);
-  // se era un nuovo inserimento, vai alla pagina naturale.
-  if (eraModifica && history.length > 1) history.back();
-  else navigate(wasTrasf ? 'movimenti' : 'spese');
-};
+// helper locale (evita import circolari)
+function contiPerTipoLocale() {
+  const out = {};
+  for (const c of state.conti) if (c.attivo !== false) (out[c.tipo] = out[c.tipo] || []).push(c);
+  return out;
+}
 
-// Occorrenza successiva a una data, per frequenza (fine mese gestito: 31 gen -> 28 feb)
-const _occorrenzaSuccessiva = (dataISO, frequenza) => {
-  const [y, m, g] = dataISO.split('-').map(Number);
-  if (frequenza === 'giornaliera' || frequenza === 'settimanale') {
-    const d = new Date(y, m - 1, g + (frequenza === 'giornaliera' ? 1 : 7));
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  }
-  if (frequenza === 'annuale') {
-    const maxG = new Date(y + 1, m, 0).getDate();
-    return `${y + 1}-${String(m).padStart(2, '0')}-${String(Math.min(g, maxG)).padStart(2, '0')}`;
-  }
-  const ny = m === 12 ? y + 1 : y, nm = m === 12 ? 1 : m + 1;
-  const maxG = new Date(ny, nm, 0).getDate();
-  return `${ny}-${String(nm).padStart(2, '0')}-${String(Math.min(g, maxG)).padStart(2, '0')}`;
-};
+// Grafico a linea del patrimonio: assi €, stima (tratteggiata) + reale (piena), tocco per cifra.
+function _graficoLineaHTML(esclusi = []) {
+  const { punti } = serieStoricoPatrimonio(esclusi);
+  if (punti.length < 2) return '<div class="card" style="padding:16px"><div class="empty">Storico insufficiente</div></div>';
+
+  // decimation: max ~40 punti per non appesantire il path
+  let p = punti;
+  if (p.length > 40) { const step = Math.ceil(p.length / 40); p = p.filter((_, i) => i % step === 0 || i === punti.length - 1); }
+
+  const fmtMese = (am) => { const [y, m] = am.split('-'); return nomeMese(parseInt(m) - 1).slice(0, 3) + " '" + y.slice(2); };
+  const datiGrafico = p.map(pt => ({ label: fmtMese(pt.annomese), valore: pt.valore }));
+  const { svg, dataAttr } = costruisciSparkline(datiGrafico, {
+    vw: 320, vh: 150, padX: 12, padTop: 16, padBot: 30,
+    idLinea: 'patline', idArea: 'patarea',
+    coloreLinea0: '#2E9BFF', coloreLinea1: '#22E39A',   // blu -> verde (identità Patrimonio)
+    larghezzaLinea: 2.4, mostraEtichette: true, mostraUltimoPunto: true,
+  });
+  return `<div class="card spark-card" style="margin:0">
+    <div class="spark-title">Andamento patrimonio</div>
+    <div class="spark spark-pat" ${dataAttr}>
+      ${svg}
+      <div class="spark-vline"></div>
+      <div class="spark-tip"></div>
+    </div>
+  </div>`;
+}

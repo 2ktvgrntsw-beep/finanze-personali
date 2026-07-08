@@ -1,173 +1,142 @@
-// impostazioni.js — Impostazioni: backup/recovery Excel, bulk tag, gestione dati.
+// drill.js — Drill-down adattivo nelle categorie, con navigazione tra i periodi.
+// Params: macro (obbligatorio), cat (opzionale), periodo, mese.
+// A ogni livello: navigatore mese/anno con frecce (per confrontare i periodi al volo)
+// e card [Totale] [vs media] [vs precedente], come nella home.
 
-import { UI_SVG } from '../core/icons.js';
-import { state, refreshAll } from '../core/store.js';
-import { APP_VERSION } from '../core/version.js';
-import { escapeHtml, fmtEUR, fmtDataEstesa } from '../core/utils.js';
-import { navigate } from '../core/router.js';
-import { esportaBackup, importaBackup } from '../services/excelService.js';
-import { registraBackupExcelFatto, giorniDaUltimoBackupExcel, esportaJSON, importaJSON } from '../services/backupService.js';
-import { applicaTagBulk, cercaMovimenti } from '../services/movimentiService.js';
-import { STORE_NAMES } from '../core/db.js';
-import { dbClear } from '../core/db.js';
-import { apriSheet, conferma } from './shared.js';
-import { toast } from '../core/utils.js';
+import { state, movimentiDelMese } from '../core/store.js';
+import { fmtEUR, fmtPct, nomeMese, escapeHtml } from '../core/utils.js';
+import { iconaMacro } from '../core/icons.js';
+import { navigate, buildHash } from '../core/router.js';
+import { aggregaPerLivello, soloSpese } from '../services/movimentiService.js';
+import { categoriaHaSub } from '../services/categorieService.js';
+import { abilitaSwipeIndietro } from './shared.js';
 
-export const renderImpostazioni = async (root) => {
-  document.getElementById('view-title').textContent = 'Impostazioni';
-
-  const nMov = state.movimenti.length;
-  const nConti = state.conti.length;
-  const nTag = state.tag.length;
-
-  const giorniBackup = await giorniDaUltimoBackupExcel();
-  const promemoriaBackup = giorniBackup === null
-    ? '<span style="color:var(--down)">Non hai ancora mai esportato un backup.</span>'
-    : giorniBackup > 7
-      ? `<span style="color:var(--down)">Ultimo backup: ${giorniBackup} giorni fa — è ora di rifarlo.</span>`
-      : `Ultimo backup: ${giorniBackup === 0 ? 'oggi' : giorniBackup + ' giorni fa'} ✓`;
-
-  root.innerHTML = `
-    <div class="section-lbl"><span>Backup e ripristino</span></div>
-    <div class="card">
-      <p class="meta" style="margin-bottom:8px">I tuoi dati vivono solo su questo dispositivo. L'app fa un <b>backup automatico interno</b> a ogni avvio, ma per essere davvero al sicuro esporta ogni tanto un file: è l'unico che sopravvive se iOS libera spazio.</p>
-      <p class="meta" style="margin-bottom:14px">${promemoriaBackup}</p>
-      <button class="btn btn-primary" id="export-json" style="margin-bottom:10px">Backup completo (JSON) — consigliato</button>
-      <button class="btn btn-secondary" id="export" style="margin-bottom:10px">Esporta Excel (per consultazione)</button>
-      <button class="btn btn-secondary" id="import-btn">Ripristina da backup (.json o .xlsx)</button>
-      <input type="file" id="import-file" accept=".json,.xlsx,.xls" style="display:none">
-    </div>
-
-    <div class="section-lbl"><span>Tag</span></div>
-    <div class="card">
-      <p class="meta" style="margin-bottom:14px">Applica un tag in blocco a più movimenti passati (es. tutte le spese di un viaggio).</p>
-      <button class="btn btn-secondary" id="bulk-tag">Applica tag in blocco</button>
-    </div>
-
-    <div class="section-lbl"><span>Sezioni</span></div>
-    <div class="card" style="padding:0">
-      <div class="patrow" id="go-energia" style="cursor:pointer"><div class="icon" style="background:var(--surface-2)">${UI_SVG.fulmine}</div><div class="body"><div class="row1"><span class="name">Energia</span><span class="meta num">${state.bollette.length}</span></div></div><div class="chev">›</div></div>
-    </div>
-
-    <div class="section-lbl"><span>Gestione</span></div>
-    <div class="card" style="padding:0">
-      <div class="patrow" id="go-conti" style="cursor:pointer"><div class="icon">${UI_SVG.conto}</div><div class="body"><div class="row1"><span class="name">Conti</span><span class="meta num">${nConti}</span></div></div><div class="chev">›</div></div>
-      <div class="divider"></div>
-      <div class="patrow" id="go-cat" style="cursor:pointer"><div class="icon" style="background:var(--surface-2)">${UI_SVG.tag}</div><div class="body"><div class="row1"><span class="name">Categorie</span><span class="meta num">${state.categorie.length}</span></div></div><div class="chev">›</div></div>
-    </div>
-
-    <div class="section-lbl"><span>Informazioni</span></div>
-    <div class="card">
-      <div style="display:flex;justify-content:space-between;padding:5px 0"><span class="meta">Movimenti</span><span class="num">${nMov}</span></div>
-      <div style="display:flex;justify-content:space-between;padding:5px 0"><span class="meta">Tag</span><span class="num">${nTag}</span></div>
-      <div style="display:flex;justify-content:space-between;padding:5px 0"><span class="meta">Versione</span><span>${APP_VERSION}</span></div>
-    </div>
-
-    <div style="margin-top:20px"><button class="btn btn-danger" id="reset">Azzera tutti i dati</button></div>
-    <p class="meta" style="text-align:center;margin-top:16px;opacity:.6">Finanze Personali · offline · nessun dato lascia il dispositivo</p>
-  `;
-
-  // export JSON (formato di recovery primario: nativo, senza librerie)
-  root.querySelector('#export-json').addEventListener('click', async () => {
-    try {
-      await esportaJSON();
-      await registraBackupExcelFatto();
-      toast('Backup JSON esportato ✓');
-    } catch (e) { console.error('Errore export JSON:', e); toast('Errore: ' + (e.message || e)); }
-  });
-
-  // export Excel (per consultazione; richiede la libreria dal CDN la prima volta online)
-  root.querySelector('#export').addEventListener('click', async () => {
-    try {
-      if (!window.XLSX) { toast('Libreria Excel non disponibile offline: usa il backup JSON, oppure riapri l\u2019app con connessione.'); return; }
-      await esportaBackup();
-      await registraBackupExcelFatto();
-      toast('Backup Excel esportato ✓');
-    } catch (e) {
-      console.error('Errore export backup:', e);
-      toast('Errore export: ' + (e.message || e));
-    }
-  });
-
-  // import
-  const fileInp = root.querySelector('#import-file');
-  root.querySelector('#import-btn').addEventListener('click', () => fileInp.click());
-  fileInp.addEventListener('change', async () => {
-    if (!fileInp.files.length) return;
-    if (!(await conferma('Il ripristino SOSTITUISCE i dati attuali con quelli presenti nel backup. Continuare?', { titolo: 'Ripristino backup', ok: 'Ripristina', danger: true }))) { fileInp.value = ''; return; }
-    try {
-      const file = fileInp.files[0];
-      const isJSON = file.name.toLowerCase().endsWith('.json');
-      if (!isJSON && !window.XLSX) { toast('Per i file Excel serve la connessione la prima volta. Usa un backup .json.'); fileInp.value = ''; return; }
-      const r = isJSON ? await importaJSON(file) : await importaBackup(file);
-      let msg = `Ripristinati ${r.movimenti} movimenti`;
-      if (r.preservati && r.preservati.length) {
-        const nomi = { mutuo: 'mutuo', finanziamenti: 'finanziamenti', ricorrenti: 'ricorrenti', eventiMutuo: 'eventi', tag: 'tag' };
-        const lista = r.preservati.map(s => nomi[s] || s).filter(Boolean);
-        if (lista.length) msg += ` · ${lista.join(', ')} mantenuti dal dispositivo`;
-      }
-      toast(msg);
-      navigate('spese');
-    } catch (e) { console.error('Errore import:', e); toast('Errore import: ' + (e.message || e)); }
-    fileInp.value = '';
-  });
-
-  // bulk tag
-  root.querySelector('#bulk-tag').addEventListener('click', () => _bulkTag(root));
-
-  // navigazione
-  root.querySelector('#go-energia').addEventListener('click', () => navigate('energia'));
-  root.querySelector('#go-conti').addEventListener('click', () => navigate('conti'));
-  root.querySelector('#go-cat').addEventListener('click', () => navigate('categorie'));
-
-  // reset
-  root.querySelector('#reset').addEventListener('click', async () => {
-    if (!(await conferma('Verranno eliminati TUTTI i dati in modo irreversibile.', { titolo: 'Azzera tutto', ok: 'Continua', danger: true }))) return;
-    if (!(await conferma('Ultima conferma: azzerare davvero tutto?', { titolo: 'Azzera tutto', ok: 'Azzera tutto', danger: true }))) return;
-    for (const s of STORE_NAMES) await dbClear(s);
-    await refreshAll();
-    toast('Dati azzerati');
-    location.reload();
-  });
+const movimentiPeriodo = (periodo, mese) => {
+  if (periodo === 'anno') return state.movimenti.filter(m => m.data.startsWith(mese.slice(0, 4)));
+  if (periodo === 'settimana') {
+    const oggi = new Date(); const s = new Date(); s.setDate(oggi.getDate() - 6);
+    return state.movimenti.filter(m => m.data >= s.toISOString().slice(0, 10));
+  }
+  return movimentiDelMese(mese);
 };
 
-// Bulk tag: cerca -> seleziona risultati -> applica tag
-const _bulkTag = (root) => {
-  apriSheet('Applica tag in blocco', `
-    <label class="meta">1. Cerca i movimenti (descrizione, categoria...)</label>
-    <div class="searchbar" style="margin:8px 0 12px"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input id="bt-q" placeholder="Es. Palermo, hotel..." autocomplete="off"></div>
-    <div id="bt-ris" style="max-height:300px;overflow-y:auto"></div>
-    <label class="meta" style="margin-top:12px;display:block">2. Tag da applicare</label>
-    <input id="bt-tag" placeholder="Es. SiciliaLuglio2025" style="width:100%;padding:13px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);color:var(--txt);font-size:16px;margin:8px 0 12px">
-    <button class="btn btn-primary" id="bt-ok">Applica a tutti i selezionati</button>
-  `, (body, chiudi) => {
-    const q = body.querySelector('#bt-q');
-    const ris = body.querySelector('#bt-ris');
-    let selezionati = new Set();
+export const renderDrill = async (root, params) => {
+  const { macro, cat, periodo = 'mese', mese } = params;
+  const movs = movimentiPeriodo(periodo, mese);
+  const [anno, meseNum] = mese.split('-');
 
-    const cerca = () => {
-      const { risultati } = cercaMovimenti(q.value);
-      if (!q.value.trim()) { ris.innerHTML = '<div class="meta" style="padding:8px">Scrivi per cercare</div>'; return; }
-      ris.innerHTML = risultati.slice(0, 100).map(m => `
-        <div class="mov" data-id="${m.id}" style="cursor:pointer">
-          <div class="ic" style="font-size:14px">${selezionati.has(m.id) ? '✅' : '⬜'}</div>
-          <div class="body"><div class="d1">${escapeHtml(m.desc || m.cat)}</div><div class="d2">${fmtDataEstesa(m.data)} · ${fmtEUR(m.imp)}</div></div>
-        </div>`).join('');
-      ris.querySelectorAll('[data-id]').forEach(el => el.addEventListener('click', () => {
-        const id = el.dataset.id;
-        if (selezionati.has(id)) selezionati.delete(id); else selezionati.add(id);
-        cerca();
-      }));
-    };
-    q.addEventListener('input', cerca);
-    cerca();
+  // livello corrente: se ho cat -> mostro sub; altrimenti -> mostro cat
+  const livello = cat ? 'sub' : 'cat';
+  const filtro = cat ? { macro, cat } : { macro };
+  const righe = aggregaPerLivello(movs, livello, filtro);
 
-    body.querySelector('#bt-ok').addEventListener('click', async () => {
-      const tag = body.querySelector('#bt-tag').value.trim();
-      if (!tag) { toast('Inserisci un tag'); return; }
-      if (!selezionati.size) { toast('Seleziona almeno un movimento'); return; }
-      const n = await applicaTagBulk(Array.from(selezionati), tag);
-      chiudi(); toast(`Tag applicato a ${n} movimenti`);
+  // totali del ramo corrente nel periodo selezionato
+  let ramo = soloSpese(movs).filter(m => m.macro === macro);
+  if (cat) ramo = ramo.filter(m => m.cat === cat);
+  const totRamo = ramo.reduce((s, m) => s + m.imp, 0);
+
+  // ── vs media e vs precedente, calcolati sullo STESSO ramo su tutto lo storico ──
+  const perPeriodo = {};
+  for (const m of soloSpese(state.movimenti)) {
+    if (m.macro !== macro) continue;
+    if (cat && m.cat !== cat) continue;
+    const k = periodo === 'anno' ? m.data.slice(0, 4) : (m.annomese || m.data.slice(0, 7));
+    perPeriodo[k] = (perPeriodo[k] || 0) + m.imp;
+  }
+  const chiaveCorrente = periodo === 'anno' ? anno : mese;
+  const altre = Object.keys(perPeriodo).filter(k => k !== chiaveCorrente);
+  const media = altre.length ? altre.reduce((s, k) => s + perPeriodo[k], 0) / altre.length : 0;
+  let chiavePrec;
+  if (periodo === 'anno') chiavePrec = String(parseInt(anno) - 1);
+  else { const d = new Date(parseInt(anno), parseInt(meseNum) - 2, 1); chiavePrec = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
+  const valPrec = perPeriodo[chiavePrec] || 0;
+
+  const deltaCell = (rif, lbl) => {
+    if (periodo === 'settimana' || rif <= 0) return `<div class="cell"><div class="lbl">${lbl}</div><div class="val sa num">—</div></div>`;
+    const pct = Math.round((totRamo - rif) / rif * 100);
+    const diff = totRamo - rif;
+    return `<div class="cell"><div class="lbl">${lbl}</div><div class="val num ${pct <= 0 ? 'en' : 'sp'}">${pct > 0 ? '+' : ''}${pct}%</div><div class="delta num" style="color:var(--txt-2)">${diff > 0 ? '+' : '−'}${fmtEUR(Math.abs(diff))}</div></div>`;
+  };
+
+  // il nome del ramo vive DENTRO la card statistiche (header pulito col solo back)
+  document.getElementById('view-title').textContent = '';
+  const suDiLivello = () => {
+    if (cat) location.hash = buildHash('drill', { macro, periodo, mese });
+    else history.back();
+  };
+
+  const maxTot = righe.length ? righe[0].totale : 1;
+
+  const righeHTML = righe.length ? righe.map(r => {
+    const chiave = r.chiave === '(senza)' ? '' : r.chiave;
+    const foglia = livello === 'sub' || (livello === 'cat' && !categoriaHaSub(macro, chiave));
+    const drillTarget = foglia
+      ? buildHash('movimenti', { macro, cat: livello === 'cat' ? chiave : cat, sub: livello === 'sub' ? chiave : '', periodo, mese })
+      : buildHash('drill', { macro, cat: chiave, periodo, mese });
+    const movTarget = buildHash('movimenti', {
+      macro, cat: livello === 'cat' ? chiave : cat, sub: livello === 'sub' ? chiave : '', periodo, mese,
     });
-  });
+    return `
+      <div class="catrow">
+        <div class="icon" data-href="${movTarget}">${livello === 'cat' ? iconaMacro(macro) : '🏷️'}</div>
+        <div class="body" data-href="${drillTarget}">
+          <div class="row1">
+            <span class="name">${escapeHtml(r.chiave)}</span>
+            <span class="right"><span class="amt num">${fmtEUR(r.totale)}</span><span class="pct num">${fmtPct(r.pct)}</span></span>
+          </div>
+          <div class="bar"><span style="width:${Math.max(1.5, r.totale / maxTot * 100)}%"></span></div>
+        </div>
+        <div class="chev" data-href="${drillTarget}">›</div>
+      </div>`;
+  }).join('') : '<div class="empty">Nessuna spesa in questo ramo</div>';
+
+  const labelPeriodo = periodo === 'anno' ? anno : periodo === 'mese' ? `${nomeMese(parseInt(meseNum) - 1)} ${anno}` : 'Ultimi 7 giorni';
+
+  root.innerHTML = `
+    <div class="mov-sticky">
+      ${periodo !== 'settimana' ? `
+        <div class="month-nav" style="margin:4px 0">
+          <button class="arr" id="d-prev">‹</button>
+          <div class="m">${labelPeriodo}</div>
+          <button class="arr" id="d-next">›</button>
+        </div>` : `<div class="month-nav" style="margin:4px 0"><div class="m">${labelPeriodo}</div></div>`}
+      <div class="triple" style="flex-direction:column;padding:0;margin:6px 0 4px">
+        <div class="card-crumb card-crumb-center" id="d-crumb">
+          ${cat ? '<span class="cc-up">‹</span>' : ''}
+          <span class="cc-nome">${escapeHtml(cat || macro)}</span>
+          ${cat ? `<span class="cc-ctx">${escapeHtml(macro)}</span>` : ''}
+        </div>
+        <div style="display:flex;width:100%">
+        <div class="cell"><div class="lbl">Spese</div><div class="val sp num">${fmtEUR(totRamo)}</div></div>
+        ${deltaCell(media, 'vs media')}
+        ${deltaCell(valPrec, periodo === 'anno' ? 'vs anno prec.' : 'vs mese prec.')}
+        </div>
+      </div>
+    </div>
+    <div class="section-lbl"><span>${cat ? 'Sottocategorie di ' + escapeHtml(cat) : 'Categorie di ' + escapeHtml(macro)}</span></div>
+    ${righeHTML}
+    <div style="margin-top:20px">
+      <button class="btn btn-secondary" data-href="${buildHash('movimenti', { macro, cat: cat || '', periodo, mese })}">Vedi tutti i movimenti di ${escapeHtml(cat || macro)}</button>
+    </div>
+  `;
+
+  // frecce: cambiano il periodo restando nello STESSO ramo (via hash, così il back funziona)
+  const sposta = (delta) => {
+    let nuovoMese;
+    if (periodo === 'anno') nuovoMese = `${parseInt(anno) + delta}-${meseNum}`;
+    else { const d = new Date(parseInt(anno), parseInt(meseNum) - 1 + delta, 1); nuovoMese = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
+    location.hash = buildHash('drill', { macro, cat: cat || '', periodo, mese: nuovoMese });
+  };
+  const dp = root.querySelector('#d-prev'), dn = root.querySelector('#d-next');
+  if (dp) dp.addEventListener('click', () => sposta(-1));
+  if (dn) dn.addEventListener('click', () => sposta(1));
+  // percorso nella card: TAP per risalire; SWIPE destro fa lo stesso
+  root.querySelector('#d-crumb').addEventListener('click', suDiLivello);
+  abilitaSwipeIndietro(root, suDiLivello);
+
+  // navigazione via data-href
+  root.querySelectorAll('[data-href]').forEach(el => el.addEventListener('click', (e) => {
+    e.stopPropagation();
+    location.hash = el.dataset.href;
+  }));
 };

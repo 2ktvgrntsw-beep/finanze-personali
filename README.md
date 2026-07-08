@@ -1,50 +1,108 @@
-# Finanze Personali (PWA)
+// seed.js — Caricamento iniziale dello storico precaricato.
+// Al PRIMO avvio dell'app (database vuoto), inietta nel DB tutto lo storico di Lorenzo
+// già preparato in build (data/storico.js): 5.625 movimenti, conti, categorie, mutuo,
+// finanziamenti. Idempotente: un flag in 'meta' garantisce che avvenga una sola volta,
+// così ai riavvii successivi i dati non vengono duplicati.
 
-App di gestione delle finanze personali, **offline-first** e **privata**: tutti i dati
-restano sul tuo dispositivo (IndexedDB), nessun account, nessun server, nessun cloud.
+import { STORICO } from '../../data/storico.js';
+import { dbBulkPut, dbAdd, dbGet } from './db.js';
+import { uid, annomese, round2 } from './utils.js';
 
-## Caratteristiche
-- **Spese** per categoria con drill-down a 3 livelli (macro → categoria → sottocategoria → movimenti)
-- **Inserimento rapido** a icone con tastierino, suggerimenti automatici e ricorrenza inline
-- **Patrimonio**: conti, investimenti, mutuo e finanziamenti; patrimonio netto e composizione
-- **Trasferimenti/PAC** distinti dalle spese, con indicatore "investito/accantonato"
-- **Ricorrenti e regole automatiche** (accantonamenti a soglia o fissi)
-- **Analisi**: confronto anni, grafici per tag, investito nel tempo
-- **Ricerca** full-text con totale aggregato
-- **Tag** con applicazione in blocco (retroattiva)
-- **Backup/ripristino Excel** per recovery
+const FLAG = 'seed_storico_completato';
 
-## Come pubblicare su GitHub Pages
-1. Crea un repository su GitHub e carica tutti i file di questa cartella.
-2. Vai in **Settings → Pages** e imposta la fonte sul branch `main`, cartella `/root`.
-3. Attendi qualche minuto: l'app sarà disponibile all'indirizzo indicato.
+export const seedStoricoSeNecessario = async () => {
+  const gia = await dbGet('meta', FLAG);
+  if (gia && gia.valore === true) return false;   // già seminato
 
-## Come installare su iPhone
-1. Apri l'indirizzo dell'app in **Safari**.
-2. Tocca **Condividi → Aggiungi a Home**.
-3. Apri l'app dall'icona: funziona a schermo intero e offline.
+  // --- Movimenti: aggiungo annomese (per l'indice) e normalizzo i campi ---
+  const movimenti = STORICO.movimenti.map(m => ({
+    id: m.id || uid(),
+    data: m.data,
+    annomese: annomese(m.data),
+    tipo: m.tipo,                      // 'spesa' | 'entrata' | 'trasferimento'
+    macro: m.macro || '',
+    cat: m.cat || '',
+    sub: m.sub || '',
+    conto: m.conto || '',
+    contoDest: m.contoDest || '',      // per i trasferimenti (destinazione)
+    tag: Array.isArray(m.tag) ? m.tag : [],
+    desc: m.desc || '',
+    note: m.note || '',
+    imp: round2(m.imp),
+    origine: 'storico',                // marcati come provenienti dallo storico
+  }));
+  await dbBulkPut('movimenti', movimenti);
 
-## Aggiornamenti — procedura di rilascio
+  // --- Conti ---
+  const conti = STORICO.conti.map(c => ({
+    id: uid(),
+    nome: c.nome,
+    tipo: c.tipo,                      // liquidita|risparmio|investimenti|asset|debiti
+    saldo_iniziale: round2(c.saldo_iniziale),
+    data_saldo: c.data_saldo,
+    note: c.note || '',
+    attivo: true,
+  }));
+  await dbBulkPut('conti', conti);
 
-**Regola d'oro (imparata a caro prezzo):** ogni versione consegnata DEVE avere un
-numero nuovo, altrimenti i telefoni continuano a servire il codice vecchio dalla cache.
+  // --- Categorie (gerarchia macro/cat/sub) ---
+  const categorie = STORICO.categorie.map(c => ({
+    id: uid(),
+    macro: c.macro,
+    cat: c.cat || '',
+    sub: c.sub || '',
+    attiva: true,
+  }));
+  await dbBulkPut('categorie', categorie);
 
-1. Incrementa `APP_VERSION` in `js/core/version.js`
-2. Incrementa `CACHE_VERSION` in `service-worker.js` (stesso numero)
-3. Esegui i test: `node tests/unit.mjs` (il primo test verifica proprio la coerenza versioni)
-4. Carica su GitHub; sull'iPhone chiudi e riapri l'app
-5. Verifica in Impostazioni che compaia il numero nuovo
+  // --- Tag (se presenti; nello storico di Lorenzo sono 0, si popoleranno con l'uso) ---
+  if (STORICO.tag && STORICO.tag.length) {
+    const tags = STORICO.tag.map(nome => ({ id: uid(), nome, colore: '' }));
+    await dbBulkPut('tag', tags);
+  }
 
-## Test
+  // --- Mutuo ---
+  if (STORICO.mutuo && STORICO.mutuo.importo_iniziale) {
+    await dbAdd('mutuo', { id: 'mutuo-principale', ...STORICO.mutuo });
+  }
 
-- `node tests/unit.mjs` — logica pura (piani di ammortamento, date, coerenza versioni, asset SW)
-- `python3 tests/e2e.py` — browser reale (avvio, idempotenza doppio avvio, no doppioni, tutte le schermate)
+  // --- Finanziamenti ---
+  if (STORICO.finanziamenti && STORICO.finanziamenti.length) {
+    const fin = STORICO.finanziamenti.map((f, i) => ({ id: 'fin-' + i, ...f, attivo: true }));
+    await dbBulkPut('finanziamenti', fin);
+  }
 
-## Struttura
-- `js/core/` — database, stato, router, utility, seed dei dati
-- `js/services/` — logica (movimenti, conti, patrimonio, prestiti, ricorrenti, Excel)
-- `js/components/` — schermate (spese, patrimonio, inserimento, analisi, ...)
-- `data/storico.js` — storico precaricato
-- `css/styles.css` — tema
+  // --- Suggerimenti pre-addestrati: dallo storico costruisco la mappa
+  //     descrizione(normalizzata) -> classificazione più frequente ---
+  await _addestraSuggerimenti(movimenti);
 
-Versione: 2.2 · Schema dati: 2.0 (compatibile con backup 2.0/2.1)
+  await dbAdd('meta', { chiave: FLAG, valore: true, data: new Date().toISOString() });
+  return true;
+};
+
+// Costruisce i suggerimenti: per ogni descrizione ricorrente, memorizza la
+// classificazione (macro/cat/sub/conto) usata più spesso. Così dal primo giorno
+// scrivendo "Conad" l'app propone già la categoria giusta.
+const _addestraSuggerimenti = async (movimenti) => {
+  const mappa = {};   // chiave normalizzata -> { conteggi per combinazione }
+  for (const m of movimenti) {
+    const chiave = _normDesc(m.desc);
+    if (!chiave) continue;
+    const combo = JSON.stringify({ macro: m.macro, cat: m.cat, sub: m.sub, conto: m.conto, tipo: m.tipo });
+    mappa[chiave] = mappa[chiave] || { desc: m.desc, combos: {} };
+    mappa[chiave].combos[combo] = (mappa[chiave].combos[combo] || 0) + 1;
+  }
+
+  const items = Object.entries(mappa).map(([chiave, v]) => {
+    // scelgo la combinazione più frequente
+    let best = null, bestN = 0;
+    for (const [combo, n] of Object.entries(v.combos)) {
+      if (n > bestN) { bestN = n; best = combo; }
+    }
+    return { chiave, desc: v.desc, classificazione: JSON.parse(best), occorrenze: bestN };
+  });
+
+  await dbBulkPut('suggerimenti', items);
+};
+
+export const _normDesc = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 40);

@@ -1,164 +1,216 @@
-// selezioneMultipla.js — Selezione multipla di operazioni + modifica massiva.
-// Modulo CONDIVISO: usato da ricerca, elenco movimenti e (via navigazione) analisi.
-// Prima questa logica viveva solo dentro ricerca.js; estrarla evita di duplicarla
-// su ogni elenco e garantisce che il comportamento sia identico ovunque.
-//
-// Uso in un componente con una lista di movimenti:
-//   const sel = creaSelezione(() => rerenderDellaLista());
-//   ... nel render di ogni riga: aggiungi classe/checkbox se sel.attiva()
-//   ... long-press su una riga -> sel.avvia(id); tap in modo selezione -> sel.toggle(id)
-//   ... toolbar: sel.toolbarHTML(totaleVisibili)
-//   ... bind pulsanti toolbar: sel.bindToolbar(root, idsVisibili)
+// spese.js — Home "Spese": la schermata che si apre ogni giorno.
+// Vista per periodo (Settimana/Mese/Anno) delle spese per categoria, con drill-down.
 
-import { state } from '../core/store.js';
-import { escapeHtml, toast } from '../core/utils.js';
-import { apriSheet, apriSelettoreCategoria, conferma } from './shared.js';
-import { modificaMassiva, applicaTagBulk, deleteMovimento } from '../services/movimentiService.js';
-import { safeWrite } from '../core/db.js';
-import { UI_SVG } from '../core/icons.js';
+import { state, movimentiDelMese } from '../core/store.js';
+import { fmtEUR, fmtEUR0, fmtPct, nomeMese, annomese, todayISO, escapeHtml, clamp } from '../core/utils.js';
+import { iconaMacro } from '../core/icons.js';
+import { navigate } from '../core/router.js';
+import { costruisciSparkline, agganciaSparkline } from '../core/sparkline.js';
+import {
+  totaliPeriodo, aggregaPerLivello, mediaSpeseMensile, soloSpese,
+} from '../services/movimentiService.js';
+import { calcolaDelta } from './shared.js';
 
-// Crea un controller di selezione. `onChange` viene chiamato quando serve
-// ri-renderizzare la lista (dopo un toggle, un avvio/uscita selezione, o una modifica).
-export const creaSelezione = (onChange) => {
-  let attiva = false;
-  const scelti = new Set();
+// stato locale della schermata (periodo selezionato)
+let _periodo = 'mese';                 // 'settimana' | 'mese' | 'anno'
+let _meseCorrente = annomese(todayISO());
+let _sparkAperto = false;              // grafico andamento spese: nascosto di default, apribile dall'icona
 
-  const api = {
-    attiva: () => attiva,
-    ha: (id) => scelti.has(id),
-    size: () => scelti.size,
-    ids: () => Array.from(scelti),
+const mesePrec = (am) => { const [a, m] = am.split('-').map(Number); const d = new Date(a, m - 2, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
+const meseSucc = (am) => { const [a, m] = am.split('-').map(Number); const d = new Date(a, m, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
 
-    // avvia la modalità selezione con un primo elemento (da long-press)
-    avvia(id) {
-      attiva = true;
-      if (id) scelti.add(id);
-      onChange();
-    },
-    // aggiunge/toglie un elemento (tap quando la modalità è attiva)
-    toggle(id) {
-      if (scelti.has(id)) scelti.delete(id); else scelti.add(id);
-      if (scelti.size === 0) attiva = false;   // svuotata: esco dalla modalità
-      onChange();
-    },
-    esci() { attiva = false; scelti.clear(); onChange(); },
-    esciSilenzioso() { attiva = false; scelti.clear(); },   // reset senza ri-render (all'ingresso pagina)
-    selezionaTutti(ids) {
-      if (ids.every(id => scelti.has(id))) scelti.clear();   // già tutti -> deseleziona
-      else ids.forEach(id => scelti.add(id));
-      onChange();
-    },
+// Movimenti del periodo attualmente selezionato
+const movimentiPeriodo = () => {
+  if (_periodo === 'mese') return movimentiDelMese(_meseCorrente);
+  if (_periodo === 'anno') {
+    const anno = _meseCorrente.slice(0, 4);
+    return state.movimenti.filter(m => m.data.startsWith(anno));
+  }
+  // settimana: ultimi 7 giorni da oggi
+  const oggi = new Date(); const sette = new Date(); sette.setDate(oggi.getDate() - 6);
+  const da = sette.toISOString().slice(0, 10), a = oggi.toISOString().slice(0, 10);
+  return state.movimenti.filter(m => m.data >= da && m.data <= a);
+};
 
-    // barra in cima alla lista quando la modalità è attiva
-    toolbarHTML() {
-      return `<div class="sel-toolbar">
-        <button class="sel-esci" id="sel-esci" aria-label="Annulla selezione">${UI_SVG.x || '✕'}</button>
-        <span class="sel-count">${scelti.size} selezionati</span>
-        <div class="sel-actions">
-          <button class="sel-tutti" id="sel-tutti">Tutti</button>
-          <button class="sel-modifica" id="sel-modifica" ${scelti.size ? '' : 'disabled'}>Modifica</button>
-        </div>
+export const renderSpese = async (root) => {
+  const movs = movimentiPeriodo();
+  const tot = totaliPeriodo(movs);
+
+  // etichetta periodo
+  const [anno, mese] = _meseCorrente.split('-');
+  const labelPeriodo = _periodo === 'anno' ? anno
+    : _periodo === 'mese' ? `${nomeMese(parseInt(mese) - 1)} ${anno}`
+    : 'Ultimi 7 giorni';
+
+  // delta spese vs media mensile (solo in vista mese)
+  let deltaHTML = '';
+  if (_periodo === 'mese') {
+    const media = mediaSpeseMensile(_meseCorrente);
+    const d = calcolaDelta(tot.spese, media);
+    if (d) deltaHTML = `<div class="delta ${d.classe} num">${d.testo}</div>`;
+  }
+
+  // barra "dove sto col mese": solo il filo con la tacca, niente testi (compatta)
+  let paceHTML = '';
+  if (_periodo === 'mese' && _meseCorrente === annomese(todayISO())) {
+    const giorno = new Date().getDate();
+    const giorniMese = new Date(parseInt(anno), parseInt(mese), 0).getDate();
+    const pctTempo = Math.round(giorno / giorniMese * 100);
+    const media = mediaSpeseMensile(_meseCorrente);
+    const pctSpeso = media > 0 ? clamp(Math.round(tot.spese / media * 100), 0, 100) : 0;
+    paceHTML = `
+      <div class="pace pace-slim" title="Speso ${pctSpeso}% del solito · giorno ${giorno}/${giorniMese}">
+        <div class="track"><span class="fill" style="width:${pctSpeso}%"></span><span class="marker" style="left:${pctTempo}%"></span></div>
       </div>`;
-    },
+  }
 
-    // collega i pulsanti della toolbar. `idsVisibili` = tutti gli id attualmente in lista.
-    bindToolbar(root, idsVisibili) {
-      const esci = root.querySelector('#sel-esci');
-      if (esci) esci.addEventListener('click', () => api.esci());
-      const tutti = root.querySelector('#sel-tutti');
-      if (tutti) tutti.addEventListener('click', () => api.selezionaTutti(idsVisibili));
-      const mod = root.querySelector('#sel-modifica');
-      if (mod) mod.addEventListener('click', () => {
-        if (!scelti.size) { toast('Seleziona almeno un\'operazione'); return; }
-        _apriModificaMassiva(api, onChange);
-      });
-    },
+  // lista categorie a barre
+  const righe = aggregaPerLivello(movs, 'macro');
+  const maxTot = righe.length ? righe[0].totale : 1;
+  const _intensita = (pct) => pct >= 30 ? 'hi' : pct >= 15 ? 'md' : pct >= 7 ? 'lo' : 'xlo';
+  const righeHTML = righe.length ? righe.map(r => `
+    <div class="catrow">
+      <div class="icon" data-macro-mov="${escapeHtml(r.chiave)}">${iconaMacro(r.chiave)}</div>
+      <div class="body" data-macro-drill="${escapeHtml(r.chiave)}">
+        <div class="row1">
+          <span class="name">${escapeHtml(r.chiave)}</span>
+          <span class="right"><span class="amt num">${fmtEUR(r.totale)}</span><span class="pct num">${fmtPct(r.pct)}</span></span>
+        </div>
+        <div class="bar ${_intensita(r.pct)}"><span style="width:${Math.max(1.5, r.totale / maxTot * 100)}%"></span></div>
+      </div>
+      <div class="chev" data-macro-drill="${escapeHtml(r.chiave)}">›</div>
+    </div>`).join('') : '<div class="empty">Nessuna spesa in questo periodo</div>';
+
+  root.innerHTML = `
+    ${_periodo !== 'settimana' ? `
+      <div class="month-nav">
+        <button class="arr" id="prev">‹</button>
+        <div class="m">${labelPeriodo}</div>
+        <button class="arr" id="next">›</button>
+      </div>` : `<div class="month-nav"><div class="m">${labelPeriodo}</div></div>`}
+
+    <div class="hero-spese">
+      ${_periodo === 'mese' ? '<button class="spark-toggle" id="spark-toggle" title="Andamento spese" aria-label="Mostra andamento"><svg viewBox="0 0 24 24"><path d="M4 18l5-6 4 4 6-8"/><path d="M3 21h18"/></svg></button>' : ''}
+      <div class="cell-spese-main" data-tot="spesa" style="cursor:pointer">
+        <div class="cap">${_periodo === 'anno' ? 'Spese ' + anno : _periodo === 'mese' ? 'Spese di ' + nomeMese(parseInt(mese) - 1).toLowerCase() : 'Spese'}</div>
+        <div class="big-spese num">${fmtEUR(tot.spese)}</div>
+        ${deltaHTML}
+      </div>
+      <div class="metrics-row">
+        <div class="metric" data-tot="entrata" style="cursor:pointer"><div class="lbl">Entrate</div><div class="val en num">${fmtEUR(tot.entrate)}</div></div>
+        <div class="metric"><div class="lbl">Saldo</div><div class="val sa num">${tot.saldo < 0 ? '−' : ''}${fmtEUR(Math.abs(tot.saldo))}</div></div>
+        <div class="metric" data-tot="trasferimento" style="cursor:pointer"><div class="lbl">Accant.</div><div class="val tr num">${fmtEUR(tot.investito || 0)}</div></div>
+      </div>
+    </div>
+
+    ${_periodo === 'mese' ? `<div class="spark-wrap ${_sparkAperto ? 'open' : ''}" id="spark-wrap">${_sparklineCard(_meseCorrente)}</div>` : ''}
+
+    ${paceHTML}
+
+
+    <div class="section-lbl"><span>Per categoria</span></div>
+    ${righeHTML}
+  `;
+
+  // --- eventi ---
+  // selettore periodo NELL'HEADER (compatto, come la vecchia app)
+  const headSeg = document.getElementById('head-seg');
+  if (headSeg) {
+    headSeg.innerHTML = `<div class="seg">
+      <button data-p="settimana" class="${_periodo === 'settimana' ? 'on' : ''}">Sett.</button>
+      <button data-p="mese" class="${_periodo === 'mese' ? 'on' : ''}">Mese</button>
+      <button data-p="anno" class="${_periodo === 'anno' ? 'on' : ''}">Anno</button>
+    </div>`;
+    headSeg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+      _periodo = b.dataset.p; renderSpese(root);
+    }));
+  }
+
+  const vaiPrec = () => {
+    _meseCorrente = _periodo === 'anno' ? `${parseInt(anno) - 1}-${mese}` : mesePrec(_meseCorrente);
+    renderSpese(root);
   };
-  return api;
+  const vaiSucc = () => {
+    _meseCorrente = _periodo === 'anno' ? `${parseInt(anno) + 1}-${mese}` : meseSucc(_meseCorrente);
+    renderSpese(root);
+  };
+  const prev = root.querySelector('#prev'), next = root.querySelector('#next');
+  if (prev) prev.addEventListener('click', vaiPrec);
+  if (next) next.addEventListener('click', vaiSucc);
+
+  // doppio tap-target: icona -> movimenti diretti; barra/corpo -> scendi di livello
+  root.querySelectorAll('[data-macro-mov]').forEach(el => el.addEventListener('click', (e) => {
+    e.stopPropagation();
+    navigate('movimenti', { macro: el.dataset.macroMov, periodo: _periodo, mese: _meseCorrente });
+  }));
+  root.querySelectorAll('[data-macro-drill]').forEach(el => el.addEventListener('click', () => {
+    navigate('drill', { macro: el.dataset.macroDrill, periodo: _periodo, mese: _meseCorrente });
+  }));
+
+  // totaloni cliccabili: rosso -> movimenti spese, verde -> movimenti entrate (del periodo)
+  root.querySelectorAll('[data-tot]').forEach(el => el.addEventListener('click', () => {
+    navigate('movimenti', { tipo: el.dataset.tot, periodo: _periodo, mese: _meseCorrente });
+  }));
+
+  // sparkline interattivo: attacca il tocco (solo se presente, cioè in vista mese)
+  _agganciaSparkline(root);
+
+  // toggle grafico andamento (icona nella card spese)
+  const sparkToggle = root.querySelector('#spark-toggle');
+  const sparkWrap = root.querySelector('#spark-wrap');
+  if (sparkToggle && sparkWrap) {
+    sparkToggle.classList.toggle('on', _sparkAperto);
+    sparkToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      _sparkAperto = !_sparkAperto;
+      sparkWrap.classList.toggle('open', _sparkAperto);
+      sparkToggle.classList.toggle('on', _sparkAperto);
+    });
+  }
+
 };
 
-// Sheet: scegli QUALE campo modificare in blocco. Riusa i servizi esistenti.
-const _apriModificaMassiva = (sel, refresh) => {
-  const n = sel.size();
-  const finito = (msg) => { toast(msg); sel.esci(); };
-  apriSheet(`Modifica ${n} operazioni`, `
-    <p class="conferma-testo" style="margin-bottom:14px">Scegli cosa modificare sulle operazioni selezionate.</p>
-    <button class="btn btn-secondary mm-btn" id="mm-cat">${UI_SVG.tag} Categoria</button>
-    <button class="btn btn-secondary mm-btn" id="mm-conto">${UI_SVG.conto} Conto</button>
-    <button class="btn btn-secondary mm-btn" id="mm-desc">${UI_SVG.descrizione} Descrizione</button>
-    <button class="btn btn-secondary mm-btn" id="mm-tag">${UI_SVG.hashtag} Aggiungi tag</button>
-    <button class="btn btn-secondary mm-btn" id="mm-tipo">${UI_SVG.ripeti || ''} Tipo operazione</button>
-    <button class="btn btn-danger mm-btn" id="mm-del">Elimina le ${n} operazioni</button>
-  `, (body, chiudi) => {
-    const ids = sel.ids();
+// ═══ SPARKLINE spese ultimi 6 mesi (additivo, puramente visivo) ═══
+// Ritorna { mesi:[{label,mese,val}], min, max } per gli ultimi 6 mesi fino a quello dato.
+const _datiSparkline = (meseRif) => {
+  const [y, m] = meseRif.split('-').map(Number);
+  const out = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(y, m - 1 - i, 1);
+    const am = annomese(d.toISOString().slice(0, 10));
+    const t = totaliPeriodo(movimentiDelMese(am));
+    const idxMese = parseInt(am.slice(5, 7), 10) - 1;
+    out.push({ label: nomeMese(idxMese).slice(0, 3), mese: am, val: t.spese || 0 });
+  }
+  const vals = out.map(o => o.val);
+  return { mesi: out, min: Math.min(...vals), max: Math.max(...vals) };
+};
 
-    body.querySelector('#mm-cat').addEventListener('click', () => {
-      chiudi();
-      apriSelettoreCategoria(async (s) => {
-        const k = await modificaMassiva(ids, { macro: s.macro, cat: s.cat, sub: s.sub });
-        finito(`Categoria aggiornata su ${k} operazioni`); refresh();
-      });
-    });
-
-    body.querySelector('#mm-conto').addEventListener('click', () => {
-      chiudi(); _scegliConto('Sposta su quale conto?', async (conto) => {
-        const k = await modificaMassiva(ids, { conto });
-        finito(`Conto aggiornato su ${k} operazioni`); refresh();
-      });
-    });
-
-    body.querySelector('#mm-desc').addEventListener('click', () => {
-      chiudi();
-      apriSheet('Nuova descrizione', `<input id="mm-desc-inp" placeholder="Descrizione" class="sheet-input"><button class="btn btn-primary" id="mm-desc-ok" style="margin-top:10px">Applica</button>`, (b2, c2) => {
-        b2.querySelector('#mm-desc-ok').addEventListener('click', async () => {
-          const desc = b2.querySelector('#mm-desc-inp').value.trim();
-          if (!desc) return;
-          const k = await modificaMassiva(ids, { desc });
-          c2(); finito(`Descrizione aggiornata su ${k} operazioni`); refresh();
-        });
-      });
-    });
-
-    body.querySelector('#mm-tag').addEventListener('click', () => {
-      chiudi();
-      apriSheet('Aggiungi tag', `<input id="mm-tag-inp" placeholder="Nome tag" class="sheet-input"><button class="btn btn-primary" id="mm-tag-ok" style="margin-top:10px">Applica</button>`, (b2, c2) => {
-        b2.querySelector('#mm-tag-ok').addEventListener('click', async () => {
-          const tag = b2.querySelector('#mm-tag-inp').value.trim();
-          if (!tag) return;
-          const k = await applicaTagBulk(ids, tag);
-          c2(); finito(`Tag applicato a ${k} operazioni`); refresh();
-        });
-      });
-    });
-
-    body.querySelector('#mm-tipo').addEventListener('click', () => {
-      chiudi();
-      apriSheet('Cambia tipo', `
-        <button class="btn btn-secondary mm-btn" id="t-spesa">Spesa</button>
-        <button class="btn btn-secondary mm-btn" id="t-entrata">Entrata</button>
-        <button class="btn btn-secondary mm-btn" id="t-trasf">Trasferimento</button>
-      `, (b2, c2) => {
-        const applica = async (tipo) => { const k = await modificaMassiva(ids, { tipo }); c2(); finito(`Tipo aggiornato su ${k} operazioni`); refresh(); };
-        b2.querySelector('#t-spesa').addEventListener('click', () => applica('spesa'));
-        b2.querySelector('#t-entrata').addEventListener('click', () => applica('entrata'));
-        b2.querySelector('#t-trasf').addEventListener('click', () => applica('trasferimento'));
-      });
-    });
-
-    body.querySelector('#mm-del').addEventListener('click', async () => {
-      chiudi();
-      if (!(await conferma(`Eliminare le ${ids.length} operazioni selezionate? L'azione non è reversibile.`, { danger: true, ok: 'Elimina tutte' }))) return;
-      const ok = await safeWrite(async () => { for (const id of ids) await deleteMovimento(id); }, 'Eliminazione non riuscita');
-      if (!ok) return;
-      finito(`${ids.length} operazioni eliminate`); refresh();
-    });
+const _sparklineCard = (meseRif) => {
+  const d = _datiSparkline(meseRif);
+  if (d.max <= 0) return '';   // niente dati, niente grafico
+  const punti = d.mesi.map(o => ({ label: o.label, valore: o.val }));
+  const { svg, dataAttr } = costruisciSparkline(punti, {
+    vw: 300, vh: 96, padX: 10, padTop: 14, padBot: 26,
+    idLinea: 'spkl', idArea: 'spka',
+    coloreLinea0: '#2E9BFF', coloreLinea1: '#7B6CFF',   // blu -> viola (identità Spese)
+    larghezzaLinea: 2.2,
+    mostraEtichette: true, mostraDots: true, mostraUltimoPunto: false,
   });
+  return `<div class="card spark-card">
+    <div class="spark-title">Andamento spese · ultimi 6 mesi</div>
+    <div class="spark" ${dataAttr}>
+      ${svg}
+      <div class="spark-vline"></div>
+      <div class="spark-tip"></div>
+    </div>
+  </div>`;
 };
 
-const _scegliConto = (titolo, onPick) => {
-  const conti = state.conti.filter(c => c.attivo !== false);
-  apriSheet(titolo, '', (body, chiudi) => {
-    body.innerHTML = conti.map(c => `<div class="mov" data-c="${escapeHtml(c.nome)}"><div class="ic">${UI_SVG.conto}</div><div class="body"><div class="d1">${escapeHtml(c.nome)}</div><div class="d2">${escapeHtml(c.tipo)}</div></div></div>`).join('');
-    body.querySelectorAll('[data-c]').forEach(el => el.addEventListener('click', () => { const nome = el.dataset.c; chiudi(); onPick(nome); }));
-  });
+// interattività: tocco/trascinamento sul grafico mostra mese + spesa
+const _agganciaSparkline = (root) => {
+  agganciaSparkline(root.querySelector('.spark'), fmtEUR);
 };
+
+// esportati per il drill-down (condivide il periodo corrente)
+export const periodoCorrente = () => ({ periodo: _periodo, mese: _meseCorrente });

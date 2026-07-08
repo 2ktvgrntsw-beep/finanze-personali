@@ -1,159 +1,230 @@
-// finanziamenti.js — Elenco finanziamenti + scheda dettaglio in stile mutuo
-// (residuo, barra avanzamento, rate pagate/totali, prossima, scadenza, piano espandibile).
+// ricerca.js — Ricerca full-text con totale aggregato + selezione multipla e
+// modifica massiva di qualsiasi campo (categoria, conto, da/a conto, descrizione, tag).
 
+import { fmtEUR, escapeHtml, fmtDataEstesa } from '../core/utils.js';
+import { iconaMacro, iconaTipo, UI_SVG } from '../core/icons.js';
+import { navigate } from '../core/router.js';
 import { state } from '../core/store.js';
-import { fmtEUR, escapeHtml, fmtData, todayISO } from '../core/utils.js';
-import { statoPrestito, saveFinanziamento, deleteFinanziamento } from '../services/prestitiService.js';
-import { apriSheet, apriDataNativa, apriSelettoreCategoria, conferma } from './shared.js';
-import { toast } from '../core/utils.js';
+import { cercaMovimenti } from '../services/movimentiService.js';
+import { categorieDi, sottocategorieDi } from '../services/categorieService.js';
+import { creaSelezione } from './selezioneMultipla.js';
 
-let _apertoId = null;   // id del finanziamento di cui mostrare il dettaglio
+let _ultimiRisultati = [];
+let _sel = null;   // controller selezione multipla condiviso
+// STATO PERSISTENTE: query e filtri sopravvivono alla navigazione — tornando
+// dalla modifica di un movimento ritrovi la ricerca esattamente com'era.
+let _q = '';
+let _filtri = { tipo: '', macro: '', cat: '', sub: '', conto: '', da: '', a: '', min: '', max: '' };
+let _filtriAperti = false;
 
-export const renderFinanziamenti = async (root) => {
-  document.getElementById('view-title').textContent = 'Finanziamenti';
-  const fins = state.finanziamenti.filter(f => f.attivo !== false);
+export const renderRicerca = async (root, params = {}) => {
+  document.getElementById('view-title').textContent = 'Cerca';
+  if (_sel) _sel.esciSilenzioso();
 
-  // se un finanziamento è "aperto", mostro la sua scheda dettaglio (stile mutuo)
-  if (_apertoId) {
-    const f = fins.find(x => x.id === _apertoId);
-    if (f) return _renderDettaglio(root, f);
-    _apertoId = null;
+  // La ricerca riparte PULITA a ogni ingresso: query e filtri non devono
+  // sopravvivere al cambio pagina. Fanno eccezione SOLO i parametri passati
+  // esplicitamente (es. arrivo da Analisi con categoria preimpostata).
+  const arrivaConFiltri = params.macro !== undefined || params.cat !== undefined ||
+    params.sub !== undefined || params.da !== undefined || params.a !== undefined ||
+    params.tipo !== undefined || params.conto !== undefined;
+
+  if (params.q) _q = params.q; else if (!arrivaConFiltri) _q = '';
+
+  if (arrivaConFiltri) {
+    _filtri = {
+      tipo: params.tipo || '', macro: params.macro || '', cat: params.cat || '', sub: params.sub || '',
+      conto: params.conto || '', da: params.da || '', a: params.a || '', min: '', max: '',
+    };
+    _filtriAperti = false;
+  } else {
+    // nessun parametro: azzero i filtri della sessione precedente
+    _filtri = { tipo: '', macro: '', cat: '', sub: '', conto: '', da: '', a: '', min: '', max: '' };
+    _filtriAperti = false;
   }
 
-  const cards = fins.map(f => {
-    const s = statoPrestito(f, []);
-    if (!s) return '';
-    const quota = f.quota_utente || 100;
-    const residuoTuo = s.residuo * quota / 100;
-    return `
-      <div class="card" data-fin="${f.id}" style="cursor:pointer">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-          <div><div style="font-size:16px;font-weight:700">${escapeHtml(f.nome)}</div><div class="meta">${quota < 100 ? `tua quota ${quota}% · ` : ''}${s.ratePagate}/${s.rateTotali} rate</div></div>
-          <div style="text-align:right"><div class="num" style="font-weight:800;color:var(--down)">−${fmtEUR(residuoTuo)}</div><div class="meta num">rata ${fmtEUR(s.rata * quota / 100)}</div></div>
-        </div>
-        <div class="progress-big" style="height:8px"><span style="width:${s.pctCompletamento}%"></span></div>
-      </div>`;
-  }).join('');
-
-  root.innerHTML = (cards || '<div class="empty"><div class="big-ic">📄</div>Nessun finanziamento attivo</div>') +
-    `<div style="margin-top:16px"><button class="btn btn-primary" id="nuovo">Nuovo finanziamento</button></div>`;
-
-  root.querySelectorAll('[data-fin]').forEach(el => el.addEventListener('click', () => { _apertoId = el.dataset.fin; renderFinanziamenti(root); }));
-  root.querySelector('#nuovo').addEventListener('click', () => _edit(root, null));
-};
-
-// Scheda dettaglio di un singolo finanziamento (impaginata come il mutuo)
-const _renderDettaglio = (root, f) => {
-  document.getElementById('view-title').textContent = escapeHtml(f.nome);
-  const s = statoPrestito(f, []);
-  const quota = f.quota_utente || 100;
-  const residuoTuo = s.residuo * quota / 100;
-  const restituitoTuo = s.restituito * quota / 100;
-  const totaleTuo = f.importo_iniziale * quota / 100;
+  const nFiltri = Object.values(_filtri).filter(v => v !== '').length;
+  const macros = [...new Set(state.movimenti.map(m => m.macro).filter(Boolean))].sort();
+  const conti = state.conti.filter(c => c.attivo !== false).map(c => c.nome);
 
   root.innerHTML = `
-    <div style="margin-bottom:14px"><button class="btn btn-ghost" id="back-list" style="width:auto;display:inline-flex;padding:8px 12px;font-size:13px">‹ Tutti i finanziamenti</button></div>
-
-    <div class="net-card">
-      <div class="lbl">Debito residuo${quota < 100 ? ` (tua quota ${quota}%)` : ''}</div>
-      <div class="big num">${fmtEUR(residuoTuo)}</div>
-      <div class="progress-big"><span style="width:${s.pctCompletamento}%"></span></div>
-      <div class="delta" style="color:var(--up)">${s.pctCompletamento}% restituito · ${fmtEUR(restituitoTuo)} di ${fmtEUR(totaleTuo)}</div>
-      <div class="sub">
-        <div><span class="lbl2">Rata</span><b class="num">${fmtEUR(s.rata * quota / 100)}</b></div>
-        <div><span class="lbl2">Rate</span><b class="num">${s.ratePagate}/${s.rateTotali}</b></div>
-        <div><span class="lbl2">Fine</span><b style="font-size:13px">${fmtData(s.dataFine)}</b></div>
+    <div class="searchbar">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input id="q" placeholder="Cerca (usa la virgola: hotel, volo, treno)" value="${escapeHtml(_q)}" autocomplete="off">
+      <button id="q-clear" class="q-clear" aria-label="Cancella ricerca" style="display:${_q ? 'flex' : 'none'}">
+        <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+      <button id="toggle-filtri" class="filtri-btn ${nFiltri ? 'on' : ''}">Filtri${nFiltri ? ' · ' + nFiltri : ''}</button>
+    </div>
+    <div id="pannello-filtri" style="display:${_filtriAperti ? 'block' : 'none'}" class="card filtri-card">
+      <div class="filtri-riga">
+        <label class="meta">Tipo</label>
+        <div class="chip-row">
+          ${[['', 'Tutti'], ['spesa', 'Spese'], ['entrata', 'Entrate'], ['trasferimento', 'Accant.']].map(([v, l]) =>
+            `<div class="chip ${_filtri.tipo === v ? 'on' : ''}" data-ftipo="${v}">${l}</div>`).join('')}
+        </div>
       </div>
+      <div class="filtri-riga filtri-2col">
+        <div><label class="meta">Macro-categoria</label>
+          <select id="f-macro" class="sheet-input">
+            <option value="">Tutte</option>
+            ${macros.map(m => `<option ${_filtri.macro === m ? 'selected' : ''}>${escapeHtml(m)}</option>`).join('')}
+          </select></div>
+        <div><label class="meta">Conto</label>
+          <select id="f-conto" class="sheet-input">
+            <option value="">Tutti</option>
+            ${conti.map(c => `<option ${_filtri.conto === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+          </select></div>
+      </div>
+      <div class="filtri-riga filtri-2col">
+        <div><label class="meta">Categoria</label>
+          <select id="f-cat" class="sheet-input" ${_filtri.macro ? '' : 'disabled'}>
+            <option value="">Tutte</option>
+            ${_filtri.macro ? categorieDi(_filtri.macro).map(c => `<option ${_filtri.cat === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('') : ''}
+          </select></div>
+        <div><label class="meta">Sottocategoria</label>
+          <select id="f-sub" class="sheet-input" ${_filtri.cat ? '' : 'disabled'}>
+            <option value="">Tutte</option>
+            <option value="__vuota__" ${_filtri.sub === '__vuota__' ? 'selected' : ''}>— Senza sottocategoria —</option>
+            ${_filtri.macro && _filtri.cat ? sottocategorieDi(_filtri.macro, _filtri.cat).map(s => `<option ${_filtri.sub === s ? 'selected' : ''}>${escapeHtml(s)}</option>`).join('') : ''}
+          </select></div>
+      </div>
+      <div class="filtri-riga filtri-2col">
+        <div><label class="meta">Dal</label><input type="date" id="f-da" value="${_filtri.da}" class="sheet-input"></div>
+        <div><label class="meta">Al</label><input type="date" id="f-a" value="${_filtri.a}" class="sheet-input"></div>
+      </div>
+      <div class="filtri-riga filtri-2col">
+        <div><label class="meta">Importo min €</label><input type="text" inputmode="decimal" id="f-min" value="${_filtri.min}" class="sheet-input" placeholder="—"></div>
+        <div><label class="meta">Importo max €</label><input type="text" inputmode="decimal" id="f-max" value="${_filtri.max}" class="sheet-input" placeholder="—"></div>
+      </div>
+      <button class="btn btn-ghost" id="f-reset" style="margin-top:6px;font-size:13px">Azzera filtri</button>
     </div>
-
-    <div class="section-lbl"><span>Dettagli</span><span style="color:var(--accent);font-size:11px;cursor:pointer" id="edit">Modifica</span></div>
-    <div class="card">
-      <div style="display:flex;justify-content:space-between;padding:6px 0"><span class="meta">Importo iniziale</span><span class="num">${fmtEUR(f.importo_iniziale)}</span></div>
-      <div style="display:flex;justify-content:space-between;padding:6px 0"><span class="meta">Tasso annuo</span><span class="num">${f.tasso}%</span></div>
-      <div style="display:flex;justify-content:space-between;padding:6px 0"><span class="meta">Durata</span><span class="num">${f.durata_mesi} mesi</span></div>
-      <div style="display:flex;justify-content:space-between;padding:6px 0"><span class="meta">Prossima rata</span><span class="num">${s.prossimaData ? fmtData(s.prossimaData) : '—'}</span></div>
-      <div style="display:flex;justify-content:space-between;padding:6px 0"><span class="meta">Conto</span><span>${escapeHtml(f.conto || '—')}</span></div>
-    </div>
-
-    <div class="section-lbl"><span>Piano di ammortamento</span><span style="color:var(--accent);font-size:11px;cursor:pointer" id="toggle-piano">Mostra piano</span></div>
-    <div id="piano-mount"></div>
-
-    <div style="margin-top:16px"><button class="btn btn-danger" id="del-fin">Elimina finanziamento</button></div>
+    <div id="ris"></div>
   `;
 
-  root.querySelector('#back-list').addEventListener('click', () => { _apertoId = null; renderFinanziamenti(root); });
-  root.querySelector('#edit').addEventListener('click', () => _edit(root, f.id));
-  root.querySelector('#del-fin').addEventListener('click', async () => {
-    if (await conferma('Eliminare il finanziamento? La ricorrenza collegata verrà rimossa.', { danger: true, ok: 'Elimina' })) {
-      await deleteFinanziamento(f.id); _apertoId = null; toast('Eliminato'); renderFinanziamenti(root);
-    }
+  const inp = root.querySelector('#q');
+  const box = root.querySelector('#ris');
+
+  const filtriNumerici = () => ({
+    ..._filtri,
+    min: _filtri.min !== '' ? parseFloat(String(_filtri.min).replace(',', '.')) : null,
+    max: _filtri.max !== '' ? parseFloat(String(_filtri.max).replace(',', '.')) : null,
   });
 
-  const togglePiano = root.querySelector('#toggle-piano');
-  const pianoMount = root.querySelector('#piano-mount');
-  togglePiano.addEventListener('click', () => {
-    if (pianoMount.innerHTML) { pianoMount.innerHTML = ''; togglePiano.textContent = 'Mostra piano'; return; }
-    togglePiano.textContent = 'Nascondi piano';
-    pianoMount.innerHTML = `<div class="card" style="max-height:360px;overflow-y:auto">
-      ${s.piano.map(r => `
-        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);opacity:${r.pagata ? '.5' : '1'}">
-          <span class="meta">${r.n}. ${fmtData(r.data)}</span>
-          <span style="font-size:12px" class="num">${f.tasso > 0 ? `C ${fmtEUR(r.quotaCapitale)} · I ${fmtEUR(r.quotaInteressi)}` : fmtEUR(r.rata)}</span>
-        </div>`).join('')}
-    </div>`;
-  });
-};
+  const clearBtn = root.querySelector('#q-clear');
 
-// Maschera di modifica: input nativi affidabili (niente readonly/tastierino custom)
-const _edit = (root, id) => {
-  const f = id ? state.finanziamenti.find(x => x.id === id)
-    : { nome: '', importo_iniziale: 0, tasso: 0, durata_mesi: 0, rata: 0, data_inizio: todayISO(), quota_utente: 100, macro: 'Casa', cat: '', sub: '', conto: '' };
-  const conti = state.conti.filter(c => c.attivo !== false).map(c => c.nome);
-  const tmp = { data_inizio: f.data_inizio, macro: f.macro || 'Casa', cat: f.cat || '', sub: f.sub || '' };
-  const fmtD = (iso) => iso ? iso.split('-').reverse().join('/') : 'Scegli';
+  // controller selezione multipla: onChange ri-esegue la ricerca (che ridisegna la lista)
+  if (!_sel) _sel = creaSelezione(() => esegui());
 
-  // input numerico nativo: type=text + inputmode=decimal apre la tastiera numerica iOS,
-  // resta pienamente editabile (nessun readonly, nessun tastierino custom fragile).
-  const numInput = (label, fid, val) => `<label class="meta">${label}</label><input type="text" inputmode="decimal" id="${fid}" value="${escapeHtml(String(val))}" class="sheet-input">`;
+  const esegui = () => {
+    _q = inp.value;
+    if (clearBtn) clearBtn.style.display = _q ? 'flex' : 'none';
+    const { risultati, totali, count } = cercaMovimenti(_q, filtriNumerici());
+    _ultimiRisultati = risultati;
+    const attivi = Object.values(_filtri).some(v => v !== '');
+    if (!_q.trim() && !attivi) { box.innerHTML = '<div class="empty">Scrivi qualcosa o apri i Filtri per cercare tra tutti i tuoi movimenti</div>'; return; }
+    if (!count) { box.innerHTML = `<div class="empty"><div class="big-ic">${UI_SVG.lente}</div>Nessun risultato</div>`; return; }
 
-  apriSheet(id ? escapeHtml(f.nome) : 'Nuovo finanziamento', `
-    <label class="meta">Nome</label><input id="f-nome" value="${escapeHtml(f.nome)}" class="sheet-input">
-    ${numInput('Importo iniziale (€)', 'f-imp', f.importo_iniziale)}
-    ${numInput('Tasso annuo (%)', 'f-tasso', f.tasso)}
-    ${numInput('Durata (mesi)', 'f-durata', f.durata_mesi)}
-    ${numInput('Rata (€)', 'f-rata', f.rata)}
-    <label class="meta">Data inizio (prima rata)</label>
-    <button type="button" id="f-data-btn" class="sheet-input" style="text-align:left;cursor:pointer">${fmtD(tmp.data_inizio)}</button>
-    ${numInput('Tua quota (%)', 'f-quota', f.quota_utente)}
-    <div class="divider" style="margin:14px 0"></div>
-    <label class="meta">Conto da cui esce la rata</label>
-    <select id="f-conto" class="sheet-input">${conti.map(c => `<option ${c === f.conto ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}</select>
-    <label class="meta">Classificazione delle rate generate</label>
-    <button type="button" id="f-cat-btn" class="sheet-input" style="text-align:left;cursor:pointer">${[tmp.macro, tmp.cat, tmp.sub].filter(Boolean).join(' › ') || 'Scegli categoria'}</button>
-    <label class="meta">Descrizione delle rate generate</label>
-    <input id="f-descmov" value="${escapeHtml(f.descMovimento ?? f.nome ?? '')}" placeholder="Es. Rata Dyson (vuota = solo classificazione)" class="sheet-input">
-    <div class="btn-row" style="margin-top:16px">
-      ${id ? '<button class="btn btn-danger" id="f-del">Elimina</button>' : ''}
-      <button class="btn btn-primary" id="f-ok">Salva</button>
-    </div>
-  `, (body, chiudi) => {
-    body.querySelector('#f-data-btn').addEventListener('click', () => apriDataNativa(tmp.data_inizio, (nd) => { tmp.data_inizio = nd; body.querySelector('#f-data-btn').textContent = fmtD(nd); }));
-    body.querySelector('#f-cat-btn').addEventListener('click', () => apriSelettoreCategoria(sel => { tmp.macro = sel.macro; tmp.cat = sel.cat; tmp.sub = sel.sub; body.querySelector('#f-cat-btn').textContent = [sel.macro, sel.cat, sel.sub].filter(Boolean).join(' › '); }));
+    // totali SEPARATI per tipo: la somma è sempre leggibile anche con risultati misti
+    const pezzi = [];
+    if (totali.spese > 0) pezzi.push(`<span class="sp num">−${fmtEUR(totali.spese)}</span> spese`);
+    if (totali.entrate > 0) pezzi.push(`<span class="en num">+${fmtEUR(totali.entrate)}</span> entrate`);
+    if (totali.trasf > 0) pezzi.push(`<span class="tr num">⇄ ${fmtEUR(totali.trasf)}</span> accantonati`);
 
-    body.querySelector('#f-ok').addEventListener('click', async () => {
-      const nome = body.querySelector('#f-nome').value.trim();
-      if (!nome) { toast('Inserisci un nome'); return; }
-      const num = (fid) => parseFloat(String(body.querySelector('#' + fid).value).replace(',', '.')) || 0;
-      await saveFinanziamento({
-        id: f.id, nome, importo_iniziale: num('f-imp'), tasso: num('f-tasso'),
-        durata_mesi: parseInt(body.querySelector('#f-durata').value) || 0, rata: num('f-rata'),
-        data_inizio: tmp.data_inizio, quota_utente: num('f-quota') || 100,
-        conto: body.querySelector('#f-conto').value, macro: tmp.macro, cat: tmp.cat, sub: tmp.sub,
-        descMovimento: body.querySelector('#f-descmov').value.trim(),
+    const selMode = _sel && _sel.attiva();
+    const toolbar = selMode
+      ? _sel.toolbarHTML()
+      : `<div class="search-summary"><div class="summary-head"><div class="n">${count} movimenti trovati</div>${count ? `<button class="sel-mini" id="attiva-sel" aria-label="Seleziona risultati"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 12l2.2 2.2L15.5 9.5"/></svg></button>` : ''}</div><div style="font-size:14.5px;line-height:1.7">${pezzi.join(' · ') || '—'}</div></div>`;
+
+    box.innerHTML = toolbar + '<div>' + risultati.slice(0, 300).map(m => {
+      const segno = m.tipo === 'spesa' ? '−' : m.tipo === 'entrata' ? '+' : '⇄ ';
+      const cls = m.tipo === 'spesa' ? 'sp' : m.tipo === 'entrata' ? 'en' : 'tr';
+      const icona = m.macro ? iconaMacro(m.macro) : iconaTipo(m.tipo);
+      const classif = [m.macro, m.cat, m.sub].filter(Boolean).join(' › ') || m.tipo;
+      const isSel = selMode && _sel.ha(m.id);
+      return `<div class="mov tipo-${m.tipo} ${selMode ? 'selectable' : ''} ${isSel ? 'sel' : ''}" data-mov="${m.id}">
+        ${selMode ? `<div class="selbox">${isSel ? '✓' : ''}</div>` : ''}
+        <div class="ic">${icona}</div>
+        <div class="body"><div class="d1">${escapeHtml(m.desc || classif)}</div><div class="d2"><span class="cls">${escapeHtml(classif)}</span> <span class="cnt">· ${fmtDataEstesa(m.data)}${m.conto ? ' · ' + escapeHtml(m.conto) : ''}</span></div></div>
+        <div class="amt ${cls} num">${segno}${fmtEUR(m.imp)}</div>
+      </div>`;
+    }).join('') + '</div>';
+
+    // interazioni righe: tap (modifica o toggle selezione) + long-press (avvia selezione)
+    box.querySelectorAll('[data-mov]').forEach(el => {
+      const id = el.dataset.mov;
+      let longTimer = null, longFired = false;
+      const clearLong = () => { if (longTimer) { clearTimeout(longTimer); longTimer = null; } };
+      const start = () => {
+        longFired = false;
+        if (!_sel.attiva()) longTimer = setTimeout(() => {
+          longFired = true;
+          if (navigator.vibrate) navigator.vibrate(15);
+          _sel.avvia(id);
+        }, 500);
+      };
+      el.addEventListener('touchstart', start, { passive: true });
+      el.addEventListener('touchend', clearLong);
+      el.addEventListener('touchmove', clearLong, { passive: true });
+      el.addEventListener('mousedown', start);
+      el.addEventListener('mouseup', clearLong);
+      el.addEventListener('mouseleave', clearLong);
+      el.addEventListener('click', () => {
+        if (longFired) return;
+        if (_sel.attiva()) { _sel.toggle(id); return; }
+        navigate('modifica', { id });
       });
-      chiudi(); toast('Salvato'); renderFinanziamenti(root);
     });
-    const del = body.querySelector('#f-del');
-    if (del) del.addEventListener('click', async () => { if (!(await conferma('Eliminare il finanziamento?', { danger: true, ok: 'Elimina' }))) return; await deleteFinanziamento(f.id); _apertoId = null; chiudi(); toast('Eliminato'); renderFinanziamenti(root); });
+
+    const attiva = box.querySelector('#attiva-sel');
+    if (attiva) attiva.addEventListener('click', () => _sel.avvia());
+    if (selMode) _sel.bindToolbar(box, risultati.map(m => m.id));
+  };
+
+  inp.addEventListener('input', esegui);
+
+  // X per cancellare rapidamente la ricerca
+  if (clearBtn) clearBtn.addEventListener('click', () => {
+    inp.value = '';
+    _q = '';
+    esegui();
+    inp.focus();
   });
+
+  // pannello filtri
+  root.querySelector('#toggle-filtri').addEventListener('click', () => {
+    _filtriAperti = !_filtriAperti;
+    root.querySelector('#pannello-filtri').style.display = _filtriAperti ? 'block' : 'none';
+  });
+  root.querySelectorAll('[data-ftipo]').forEach(el => el.addEventListener('click', () => {
+    _filtri.tipo = el.dataset.ftipo;
+    root.querySelectorAll('[data-ftipo]').forEach(x => x.classList.toggle('on', x.dataset.ftipo === _filtri.tipo));
+    esegui();
+  }));
+  const bindFiltro = (sel, campo) => {
+    const el = root.querySelector(sel);
+    if (el) el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => { _filtri[campo] = el.value; esegui(); });
+  };
+  // macro: cambia -> azzera cat/sub e ri-renderizza (per popolare i menu a cascata)
+  const elMacro = root.querySelector('#f-macro');
+  if (elMacro) elMacro.addEventListener('change', () => {
+    _filtri.macro = elMacro.value; _filtri.cat = ''; _filtri.sub = '';
+    renderRicerca(root);
+  });
+  // cat: cambia -> azzera sub e ri-renderizza
+  const elCat = root.querySelector('#f-cat');
+  if (elCat) elCat.addEventListener('change', () => {
+    _filtri.cat = elCat.value; _filtri.sub = '';
+    renderRicerca(root);
+  });
+  bindFiltro('#f-sub', 'sub'); bindFiltro('#f-conto', 'conto');
+  bindFiltro('#f-da', 'da'); bindFiltro('#f-a', 'a');
+  bindFiltro('#f-min', 'min'); bindFiltro('#f-max', 'max');
+  root.querySelector('#f-reset').addEventListener('click', () => {
+    _filtri = { tipo: '', macro: '', cat: '', sub: '', conto: '', da: '', a: '', min: '', max: '' };
+    renderRicerca(root);
+  });
+
+  esegui();
+  // il focus solo quando parti da zero: tornando dalla modifica NON ruba la vista dei risultati
+  if (!_q && !Object.values(_filtri).some(v => v !== '')) setTimeout(() => inp.focus(), 100);
 };

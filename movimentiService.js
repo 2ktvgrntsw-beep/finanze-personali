@@ -1,136 +1,49 @@
-// categorieService.js — Gestione anagrafica categorie (gerarchia macro/cat/sub).
+// attribuzioneInvestimenti.js — FONTE UNICA di verità per attribuire un trasferimento
+// di investimento al suo conto di riferimento.
+//
+// PERCHÉ ESISTE: i dati storici dell'utente hanno il campo `contoDest` vuoto sui
+// trasferimenti verso investimenti (sono classificati per cat/sub/desc, es. "PAC
+// Fideuram", "Crypto"/"Deposito Binance"). Serve quindi inferire il conto. Questa
+// logica era duplicata — e leggermente divergente — tra patrimonio.js e
+// dettaglioInvestimento.js: due implementazioni della stessa regola possono dare
+// numeri diversi per lo stesso strumento, il che in un'app di finanze è inaccettabile.
+// Qui la regola è UNA, pura e testabile.
 
-import { dbAdd, dbDelete } from '../core/db.js';
-import { state, refreshAll } from '../core/store.js';
-import { uid } from '../core/utils.js';
+// Restituisce il NOME del conto investimento a cui appartiene il trasferimento `m`,
+// oppure null se non attribuibile. `conti` è l'elenco completo dei conti.
+// Priorità: 1) contoDest esplicito valido  2) parola chiave del nome conto nel testo
+//           3) euristica crypto -> Binance.
+export const contoDiTrasferimento = (m, conti) => {
+  const nomiInvest = conti.filter(c => c.tipo === 'investimenti').map(c => c.nome);
 
-export const saveCategoria = async (c) => {
-  const obj = { id: c.id || uid(), macro: c.macro, cat: c.cat || '', sub: c.sub || '', attiva: c.attiva !== false };
-  await dbAdd('categorie', obj);
-  await refreshAll();
-  return obj;
-};
-export const deleteCategoria = async (id) => { await dbDelete('categorie', id); await refreshAll(); };
+  // 1) contoDest esplicito e valido (dato "nuovo", inserito dall'utente)
+  if (m.contoDest && nomiInvest.includes(m.contoDest)) return m.contoDest;
 
-// Elenco macrocategorie distinte (attive)
-export const listaMacro = () => {
-  const set = new Set();
-  for (const c of state.categorie) if (c.attiva !== false && c.macro) set.add(c.macro);
-  return Array.from(set).sort();
-};
+  const testo = `${m.sub || ''} ${m.cat || ''} ${m.desc || ''}`.toLowerCase();
 
-// Categorie (2° livello) di una macro
-export const categorieDi = (macro) => {
-  const set = new Set();
-  for (const c of state.categorie) if (c.macro === macro && c.cat) set.add(c.cat);
-  return Array.from(set).sort();
-};
-
-// Sottocategorie (3° livello) di una categoria
-export const sottocategorieDi = (macro, cat) => {
-  const set = new Set();
-  for (const c of state.categorie) if (c.macro === macro && c.cat === cat && c.sub) set.add(c.sub);
-  return Array.from(set).sort();
-};
-
-// Verifica se una macro ha categorie / una categoria ha sottocategorie (per drill adattivo)
-export const macroHaCategorie = (macro) => categorieDi(macro).length > 0;
-export const categoriaHaSub = (macro, cat) => sottocategorieDi(macro, cat).length > 0;
-
-// ═══════════════════════════════════════════════════════════════════════════
-// GESTIONE COMPLETA: rinomina e cancellazione con PROPAGAZIONE.
-// Principio: i movimenti portano le etichette scritte dentro (denormalizzate),
-// quindi toccare l'anagrafica non li corrompe MAI. Ma per evitare divergenze
-// (vecchio nome nei movimenti storici, nuovo nei futuri), la rinomina propaga
-// a: movimenti, ricorrenze, classificazione rate di mutuo e finanziamenti.
-// ═══════════════════════════════════════════════════════════════════════════
-import { dbBulkPut, dbAll } from '../core/db.js';
-
-// Quanti movimenti usano questo nodo (macro / macro+cat / macro+cat+sub)
-export const contaMovimentiNodo = (macro, cat = '', sub = '') => {
-  return state.movimenti.filter(m =>
-    m.macro === macro && (!cat || m.cat === cat) && (!sub || m.sub === sub)
-  ).length;
-};
-
-const _matchNodo = (x, macro, cat, sub) =>
-  x.macro === macro && (!cat || x.cat === cat) && (!sub || x.sub === sub);
-
-// Applica una patch ({macro} | {cat} | {sub}) a tutto ciò che usa il nodo:
-// movimenti, ricorrenti, mutuo, finanziamenti. Ritorna il n. di movimenti toccati.
-const _propaga = async (macro, cat, sub, patch) => {
-  // movimenti
-  const movs = state.movimenti.filter(m => _matchNodo(m, macro, cat, sub))
-    .map(m => ({ ...m, ...patch }));
-  if (movs.length) await dbBulkPut('movimenti', movs);
-
-  // ricorrenti
-  const rics = state.ricorrenti.filter(r => _matchNodo(r, macro, cat, sub))
-    .map(r => ({ ...r, ...patch }));
-  if (rics.length) await dbBulkPut('ricorrenti', rics);
-
-  // mutuo e finanziamenti (classificazione rate generate)
-  if (state.mutuo && _matchNodo(state.mutuo, macro, cat, sub)) {
-    await dbAdd('mutuo', { ...state.mutuo, ...patch });
+  // 2) parola chiave del nome conto (es. "Fideuram" da "PAC Fideuram")
+  for (const nome of nomiInvest) {
+    const chiave = nome.replace(/investimenti/i, '').trim().toLowerCase();
+    if (chiave && testo.includes(chiave)) return nome;
   }
-  const fins = state.finanziamenti.filter(f => _matchNodo(f, macro, cat, sub))
-    .map(f => ({ ...f, ...patch }));
-  if (fins.length) await dbBulkPut('finanziamenti', fins);
 
-  return movs.length;
-};
-
-// RINOMINA un nodo. livello: 'macro' | 'cat' | 'sub'.
-// Aggiorna l'anagrafica e, se propagaMovimenti=true, tutto ciò che lo usa.
-export const rinominaNodo = async (livello, macro, cat, sub, nuovoNome, propagaMovimenti = true) => {
-  nuovoNome = (nuovoNome || '').trim();
-  if (!nuovoNome) throw new Error('Il nuovo nome non può essere vuoto');
-
-  // anagrafica: aggiorna tutte le righe del nodo
-  const righe = state.categorie.filter(c => {
-    if (livello === 'macro') return c.macro === macro;
-    if (livello === 'cat') return c.macro === macro && c.cat === cat;
-    return c.macro === macro && c.cat === cat && c.sub === sub;
-  }).map(c => ({ ...c, [livello === 'macro' ? 'macro' : livello === 'cat' ? 'cat' : 'sub']: nuovoNome }));
-  if (righe.length) await dbBulkPut('categorie', righe);
-
-  // propagazione a movimenti/ricorrenti/prestiti
-  let toccati = 0;
-  if (propagaMovimenti) {
-    const patch = livello === 'macro' ? { macro: nuovoNome } : livello === 'cat' ? { cat: nuovoNome } : { sub: nuovoNome };
-    toccati = await _propaga(
-      macro,
-      livello === 'macro' ? '' : cat,
-      livello === 'sub' ? sub : '',
-      patch
-    );
+  // 3) euristica crypto -> Binance (se esiste un conto Binance)
+  if (/crypto|binance|bitcoin|btc/.test(testo)) {
+    const binance = nomiInvest.find(n => /binance/i.test(n));
+    if (binance) return binance;
   }
-  await refreshAll();
-  return toccati;
+
+  return null;
 };
 
-// ELIMINA un nodo dall'anagrafica. I movimenti NON vengono toccati (restano
-// con la loro etichetta, nessun dato si perde) — a meno che non venga passata
-// una riassegnazione: in quel caso i movimenti vengono spostati sul nuovo nodo.
-export const eliminaNodo = async (livello, macro, cat, sub, riassegnaA = null) => {
-  // eventuale riassegnazione dei movimenti PRIMA di togliere l'anagrafica
-  let riassegnati = 0;
-  if (riassegnaA) {
-    const patch = { macro: riassegnaA.macro, cat: riassegnaA.cat || '', sub: riassegnaA.sub || '' };
-    riassegnati = await _propaga(
-      macro,
-      livello === 'macro' ? '' : cat,
-      livello === 'sub' ? sub : '',
-      patch
-    );
-  }
-  // rimuovi le righe di anagrafica del nodo
-  const daEliminare = state.categorie.filter(c => {
-    if (livello === 'macro') return c.macro === macro;
-    if (livello === 'cat') return c.macro === macro && c.cat === cat;
-    return c.macro === macro && c.cat === cat && c.sub === sub;
-  });
-  for (const r of daEliminare) await dbDelete('categorie', r.id);
-  await refreshAll();
-  return riassegnati;
+// True se il movimento è un trasferimento verso un investimento (usato per filtrare).
+export const eInvestimento = (m, conti) => {
+  if (m.tipo !== 'trasferimento') return false;
+  if (m.macro === 'Investimenti') return true;
+  const dest = conti.find(c => c.nome === m.contoDest);
+  return dest ? dest.tipo === 'investimenti' : false;
 };
+
+// Nome dello "strumento" dentro un conto (PAC Fideuram, Crypto, ...): usato per il
+// raggruppamento annidato. Ripiega su cat, poi desc, poi il conto stesso.
+export const strumentoDiTrasferimento = (m, contoNome) => m.sub || m.cat || m.desc || contoNome;

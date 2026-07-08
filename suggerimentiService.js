@@ -1,167 +1,213 @@
-// ricorrentiService.js — Ricorrenze e regole automatiche (accantonamenti).
-// Una "ricorrenza" genera automaticamente movimenti alle scadenze. Le "regole
-// automatiche" sono ricorrenze speciali per gli accantonamenti (es. 20€/giorno su
-// deposito, PAC settimanale, ricarica a soglia) — parametrizzabili e modificabili.
+// prestitiService.js — Mutuo e finanziamenti: piano di ammortamento e stato attuale.
+// Ammortamento alla francese (rata costante). Il residuo debito serve al Patrimonio;
+// la rata mensile appare come spesa nella home.
 
-import { dbAdd, dbDelete, dbGet } from '../core/db.js';
+import { dbAdd, dbDelete, dbBulkPut } from '../core/db.js';
 import { state, refreshAll } from '../core/store.js';
-import { uid, round2, todayISO } from '../core/utils.js';
-import { saveMovimento } from './movimentiService.js';
-import { saldoStimato } from './contiService.js';
+import { uid, round2 } from '../core/utils.js';
 
-export const FREQUENZE = ['giornaliera', 'settimanale', 'mensile', 'annuale'];
+// Calcola il piano di ammortamento completo di un prestito (mutuo o finanziamento).
+export const calcolaPiano = (p, eventi = []) => {
+  const rate = [];
+  const tassoMensile = (p.tasso / 100) / 12;
+  let residuo = p.importo_iniziale;
+  const start = new Date(p.data_inizio + 'T00:00:00');
 
-// --- CRUD ricorrenti ---
-export const saveRicorrente = async (r) => {
-  const dataInizio = r.dataInizio || r.prossima || todayISO();
-  const obj = {
-    id: r.id || uid(),
-    nome: r.nome || r.desc || 'Ricorrenza',
-    tipo: r.tipo || 'spesa',
-    frequenza: r.frequenza || 'mensile',
-    giorno: r.giorno || null,          // giorno del mese (mensile) o della settimana (settimanale)
-    imp: round2(r.imp || 0),
-    macro: r.macro || '', cat: r.cat || '', sub: r.sub || '',
-    conto: r.conto || '', contoDest: r.contoDest || '',
-    tag: r.tag || [],
-    desc: r.desc || '',
-    // per le regole a soglia
-    modalita: r.modalita || 'fisso',   // 'fisso' | 'soglia'
-    soglia: r.soglia || null,
-    isRegola: r.isRegola === true,     // true = regola automatica (accantonamento)
-    attiva: r.attiva !== false,
-    // inizio / fine
-    dataInizio,
-    fineTipo: r.fineTipo || 'mai',     // 'mai' | 'data' | 'conteggio'
-    fineData: r.fineData || null,      // se fineTipo === 'data'
-    fineConteggio: r.fineConteggio || null,  // se fineTipo === 'conteggio' (numero di occorrenze)
-    generati: r.generati || 0,         // quante occorrenze già generate (per il conteggio)
-    ultimaGenerazione: r.ultimaGenerazione || null,
-    prossima: r.prossima || dataInizio,
-    // collegamento con mutuo/finanziamento e provenienza: vanno SEMPRE preservati,
-    // altrimenti modificando la ricorrenza si spezza il legame col prestito
-    // e la sincronizzazione successiva ne creerebbe un doppione.
-    origineMutuo: r.origineMutuo || null,
-    origine: r.origine || '',
-  };
-  await dbAdd('ricorrenti', obj);
-  await refreshAll();
-  return obj;
-};
+  // eventi di estinzione parziale indicizzati per data
+  const estinzioni = eventi.filter(e => e.tipo === 'estinzione_parziale');
 
-export const deleteRicorrente = async (id) => { await dbDelete('ricorrenti', id); await refreshAll(); };
+  const [sy, sm, sg] = p.data_inizio.split('-').map(Number);
+  // giorno delle rate successive alla prima: il giorno di addebito se impostato,
+  // altrimenti il giorno della data di inizio (la prima rata cade sempre alla data di inizio)
+  const giornoRata = p.giorno_addebito || sg;
 
-// Calcola la data della prossima occorrenza dopo una certa data
-const prossimaData = (dataISO, frequenza) => {
-  const [y, m, g] = dataISO.split('-').map(Number);
-  if (frequenza === 'giornaliera' || frequenza === 'settimanale') {
-    const d = new Date(y, m - 1, g + (frequenza === 'giornaliera' ? 1 : 7));
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  }
-  if (frequenza === 'annuale') {
-    const maxG = new Date(y + 1, m, 0).getDate();   // gestisce 29 feb
-    return `${y + 1}-${String(m).padStart(2, '0')}-${String(Math.min(g, maxG)).padStart(2, '0')}`;
-  }
-  // mensile: giorno voluto, o ULTIMO del mese se non esiste (31 gen -> 28 feb, non 3 mar)
-  const ny = m === 12 ? y + 1 : y;
-  const nm = m === 12 ? 1 : m + 1;
-  const maxG = new Date(ny, nm, 0).getDate();
-  return `${ny}-${String(nm).padStart(2, '0')}-${String(Math.min(g, maxG)).padStart(2, '0')}`;
-};
+  for (let i = 1; i <= p.durata_mesi && residuo > 0.005; i++) {
+    // ogni rata è calcolata DALLA DATA DI INIZIO (mese di partenza + i-1), preservando
+    // il giorno voluto, o l'ultimo giorno del mese se non esiste (31 -> 28 feb).
+    const mesiTot = sm - 1 + (i - 1);
+    const anno = sy + Math.floor(mesiTot / 12);
+    const mese = (mesiTot % 12) + 1;
+    const maxG = new Date(anno, mese, 0).getDate();
+    const giorno = i === 1 ? sg : giornoRata;
+    const dataRata = new Date(anno, mese - 1, Math.min(giorno, maxG));
+    const interessi = tassoMensile > 0 ? residuo * tassoMensile : 0;
+    let capitale = p.rata - interessi;
+    if (capitale > residuo) capitale = residuo;
+    residuo = residuo - capitale;
 
-// Genera i movimenti per tutte le ricorrenze scadute fino a oggi.
-// Rispetta la data di fine (per data o per numero di occorrenze). I movimenti vengono
-// creati SOLO quando la scadenza è effettivamente arrivata (<= oggi), mai in anticipo.
-export const generaScaduti = async () => {
-  const oggi = todayISO();
-  let generati = 0;
-
-  for (const r of state.ricorrenti) {
-    if (r.attiva === false) continue;
-    let cursore = r.prossima || r.ultimaGenerazione || r.dataInizio || oggi;
-    let contatore = r.generati || 0;
-    let guard = 0;
-
-    while (cursore <= oggi && guard < 1000) {
-      guard++;
-      // controllo fine per DATA
-      if (r.fineTipo === 'data' && r.fineData && cursore > r.fineData) break;
-      // controllo fine per CONTEGGIO
-      if (r.fineTipo === 'conteggio' && r.fineConteggio && contatore >= r.fineConteggio) break;
-
-      let importo = r.imp;
-      // Regola a soglia: importo = quanto serve per riportare il conto alla soglia
-      if (r.modalita === 'soglia' && r.soglia && r.contoDest) {
-        const dest = state.conti.find(c => c.nome === r.contoDest);
-        if (dest) {
-          const attuale = saldoStimato(dest);
-          importo = round2(Math.max(0, r.soglia - attuale));
-        }
+    // applica estinzioni avvenute in questo mese
+    for (const est of estinzioni) {
+      const de = new Date(est.data + 'T00:00:00');
+      if (de.getFullYear() === dataRata.getFullYear() && de.getMonth() === dataRata.getMonth()) {
+        residuo = Math.max(0, residuo - (est.importo || 0));
       }
-
-      if (importo > 0) {
-        // CHIAVE DI IDEMPOTENZA: id deterministico ricorrenza+data. Se per qualsiasi
-        // motivo la generazione ripartisse dallo stesso punto (reset di 'prossima',
-        // doppio avvio, bug futuro), il movimento esiste già e NON viene duplicato.
-        const idGen = `gen-${r.id}-${cursore}`;
-        const esiste = await dbGet('movimenti', idGen);
-        if (!esiste) {
-          await saveMovimento({
-            id: idGen,
-            data: cursore, tipo: r.tipo, imp: importo,
-            macro: r.macro, cat: r.cat, sub: r.sub,
-            conto: r.conto, contoDest: r.contoDest, tag: r.tag,
-            desc: r.desc || r.nome, note: 'Generato da ricorrenza', origine: 'ricorrenza',
-          });
-          generati++;
-        }
-        contatore++;
-      }
-      cursore = prossimaData(cursore, r.frequenza);
     }
-    // aggiorna la prossima scadenza e il contatore della ricorrenza
-    await dbAdd('ricorrenti', { ...r, prossima: cursore, generati: contatore, ultimaGenerazione: oggi });
-  }
 
-  if (generati > 0) await refreshAll();
-  return generati;
+    const oggi = new Date();
+    rate.push({
+      n: i,
+      data: dataRata.toISOString().slice(0, 10),
+      rata: round2(p.rata),
+      quotaCapitale: round2(capitale),
+      quotaInteressi: round2(interessi),
+      residuo: round2(residuo),
+      pagata: dataRata <= oggi,
+    });
+  }
+  return rate;
 };
 
-// Totale "impegnato" al mese (normalizza tutte le frequenze a valore mensile)
-export const impegnatoMensile = () => {
+// Stato attuale sintetico del prestito
+export const statoPrestito = (p, eventi = []) => {
+  if (!p || !p.importo_iniziale) return null;
+  const piano = calcolaPiano(p, eventi);
+  if (!piano.length) return null;
+  const oggi = new Date();
+  const pagate = piano.filter(r => r.pagata);
+  const prossima = piano.find(r => !r.pagata);
+  const residuo = pagate.length ? pagate[pagate.length - 1].residuo : p.importo_iniziale;
+  const restituito = round2(p.importo_iniziale - residuo);
+  const pct = Math.round((restituito / p.importo_iniziale) * 100);
+
+  return {
+    piano,
+    rata: round2(p.rata),
+    quotaUtente: round2(p.rata * (p.quota_utente || 100) / 100),
+    residuo: round2(residuo),
+    restituito,
+    ratePagate: pagate.length,
+    rateTotali: piano.length,
+    prossimaData: prossima ? prossima.data : null,
+    dataFine: piano[piano.length - 1].data,
+    pctCompletamento: pct,
+  };
+};
+
+// Somma dei debiti residui per il patrimonio. Con escludiMutuo=true il mutuo NON
+// viene contato: serve quando si esclude la casa dal patrimonio (il mutuo è il
+// debito legato a quella casa, quindi va tolto insieme ad essa).
+export const debitoTotaleResiduo = (escludiMutuo = false) => {
   let tot = 0;
-  for (const r of state.ricorrenti) {
-    if (r.attiva === false) continue;
-    if (r.tipo === 'entrata') continue;   // conto solo uscite/accantonamenti
-    let mensile = r.imp;
-    if (r.frequenza === 'giornaliera') mensile = r.imp * 30;
-    else if (r.frequenza === 'settimanale') mensile = r.imp * 4.33;
-    else if (r.frequenza === 'annuale') mensile = r.imp / 12;
-    tot += mensile;
+  if (state.mutuo && !escludiMutuo) {
+    const s = statoPrestito(state.mutuo, state.eventiMutuo);
+    if (s) tot += s.residuo * (state.mutuo.quota_utente || 100) / 100;
+  }
+  for (const f of state.finanziamenti) {
+    if (f.attivo === false) continue;
+    const s = statoPrestito(f, []);
+    if (s) tot += s.residuo * (f.quota_utente || 100) / 100;
   }
   return round2(tot);
 };
 
-export const ricorrentiAttive = () => state.ricorrenti.filter(r => r.attiva !== false)
-  .sort((a, b) => b.imp - a.imp);
-
-// Aggiorna i movimenti PASSATI generati da una ricorrenza (opzione "anche le passate").
-// Li riconosce per corrispondenza di classificazione (macro/cat/sub/tipo) e descrizione.
-export const aggiornaMovimentiDaRicorrenza = async (ricorrenza, patch) => {
-  const { dbBulkPut } = await import('../core/db.js');
-  const daAggiornare = state.movimenti.filter(m =>
-    m.tipo === ricorrenza.tipo &&
-    m.macro === ricorrenza.macro &&
-    m.cat === (ricorrenza.cat || '') &&
-    m.sub === (ricorrenza.sub || '') &&
-    (ricorrenza.desc ? m.desc === ricorrenza.desc : true)
-  ).map(m => ({
-    ...m,
-    imp: patch.imp !== undefined ? round2(patch.imp) : m.imp,
-    desc: patch.desc !== undefined ? patch.desc : m.desc,
-  }));
-  if (daAggiornare.length) await dbBulkPut('movimenti', daAggiornare);
+// --- Salvataggi ---
+export const saveMutuo = async (m) => {
+  const obj = { id: 'mutuo-principale', ...m };
+  await dbAdd('mutuo', obj);
   await refreshAll();
-  return daAggiornare.length;
+  await sincronizzaRicorrenzaPrestito(obj, 'mutuo');
+  return obj;
+};
+export const saveFinanziamento = async (f) => {
+  const obj = { id: f.id || 'fin-' + uid(), ...f, attivo: f.attivo !== false };
+  await dbAdd('finanziamenti', obj);
+  await refreshAll();
+  await sincronizzaRicorrenzaPrestito(obj, 'finanziamento');
+  return obj;
+};
+export const deleteFinanziamento = async (id) => {
+  await dbDelete('finanziamenti', id);
+  // rimuovi anche la ricorrenza collegata
+  const { dbAll: _all, dbDelete: _del } = await import('../core/db.js');
+  const ric = await _all('ricorrenti');
+  for (const r of ric) if (r.origineMutuo === id) await _del('ricorrenti', r.id);
+  await refreshAll();
 };
 
+// Crea/aggiorna la ricorrenza della rata di un prestito.
+// REGOLA D'ORO: genera movimenti solo dal presente in avanti. Il passato è già coperto
+// dai movimenti reali nello storico (riconosciuti tramite sottocategoria, es. "Rata Mutuo").
+export const sincronizzaRicorrenzaPrestito = async (prestito, tipo) => {
+  const { dbAll: _all, dbAdd: _add, dbDelete: _del } = await import('../core/db.js');
+  const rif = tipo === 'mutuo' ? 'mutuo-principale' : prestito.id;
+
+  // trova una eventuale ricorrenza già collegata (per id di origine).
+  const tutte = await _all('ricorrenti');
+  const esistente = tutte.find(r => r.origineMutuo === rif);
+
+  // se il prestito non deve generare ricorrenza, rimuovi quella collegata e basta
+  if (prestito.generaRicorrenza === false) {
+    if (esistente) { await _del('ricorrenti', esistente.id); await refreshAll(); }
+    return;
+  }
+
+  const piano = calcolaPiano(prestito, tipo === 'mutuo' ? (await _all('eventiMutuo')) : []);
+  const oggiISO = new Date().toISOString().slice(0, 10);
+  const prossimaRata = piano.find(r => r.data >= oggiISO);
+  if (!prossimaRata) {
+    // prestito concluso: la ricorrenza muore
+    if (esistente) await _del('ricorrenti', esistente.id);
+    await refreshAll();
+    return;
+  }
+
+  const rec = {
+    id: esistente ? esistente.id : uid(),
+    nome: prestito.descMovimento || prestito.nome,
+    tipo: 'spesa',
+    frequenza: 'mensile',
+    giorno: prestito.giorno_addebito || null,
+    imp: round2(prestito.rata * (prestito.quota_utente || 100) / 100),   // rata per la TUA quota
+    macro: prestito.macro || 'Casa',
+    cat: prestito.cat || '',
+    sub: prestito.sub || (tipo === 'mutuo' ? 'Rata Mutuo' : ''),
+    conto: prestito.conto || '',
+    contoDest: '',
+    tag: [],
+    desc: prestito.descMovimento || '',
+    modalita: 'fisso', soglia: null, isRegola: false,
+    attiva: true,
+    // PRESERVA lo stato di generazione se la ricorrenza esisteva già: altrimenti
+    // ad ogni salvataggio rigenererebbe i movimenti già creati (doppioni).
+    dataInizio: esistente ? esistente.dataInizio : prossimaRata.data,
+    prossima: esistente ? esistente.prossima : prossimaRata.data,
+    fineTipo: 'data',
+    fineData: piano[piano.length - 1].data,
+    fineConteggio: null,
+    generati: esistente ? (esistente.generati || 0) : 0,
+    origineMutuo: rif,
+  };
+  await _add('ricorrenti', rec);
+  await refreshAll();
+};
+
+export const saveEventoMutuo = async (ev) => {
+  await dbAdd('eventiMutuo', { id: ev.id || uid(), ...ev });
+  await refreshAll();
+};
+export const deleteEventoMutuo = async (id) => { await dbDelete('eventiMutuo', id); await refreshAll(); };
+export const eventiMutuo = () => state.eventiMutuo.filter(e => e.riferimento === 'mutuo-principale' || !e.riferimento);
+
+// Sincronizza le ricorrenze delle rate di TUTTI i prestiti (mutuo + finanziamenti).
+// Chiamata all'avvio dell'app. Usa sincronizzaRicorrenzaPrestito, che rispetta la
+// regola d'oro (solo dal presente in avanti, niente doppioni col passato).
+export const sincronizzaPrestiti = async () => {
+  // DEDUP DI SICUREZZA: se per un bug passato un prestito ha più ricorrenze
+  // collegate (stesso origineMutuo), tengo la prima ed elimino le altre.
+  const { dbAll: _all, dbDelete: _del } = await import('../core/db.js');
+  const tutte = await _all('ricorrenti');
+  const viste = new Map();
+  for (const r of tutte) {
+    if (!r.origineMutuo) continue;
+    if (viste.has(r.origineMutuo)) await _del('ricorrenti', r.id);
+    else viste.set(r.origineMutuo, r.id);
+  }
+
+  if (state.mutuo && state.mutuo.importo_iniziale && state.mutuo.generaRicorrenza !== false) {
+    await sincronizzaRicorrenzaPrestito(state.mutuo, 'mutuo');
+  }
+  for (const f of state.finanziamenti) {
+    if (f.attivo === false || !f.importo_iniziale || f.generaRicorrenza === false) continue;
+    await sincronizzaRicorrenzaPrestito(f, 'finanziamento');
+  }
+};
