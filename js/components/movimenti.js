@@ -148,9 +148,11 @@ export const renderMovimenti = async (root, params = {}) => {
     : _periodo === 'settimana' ? 'Ultimi 7 giorni'
     : `${nomeMese(parseInt(mese) - 1)} ${anno}`;
 
-  // controller selezione multipla (creato una volta, refresh ri-renderizza la lista)
+  // controller selezione multipla (creato una volta; onChange RI-AGGANCIATA a ogni
+  // render perché refreshLista cattura root e params correnti)
   const refreshLista = () => renderMovimenti(root, { ...params, mese: _mese, periodo: _periodo, _interno: true });
   if (!_sel) _sel = creaSelezione(refreshLista);
+  else _sel.setOnChange(refreshLista);
 
   const btnSeleziona = (movs.length && !_sel.attiva())
     ? `<button class="sel-mini" id="attiva-sel" aria-label="Seleziona operazioni"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 12l2.2 2.2L15.5 9.5"/></svg></button>`

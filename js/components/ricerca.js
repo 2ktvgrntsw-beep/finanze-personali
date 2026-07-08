@@ -10,7 +10,9 @@ import { categorieDi, sottocategorieDi } from '../services/categorieService.js';
 import { creaSelezione } from './selezioneMultipla.js';
 
 let _ultimiRisultati = [];
-let _sel = null;   // controller selezione multipla condiviso
+let _sel = null;        // controller selezione multipla condiviso
+let _preserva = false;  // true quando si apre una modifica dai risultati: al ritorno
+                        // (history.back) la ricerca NON va azzerata
 // STATO PERSISTENTE: query e filtri sopravvivono alla navigazione — tornando
 // dalla modifica di un movimento ritrovi la ricerca esattamente com'era.
 let _q = '';
@@ -22,24 +24,30 @@ export const renderRicerca = async (root, params = {}) => {
   if (_sel) _sel.esciSilenzioso();
 
   // La ricerca riparte PULITA a ogni ingresso: query e filtri non devono
-  // sopravvivere al cambio pagina. Fanno eccezione SOLO i parametri passati
-  // esplicitamente (es. arrivo da Analisi con categoria preimpostata).
-  const arrivaConFiltri = params.macro !== undefined || params.cat !== undefined ||
-    params.sub !== undefined || params.da !== undefined || params.a !== undefined ||
-    params.tipo !== undefined || params.conto !== undefined;
-
-  if (params.q) _q = params.q; else if (!arrivaConFiltri) _q = '';
-
-  if (arrivaConFiltri) {
-    _filtri = {
-      tipo: params.tipo || '', macro: params.macro || '', cat: params.cat || '', sub: params.sub || '',
-      conto: params.conto || '', da: params.da || '', a: params.a || '', min: '', max: '',
-    };
-    _filtriAperti = false;
+  // sopravvivere al cambio pagina. DUE eccezioni: (a) parametri passati
+  // esplicitamente (es. arrivo da Analisi con categoria preimpostata);
+  // (b) ritorno da una modifica aperta DAI RISULTATI (Annulla/Salva fanno
+  // history.back): lì query e filtri devono restare come l'utente li aveva.
+  if (_preserva) {
+    _preserva = false;   // consumo il flag: vale per un solo ritorno
   } else {
-    // nessun parametro: azzero i filtri della sessione precedente
-    _filtri = { tipo: '', macro: '', cat: '', sub: '', conto: '', da: '', a: '', min: '', max: '' };
-    _filtriAperti = false;
+    const arrivaConFiltri = params.macro !== undefined || params.cat !== undefined ||
+      params.sub !== undefined || params.da !== undefined || params.a !== undefined ||
+      params.tipo !== undefined || params.conto !== undefined;
+
+    if (params.q) _q = params.q; else if (!arrivaConFiltri) _q = '';
+
+    if (arrivaConFiltri) {
+      _filtri = {
+        tipo: params.tipo || '', macro: params.macro || '', cat: params.cat || '', sub: params.sub || '',
+        conto: params.conto || '', da: params.da || '', a: params.a || '', min: '', max: '',
+      };
+      _filtriAperti = false;
+    } else {
+      // nessun parametro: azzero i filtri della sessione precedente
+      _filtri = { tipo: '', macro: '', cat: '', sub: '', conto: '', da: '', a: '', min: '', max: '' };
+      _filtriAperti = false;
+    }
   }
 
   const nFiltri = Object.values(_filtri).filter(v => v !== '').length;
@@ -112,8 +120,11 @@ export const renderRicerca = async (root, params = {}) => {
 
   const clearBtn = root.querySelector('#q-clear');
 
-  // controller selezione multipla: onChange ri-esegue la ricerca (che ridisegna la lista)
+  // controller selezione multipla: onChange ri-esegue la ricerca (che ridisegna la lista).
+  // setOnChange a OGNI render: esegui() cattura il DOM corrente (inp, box) e senza
+  // ri-aggancio il tasto Seleziona smetterebbe di funzionare dalla seconda visita.
   if (!_sel) _sel = creaSelezione(() => esegui());
+  else _sel.setOnChange(() => esegui());
 
   const esegui = () => {
     _q = inp.value;
@@ -171,6 +182,7 @@ export const renderRicerca = async (root, params = {}) => {
       el.addEventListener('click', () => {
         if (longFired) return;
         if (_sel.attiva()) { _sel.toggle(id); return; }
+        _preserva = true;   // al ritorno (Annulla/Salva -> back) la ricerca resta
         navigate('modifica', { id });
       });
     });

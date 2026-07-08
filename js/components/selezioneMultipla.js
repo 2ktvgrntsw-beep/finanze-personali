@@ -29,6 +29,11 @@ export const creaSelezione = (onChange) => {
     size: () => scelti.size,
     ids: () => Array.from(scelti),
 
+    // Da chiamare a OGNI render della pagina ospite: la callback cattura elementi
+    // del DOM corrente, e senza ri-aggancio il controller (creato una sola volta)
+    // continuerebbe a ridisegnare il DOM della prima visita, ormai staccato.
+    setOnChange(fn) { onChange = fn; },
+
     // avvia la modalità selezione con un primo elemento (da long-press)
     avvia(id) {
       attiva = true;
