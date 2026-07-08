@@ -1,108 +1,64 @@
-// backupService.js — Backup automatico interno + rilevamento perdita dati.
-// A ogni avvio salva una copia compatta di tutti i dati in uno store separato ('meta',
-// chiave dedicata). Se all'avvio i dati principali risultano vuoti MA esiste una copia,
-// propone il ripristino. Copre bug/corruzioni/azzeramenti; NON copre lo "sfratto" di iOS
-// (che cancella tutto il contenitore) — per quello serve il backup Excel.
+// suggerimentiService.js — Motore di suggerimento descrizione -> classificazione.
+// Impara da ogni movimento inserito (e dallo storico al seed). Quando l'utente scrive
+// 2-3 lettere nella descrizione, propone la classificazione (macro/cat/sub/conto) usata
+// più spesso per descrizioni simili. Distingue descrizione (libera) da classificazione.
 
-import { dbAll, dbAdd, dbGet, dbBulkPut, dbClear } from '../core/db.js';
-import { refreshAll } from '../core/store.js';
+import { dbAdd, dbGet } from '../core/db.js';
+import { state } from '../core/store.js';
+import { _normDesc } from '../core/seed.js';
 
-const CHIAVE_BACKUP = '_backup_auto';
-const CHIAVE_ULTIMO_EXCEL = '_ultimo_backup_excel';
-const STORE_DATI = ['movimenti', 'conti', 'categorie', 'tag', 'ricorrenti', 'mutuo', 'finanziamenti', 'eventiMutuo', 'bollette'];
+// Apprende (o rinforza) l'associazione descrizione -> classificazione da un movimento.
+export const apprendiDaMovimento = async (m) => {
+  const chiave = _normDesc(m.desc);
+  if (!chiave) return;
+  const esistente = await dbGet('suggerimenti', chiave);
+  const classificazione = { macro: m.macro, cat: m.cat, sub: m.sub, conto: m.conto, tipo: m.tipo };
 
-// Salva una copia interna di tutti i dati (chiamata a ogni avvio, dopo il refresh).
-export const salvaBackupAuto = async () => {
-  const dati = {};
-  for (const s of STORE_DATI) dati[s] = await dbAll(s);
-  const totMov = (dati.movimenti || []).length;
-  // non sovrascrivere un backup buono con uno vuoto (se per qualche motivo i dati sono spariti)
-  if (totMov === 0) {
-    const esistente = await dbGet('meta', CHIAVE_BACKUP);
-    if (esistente && esistente.valore && esistente.valore.contatori && esistente.valore.contatori.movimenti > 0) {
-      return; // preserva il backup precedente (che ha dati)
-    }
+  if (!esistente) {
+    await dbAdd('suggerimenti', { chiave, desc: m.desc, classificazione, occorrenze: 1 });
+  } else {
+    // rinforza: se la classificazione coincide aumenta il contatore, altrimenti
+    // aggiorna verso l'ultima usata (l'utente potrebbe aver cambiato abitudine)
+    const stessa = JSON.stringify(esistente.classificazione) === JSON.stringify(classificazione);
+    await dbAdd('suggerimenti', {
+      chiave,
+      desc: m.desc,
+      classificazione: stessa ? esistente.classificazione : classificazione,
+      occorrenze: (esistente.occorrenze || 1) + 1,
+    });
   }
-  await dbAdd('meta', {
-    chiave: CHIAVE_BACKUP,
-    valore: {
-      data: new Date().toISOString(),
-      contatori: Object.fromEntries(Object.entries(dati).map(([k, v]) => [k, v.length])),
-      dati,
-    },
-  });
 };
 
-// Verifica se serve proporre un ripristino: dati principali vuoti ma backup con dati.
-export const rilevaPerdita = async () => {
-  const movimenti = await dbAll('movimenti');
-  if (movimenti.length > 0) return null;   // dati presenti, nessuna perdita
-  const backup = await dbGet('meta', CHIAVE_BACKUP);
-  if (backup && backup.valore && backup.valore.contatori && backup.valore.contatori.movimenti > 0) {
-    return { data: backup.valore.data, contatori: backup.valore.contatori };
+// Restituisce fino a `limite` suggerimenti per il testo digitato.
+// Ogni suggerimento: { desc, classificazione, occorrenze }.
+export const suggerisciPerTesto = (testo, limite = 5) => {
+  const q = _normDesc(testo);
+  if (q.length < 2) return [];
+  const out = state.suggerimenti
+    .filter(s => s.chiave.includes(q))
+    .sort((a, b) => {
+      // priorità: chi inizia col testo, poi più frequente
+      const aStart = a.chiave.startsWith(q) ? 0 : 1;
+      const bStart = b.chiave.startsWith(q) ? 0 : 1;
+      if (aStart !== bStart) return aStart - bStart;
+      return (b.occorrenze || 0) - (a.occorrenze || 0);
+    })
+    .slice(0, limite);
+  return out;
+};
+
+// --- Suggerimento tag (auto-completamento) ---
+export const suggerisciTag = (testo, limite = 8) => {
+  const q = (testo || '').trim().toLowerCase();
+  // unione: anagrafica tag + tag REALMENTE USATI nei movimenti (ordinati per frequenza).
+  // Prima pescava solo dall'anagrafica (popolata solo dall'inserimento massivo):
+  // i tag inseriti a mano nei movimenti non venivano mai suggeriti.
+  const freq = {};
+  for (const t of state.tag) freq[t.nome] = (freq[t.nome] || 0) + 1;
+  for (const m of state.movimenti) {
+    if (Array.isArray(m.tag)) for (const t of m.tag) if (t) freq[t] = (freq[t] || 0) + 1;
   }
-  return null;
-};
-
-// Ripristina dal backup interno.
-export const ripristinaBackupAuto = async () => {
-  const backup = await dbGet('meta', CHIAVE_BACKUP);
-  if (!backup || !backup.valore || !backup.valore.dati) return false;
-  const dati = backup.valore.dati;
-  for (const s of STORE_DATI) {
-    await dbClear(s);
-    if (dati[s] && dati[s].length) await dbBulkPut(s, dati[s]);
-  }
-  await refreshAll();
-  return true;
-};
-
-// --- Promemoria backup Excel ---
-export const registraBackupExcelFatto = async () => {
-  await dbAdd('meta', { chiave: CHIAVE_ULTIMO_EXCEL, valore: new Date().toISOString() });
-};
-
-// Giorni dall'ultimo backup Excel (null se mai fatto).
-export const giorniDaUltimoBackupExcel = async () => {
-  const rec = await dbGet('meta', CHIAVE_ULTIMO_EXCEL);
-  if (!rec || !rec.valore) return null;
-  const diff = Date.now() - new Date(rec.valore).getTime();
-  return Math.floor(diff / (1000 * 60 * 60 * 24));
-};
-
-// --- Backup JSON (formato di recovery PRIMARIO) ---
-// Nessuna libreria esterna, nessun limite di cella, nessuna perdita di tipo:
-// il file .json contiene tutti gli store così come sono. È il formato più
-// affidabile per il ripristino; l'Excel resta per la consultazione umana.
-export const esportaJSON = async () => {
-  const dati = { _formato: 'finanze-backup', _versione: 1, _data: new Date().toISOString() };
-  for (const s of STORE_DATI) dati[s] = await dbAll(s);
-  const blob = new Blob([JSON.stringify(dati)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  const oggi = new Date();
-  a.href = url;
-  a.download = `backup_finanze_${String(oggi.getDate()).padStart(2, '0')}-${String(oggi.getMonth() + 1).padStart(2, '0')}-${oggi.getFullYear()}.json`;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
-};
-
-// Import JSON, RESILIENTE come l'import Excel: azzera e reimporta solo gli store
-// presenti nel file (con dati); gli altri vengono preservati.
-export const importaJSON = async (file) => {
-  const testo = await file.text();
-  const dati = JSON.parse(testo);
-  if (dati._formato !== 'finanze-backup') throw new Error('File non riconosciuto come backup Finanze');
-  const preservati = [];
-  for (const s of STORE_DATI) {
-    const righe = dati[s];
-    if (Array.isArray(righe) && righe.length > 0) {
-      await dbClear(s);
-      await dbBulkPut(s, righe);
-    } else {
-      preservati.push(s);
-    }
-  }
-  await refreshAll();
-  return { movimenti: (dati.movimenti || []).length, preservati };
+  const nomi = Object.keys(freq).sort((a, b) => freq[b] - freq[a]);
+  if (!q) return nomi.slice(0, limite);
+  return nomi.filter(n => n.toLowerCase().includes(q)).slice(0, limite);
 };

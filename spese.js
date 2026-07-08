@@ -1,200 +1,142 @@
-// shared.js — Componenti UI riutilizzabili (bottom sheet, righe, selettori).
+// drill.js — Drill-down adattivo nelle categorie, con navigazione tra i periodi.
+// Params: macro (obbligatorio), cat (opzionale), periodo, mese.
+// A ogni livello: navigatore mese/anno con frecce (per confrontare i periodi al volo)
+// e card [Totale] [vs media] [vs precedente], come nella home.
 
-import { escapeHtml, fmtEUR, fmtDataEstesa } from '../core/utils.js';
-import { iconaMacro, iconaTipo } from '../core/icons.js';
-import { listaMacro, categorieDi, sottocategorieDi } from '../services/categorieService.js';
+import { state, movimentiDelMese } from '../core/store.js';
+import { fmtEUR, fmtPct, nomeMese, escapeHtml } from '../core/utils.js';
+import { iconaMacro } from '../core/icons.js';
+import { navigate, buildHash } from '../core/router.js';
+import { aggregaPerLivello, soloSpese } from '../services/movimentiService.js';
+import { categoriaHaSub } from '../services/categorieService.js';
+import { abilitaSwipeIndietro } from './shared.js';
 
-// --- Bottom sheet generico ---
-export const apriSheet = (titolo, contenutoHTML, onMount, onClose) => {
-  const bg = document.createElement('div');
-  bg.className = 'sheet-bg';
-  bg.innerHTML = `<div class="sheet">
-    <div class="sheet-head"><h3>${escapeHtml(titolo)}</h3><button class="sheet-close" aria-label="Chiudi">✕</button></div>
-    <div class="sheet-body">${contenutoHTML}</div>
-  </div>`;
-  document.body.appendChild(bg);
-  const chiudi = () => { bg.remove(); if (onClose) { const f = onClose; onClose = null; f(); } };
-  bg.addEventListener('click', (e) => { if (e.target === bg) chiudi(); });
-  bg.querySelector('.sheet-close').addEventListener('click', chiudi);
-  if (onMount) onMount(bg.querySelector('.sheet-body'), chiudi);
-  return chiudi;
+const movimentiPeriodo = (periodo, mese) => {
+  if (periodo === 'anno') return state.movimenti.filter(m => m.data.startsWith(mese.slice(0, 4)));
+  if (periodo === 'settimana') {
+    const oggi = new Date(); const s = new Date(); s.setDate(oggi.getDate() - 6);
+    return state.movimenti.filter(m => m.data >= s.toISOString().slice(0, 10));
+  }
+  return movimentiDelMese(mese);
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// conferma — sostituto brandizzato di confirm(). Ritorna Promise<bool>.
-// I dialog nativi bloccano il thread e su iOS standalone mostrano "localhost
-// dice...", rompendo l'estetica curata dell'app. Questo usa lo stesso sheet
-// del resto dell'interfaccia. Chiusura via X o sfondo = annulla (false).
-//
-// Uso:  if (!(await conferma('Eliminare il conto?', { danger: true }))) return;
-// ─────────────────────────────────────────────────────────────────────────────
-export const conferma = (messaggio, { titolo = 'Conferma', ok = 'Conferma', annulla = 'Annulla', danger = false } = {}) =>
-  new Promise((resolve) => {
-    let risposto = false;
-    const rispondi = (val, chiudi) => { if (risposto) return; risposto = true; resolve(val); if (chiudi) chiudi(); };
-    apriSheet(titolo, `
-      <p class="conferma-testo">${escapeHtml(messaggio)}</p>
-      <div class="btn-row">
-        <button class="btn btn-secondary" id="cf-no">${escapeHtml(annulla)}</button>
-        <button class="btn ${danger ? 'btn-danger' : 'btn-primary'}" id="cf-si">${escapeHtml(ok)}</button>
-      </div>
-    `, (body, chiudi) => {
-      body.querySelector('#cf-si').addEventListener('click', () => rispondi(true, chiudi));
-      body.querySelector('#cf-no').addEventListener('click', () => rispondi(false, chiudi));
-    }, () => rispondi(false));   // X o tap sullo sfondo = annulla
-  });
+export const renderDrill = async (root, params) => {
+  const { macro, cat, periodo = 'mese', mese } = params;
+  const movs = movimentiPeriodo(periodo, mese);
+  const [anno, meseNum] = mese.split('-');
 
-// --- Riga movimento (usata in liste e ricerca) ---
-export const rigaMovimentoHTML = (m) => {
-  const segno = m.tipo === 'spesa' ? '−' : m.tipo === 'entrata' ? '+' : '⇄ ';
-  const cls = m.tipo === 'spesa' ? 'sp' : m.tipo === 'entrata' ? 'en' : 'tr';
-  const icona = m.macro ? iconaMacro(m.macro) : iconaTipo(m.tipo);
-  const sotto = [m.macro, m.cat].filter(Boolean).join(' · ') || m.tipo;
-  const contoTxt = m.conto ? ' · ' + escapeHtml(m.conto) : '';
-  return `
-    <div class="mov" data-mov="${m.id}">
-      <div class="ic">${icona}</div>
-      <div class="body">
-        <div class="d1">${escapeHtml(m.desc || sotto)}</div>
-        <div class="d2">${escapeHtml(sotto)}${contoTxt}</div>
-      </div>
-      <div class="amt ${cls} num">${segno}${fmtEUR(m.imp)}</div>
-    </div>`;
-};
+  // livello corrente: se ho cat -> mostro sub; altrimenti -> mostro cat
+  const livello = cat ? 'sub' : 'cat';
+  const filtro = cat ? { macro, cat } : { macro };
+  const righe = aggregaPerLivello(movs, livello, filtro);
 
-// --- Selettore categoria a griglia di icone (macro -> cat -> sub) ---
-// onSelect riceve { macro, cat, sub }
-export const apriSelettoreCategoria = (onSelect) => {
-  let sel = { macro: '', cat: '', sub: '' };
+  // totali del ramo corrente nel periodo selezionato
+  let ramo = soloSpese(movs).filter(m => m.macro === macro);
+  if (cat) ramo = ramo.filter(m => m.cat === cat);
+  const totRamo = ramo.reduce((s, m) => s + m.imp, 0);
 
-  const render = (body, chiudi) => {
-    const macros = listaMacro();
-    const cats = sel.macro ? categorieDi(sel.macro) : [];
-    const subs = (sel.macro && sel.cat) ? sottocategorieDi(sel.macro, sel.cat) : [];
+  // ── vs media e vs precedente, calcolati sullo STESSO ramo su tutto lo storico ──
+  const perPeriodo = {};
+  for (const m of soloSpese(state.movimenti)) {
+    if (m.macro !== macro) continue;
+    if (cat && m.cat !== cat) continue;
+    const k = periodo === 'anno' ? m.data.slice(0, 4) : (m.annomese || m.data.slice(0, 7));
+    perPeriodo[k] = (perPeriodo[k] || 0) + m.imp;
+  }
+  const chiaveCorrente = periodo === 'anno' ? anno : mese;
+  const altre = Object.keys(perPeriodo).filter(k => k !== chiaveCorrente);
+  const media = altre.length ? altre.reduce((s, k) => s + perPeriodo[k], 0) / altre.length : 0;
+  let chiavePrec;
+  if (periodo === 'anno') chiavePrec = String(parseInt(anno) - 1);
+  else { const d = new Date(parseInt(anno), parseInt(meseNum) - 2, 1); chiavePrec = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
+  const valPrec = perPeriodo[chiavePrec] || 0;
 
-    const grid = (items, tipo, selezionato) => `
-      <div class="cat-grid">
-        ${items.map(it => `
-          <div class="cat-cell ${selezionato === it ? 'sel' : ''}" data-tipo="${tipo}" data-val="${escapeHtml(it)}">
-            <div class="ci">${tipo === 'macro' ? iconaMacro(it) : '🏷️'}</div>
-            <span>${escapeHtml(it)}</span>
-          </div>`).join('')}
-      </div>`;
+  const deltaCell = (rif, lbl) => {
+    if (periodo === 'settimana' || rif <= 0) return `<div class="cell"><div class="lbl">${lbl}</div><div class="val sa num">—</div></div>`;
+    const pct = Math.round((totRamo - rif) / rif * 100);
+    const diff = totRamo - rif;
+    return `<div class="cell"><div class="lbl">${lbl}</div><div class="val num ${pct <= 0 ? 'en' : 'sp'}">${pct > 0 ? '+' : ''}${pct}%</div><div class="delta num" style="color:var(--txt-2)">${diff > 0 ? '+' : '−'}${fmtEUR(Math.abs(diff))}</div></div>`;
+  };
 
-    body.innerHTML = `
-      <div class="section-lbl" style="padding-top:0">Macrocategoria</div>
-      ${grid(macros, 'macro', sel.macro)}
-      ${sel.macro && cats.length ? `<div class="section-lbl">Categoria di "${escapeHtml(sel.macro)}"</div>${grid(cats, 'cat', sel.cat)}` : ''}
-      ${sel.cat && subs.length ? `<div class="section-lbl">Sottocategoria (opzionale)</div>${grid(subs, 'sub', sel.sub)}` : ''}
-      <button class="btn btn-primary" id="conferma-cat" style="margin-top:18px">${sel.macro ? 'Conferma' : 'Scegli una macrocategoria'}</button>
-    `;
+  // il nome del ramo vive DENTRO la card statistiche (header pulito col solo back)
+  document.getElementById('view-title').textContent = '';
+  const suDiLivello = () => {
+    if (cat) location.hash = buildHash('drill', { macro, periodo, mese });
+    else history.back();
+  };
 
-    body.querySelectorAll('.cat-cell').forEach(cell => cell.addEventListener('click', () => {
-      const tipo = cell.dataset.tipo, val = cell.dataset.val;
-      if (tipo === 'macro') {
-        sel = { macro: val, cat: '', sub: '' };
-        // se la macro non ha categorie, la scelta è già completa: chiudo
-        if (categorieDi(val).length === 0) { onSelect(sel); chiudi(); return; }
-      } else if (tipo === 'cat') {
-        sel = { ...sel, cat: val, sub: '' };
-        // se la categoria non ha sottocategorie, chiudo (niente livello inutile)
-        if (sottocategorieDi(sel.macro, val).length === 0) { onSelect(sel); chiudi(); return; }
-      } else {
-        // scelta della sottocategoria = scelta completa: chiudo subito
-        sel = { ...sel, sub: val };
-        onSelect(sel); chiudi(); return;
-      }
-      render(body, chiudi);
-    }));
+  const maxTot = righe.length ? righe[0].totale : 1;
 
-    body.querySelector('#conferma-cat').addEventListener('click', () => {
-      if (!sel.macro) return;
-      onSelect(sel);
-      chiudi();
+  const righeHTML = righe.length ? righe.map(r => {
+    const chiave = r.chiave === '(senza)' ? '' : r.chiave;
+    const foglia = livello === 'sub' || (livello === 'cat' && !categoriaHaSub(macro, chiave));
+    const drillTarget = foglia
+      ? buildHash('movimenti', { macro, cat: livello === 'cat' ? chiave : cat, sub: livello === 'sub' ? chiave : '', periodo, mese })
+      : buildHash('drill', { macro, cat: chiave, periodo, mese });
+    const movTarget = buildHash('movimenti', {
+      macro, cat: livello === 'cat' ? chiave : cat, sub: livello === 'sub' ? chiave : '', periodo, mese,
     });
+    return `
+      <div class="catrow">
+        <div class="icon" data-href="${movTarget}">${livello === 'cat' ? iconaMacro(macro) : '🏷️'}</div>
+        <div class="body" data-href="${drillTarget}">
+          <div class="row1">
+            <span class="name">${escapeHtml(r.chiave)}</span>
+            <span class="right"><span class="amt num">${fmtEUR(r.totale)}</span><span class="pct num">${fmtPct(r.pct)}</span></span>
+          </div>
+          <div class="bar"><span style="width:${Math.max(1.5, r.totale / maxTot * 100)}%"></span></div>
+        </div>
+        <div class="chev" data-href="${drillTarget}">›</div>
+      </div>`;
+  }).join('') : '<div class="empty">Nessuna spesa in questo ramo</div>';
+
+  const labelPeriodo = periodo === 'anno' ? anno : periodo === 'mese' ? `${nomeMese(parseInt(meseNum) - 1)} ${anno}` : 'Ultimi 7 giorni';
+
+  root.innerHTML = `
+    <div class="mov-sticky">
+      ${periodo !== 'settimana' ? `
+        <div class="month-nav" style="margin:4px 0">
+          <button class="arr" id="d-prev">‹</button>
+          <div class="m">${labelPeriodo}</div>
+          <button class="arr" id="d-next">›</button>
+        </div>` : `<div class="month-nav" style="margin:4px 0"><div class="m">${labelPeriodo}</div></div>`}
+      <div class="triple" style="flex-direction:column;padding:0;margin:6px 0 4px">
+        <div class="card-crumb card-crumb-center" id="d-crumb">
+          ${cat ? '<span class="cc-up">‹</span>' : ''}
+          <span class="cc-nome">${escapeHtml(cat || macro)}</span>
+          ${cat ? `<span class="cc-ctx">${escapeHtml(macro)}</span>` : ''}
+        </div>
+        <div style="display:flex;width:100%">
+        <div class="cell"><div class="lbl">Spese</div><div class="val sp num">${fmtEUR(totRamo)}</div></div>
+        ${deltaCell(media, 'vs media')}
+        ${deltaCell(valPrec, periodo === 'anno' ? 'vs anno prec.' : 'vs mese prec.')}
+        </div>
+      </div>
+    </div>
+    <div class="section-lbl"><span>${cat ? 'Sottocategorie di ' + escapeHtml(cat) : 'Categorie di ' + escapeHtml(macro)}</span></div>
+    ${righeHTML}
+    <div style="margin-top:20px">
+      <button class="btn btn-secondary" data-href="${buildHash('movimenti', { macro, cat: cat || '', periodo, mese })}">Vedi tutti i movimenti di ${escapeHtml(cat || macro)}</button>
+    </div>
+  `;
+
+  // frecce: cambiano il periodo restando nello STESSO ramo (via hash, così il back funziona)
+  const sposta = (delta) => {
+    let nuovoMese;
+    if (periodo === 'anno') nuovoMese = `${parseInt(anno) + delta}-${meseNum}`;
+    else { const d = new Date(parseInt(anno), parseInt(meseNum) - 1 + delta, 1); nuovoMese = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
+    location.hash = buildHash('drill', { macro, cat: cat || '', periodo, mese: nuovoMese });
   };
+  const dp = root.querySelector('#d-prev'), dn = root.querySelector('#d-next');
+  if (dp) dp.addEventListener('click', () => sposta(-1));
+  if (dn) dn.addEventListener('click', () => sposta(1));
+  // percorso nella card: TAP per risalire; SWIPE destro fa lo stesso
+  root.querySelector('#d-crumb').addEventListener('click', suDiLivello);
+  abilitaSwipeIndietro(root, suDiLivello);
 
-  apriSheet('Scegli categoria', '', render);
-};
-
-// --- Helper delta: confronta valore vs riferimento, ritorna { testo, classe } ---
-export const calcolaDelta = (valore, riferimento, invertiColore = false) => {
-  if (!riferimento || riferimento === 0) return null;
-  const pct = Math.round(((valore - riferimento) / riferimento) * 100);
-  if (Math.abs(pct) < 3) return { testo: 'in linea con la media', classe: 'flat' };
-  const su = pct > 0;
-  // per le spese, "su" è peggio (rosso); invertiColore per casi dove su è meglio
-  const peggio = invertiColore ? !su : su;
-  return {
-    testo: `${su ? '+' : ''}${pct}% vs media`,
-    classe: peggio ? 'worse' : 'better',
-  };
-};
-
-// --- Selettore data NATIVO iOS ---
-// Usa <input type="date"> del sistema: ruote fluide, giorni corretti per ogni mese,
-// scorrimento in entrambi i versi. Molto meglio di una ruota custom.
-// Ritorna la data scelta (ISO) via callback onChange.
-export const apriDataNativa = (dataAttuale, onChange) => {
-  // crea un input date invisibile e lo attiva: iOS mostra il suo picker nativo
-  const inp = document.createElement('input');
-  inp.type = 'date';
-  inp.value = dataAttuale || new Date().toISOString().slice(0, 10);
-  inp.style.position = 'fixed';
-  inp.style.opacity = '0';
-  inp.style.left = '-9999px';
-  document.body.appendChild(inp);
-  inp.addEventListener('change', () => { if (inp.value) onChange(inp.value); inp.remove(); });
-  inp.addEventListener('blur', () => setTimeout(() => inp.remove(), 300));
-  // showPicker() è il modo moderno; fallback su focus/click
-  try { inp.showPicker(); } catch (e) { inp.focus(); inp.click(); }
-};
-
-// Riga data che apre il picker nativo al tocco (helper per i form)
-export const rigaDataNativa = (labelData, dataISO, containerEl, onChange) => {
-  containerEl.addEventListener('click', () => apriDataNativa(dataISO, onChange));
-};
-
-// --- Tastierino numerico riutilizzabile ---
-// Monta un tastierino nel container e chiama onChange(stringaImporto) a ogni tasto.
-// onDone() quando si preme OK. Da usare in tutte le maschere con importi.
-export const montaTastierino = (container, valoreIniziale, onChange, onDone) => {
-  let str = valoreIniziale || '0';
-  const tasti = ['7', '8', '9', '4', '5', '6', '1', '2', '3', ',', '0', '00'];
-  container.innerHTML = `<div class="numpad numpad-inline">
-    ${tasti.map(t => `<button type="button" data-k="${t}">${t}</button>`).join('')
-      .replace('<button type="button" data-k="9">9</button>', '<button type="button" data-k="9">9</button><button type="button" class="sub" data-k="C">C</button>')
-      .replace('<button type="button" data-k="6">6</button>', '<button type="button" data-k="6">6</button><button type="button" class="sub" data-k="back">⌫</button>')
-      .replace('<button type="button" data-k="3">3</button>', '<button type="button" data-k="3">3</button><button type="button" class="ok" data-k="ok" style="grid-row:span 2">OK</button>')}
-  </div>`;
-  container.querySelectorAll('.numpad button').forEach(b => b.addEventListener('click', () => {
-    const k = b.dataset.k;
-    if (k === 'C') str = '0';
-    else if (k === 'back') str = str.length > 1 ? str.slice(0, -1) : '0';
-    else if (k === 'ok') { container.innerHTML = ''; if (onDone) onDone(str); return; }
-    else if (k === ',') { if (!str.includes(',')) str += ','; }
-    else { str = str === '0' ? k : str + k; }
-    onChange(str);
+  // navigazione via data-href
+  root.querySelectorAll('[data-href]').forEach(el => el.addEventListener('click', (e) => {
+    e.stopPropagation();
+    location.hash = el.dataset.href;
   }));
-};
-
-// --- Swipe INDIETRO (solo nei drill di categoria): trascina verso destra per
-// risalire di un livello. Nessun altro gesto: la navigazione è a tap.
-// IDEMPOTENTE: listener attaccati una volta sola, callback aggiornabile.
-export const abilitaSwipeIndietro = (el, onBack) => {
-  el._swipeBackCb = onBack;
-  if (el._swipeBackAttivo) return;
-  el._swipeBackAttivo = true;
-  let x0 = null, y0 = null;
-  el.addEventListener('touchstart', (e) => {
-    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY;
-  }, { passive: true });
-  el.addEventListener('touchend', (e) => {
-    if (x0 === null) return;
-    const dx = e.changedTouches[0].clientX - x0;
-    const dy = e.changedTouches[0].clientY - y0;
-    x0 = y0 = null;
-    if (dx < 80 || Math.abs(dy) > dx * 0.6) return;   // solo destra, deciso, non verticale
-    el._swipeBackCb();
-  }, { passive: true });
 };

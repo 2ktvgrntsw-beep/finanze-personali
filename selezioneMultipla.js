@@ -1,100 +1,173 @@
-// conti.js — Elenco e gestione conti (raggruppati per tipologia).
+// impostazioni.js — Impostazioni: backup/recovery Excel, bulk tag, gestione dati.
 
 import { UI_SVG } from '../core/icons.js';
-import { state } from '../core/store.js';
-import { fmtEUR, escapeHtml, todayISO } from '../core/utils.js';
-import { saldoStimato, saveConto, deleteConto, TIPI_CONTO, LABEL_TIPO } from '../services/contiService.js';
-import { apriSheet, apriDataNativa, montaTastierino, conferma } from './shared.js';
-import { safeWrite } from '../core/db.js';
+import { state, refreshAll } from '../core/store.js';
+import { APP_VERSION } from '../core/version.js';
+import { escapeHtml, fmtEUR, fmtDataEstesa } from '../core/utils.js';
+import { navigate } from '../core/router.js';
+import { esportaBackup, importaBackup } from '../services/excelService.js';
+import { registraBackupExcelFatto, giorniDaUltimoBackupExcel, esportaJSON, importaJSON } from '../services/backupService.js';
+import { applicaTagBulk, cercaMovimenti } from '../services/movimentiService.js';
+import { STORE_NAMES } from '../core/db.js';
+import { dbClear } from '../core/db.js';
+import { apriSheet, conferma } from './shared.js';
 import { toast } from '../core/utils.js';
 
-export const renderConti = async (root, params = {}) => {
-  document.getElementById('view-title').textContent = params.tipo ? LABEL_TIPO[params.tipo] || 'Conti' : 'Conti';
+export const renderImpostazioni = async (root) => {
+  document.getElementById('view-title').textContent = 'Impostazioni';
 
-  const tipi = params.tipo ? [params.tipo] : TIPI_CONTO;
-  let html = '';
-  for (const tipo of tipi) {
-    const conti = state.conti.filter(c => c.attivo !== false && c.tipo === tipo)
-      .sort((a, b) => (a.ordine ?? 999) - (b.ordine ?? 999));
-    if (!conti.length) continue;
-    html += `<div class="section-lbl"><span>${LABEL_TIPO[tipo]}</span></div>`;
-    html += conti.map(c => `
-      <div class="patrow" data-conto="${c.id}">
-        <div class="icon">${UI_SVG.conto}</div>
-        <div class="body">
-          <div class="row1"><span class="name">${escapeHtml(c.nome)}</span></div>
-          <div class="sub">Tocca per rinominare</div>
-        </div>
-        <div class="chev">›</div>
-      </div>`).join('');
-  }
+  const nMov = state.movimenti.length;
+  const nConti = state.conti.length;
+  const nTag = state.tag.length;
 
-  root.innerHTML = (html || '<div class="empty">Nessun conto</div>') +
-    `<div style="margin-top:20px"><button class="btn btn-primary" id="nuovo-conto">Nuovo conto</button></div>`;
+  const giorniBackup = await giorniDaUltimoBackupExcel();
+  const promemoriaBackup = giorniBackup === null
+    ? '<span style="color:var(--down)">Non hai ancora mai esportato un backup.</span>'
+    : giorniBackup > 7
+      ? `<span style="color:var(--down)">Ultimo backup: ${giorniBackup} giorni fa — è ora di rifarlo.</span>`
+      : `Ultimo backup: ${giorniBackup === 0 ? 'oggi' : giorniBackup + ' giorni fa'} ✓`;
 
-  root.querySelectorAll('[data-conto]').forEach(el => el.addEventListener('click', () => _editConto(root, el.dataset.conto)));
-  root.querySelector('#nuovo-conto').addEventListener('click', () => _editConto(root, null));
-};
-
-const _editConto = (root, id) => {
-  const c = id ? state.conti.find(x => x.id === id) : { nome: '', tipo: 'liquidita', saldo_iniziale: 0, data_saldo: todayISO() };
-  const tmp = { data_saldo: c.data_saldo || todayISO(), possessoData: c.possessoData || '' };
-  // conto ESISTENTE: solo rinomina (niente saldo/tipo). Conto NUOVO: tutti i campi.
-  const campiCompleti = !id ? `
-    <label class="meta">Tipo</label>
-    <select id="c-tipo" class="sheet-input">
-      ${TIPI_CONTO.map(t => `<option value="${t}" ${c.tipo === t ? 'selected' : ''}>${LABEL_TIPO[t]}</option>`).join('')}
-    </select>
-    <label class="meta">Saldo / Valore iniziale (€)</label>
-    <input type="text" inputmode="decimal" id="c-saldo" value="${String(c.saldo_iniziale).replace('.', ',')}" class="sheet-input">
-    <label class="meta">Data del saldo</label>
-    <button type="button" id="c-data-btn" class="sheet-input" style="text-align:left;cursor:pointer">${_fmtD(tmp.data_saldo)}</button>
-    <div id="c-possesso-wrap" style="${c.tipo === 'asset' ? '' : 'display:none'}">
-      <label class="meta">Posseduto dal (per il grafico patrimonio)</label>
-      <button type="button" id="c-possesso-btn" class="sheet-input" style="text-align:left;cursor:pointer">${tmp.possessoData ? _fmtD(tmp.possessoData) : 'Non impostato'}</button>
-    </div>` : '';
-
-  apriSheet(id ? 'Rinomina conto' : 'Nuovo conto', `
-    <label class="meta">Nome</label>
-    <input id="c-nome" value="${escapeHtml(c.nome)}" class="sheet-input">
-    ${campiCompleti}
-    <div class="btn-row">
-      ${id ? '<button class="btn btn-danger" id="c-del">Elimina</button>' : ''}
-      <button class="btn btn-primary" id="c-ok">Salva</button>
+  root.innerHTML = `
+    <div class="section-lbl"><span>Backup e ripristino</span></div>
+    <div class="card">
+      <p class="meta" style="margin-bottom:8px">I tuoi dati vivono solo su questo dispositivo. L'app fa un <b>backup automatico interno</b> a ogni avvio, ma per essere davvero al sicuro esporta ogni tanto un file: è l'unico che sopravvive se iOS libera spazio.</p>
+      <p class="meta" style="margin-bottom:14px">${promemoriaBackup}</p>
+      <button class="btn btn-primary" id="export-json" style="margin-bottom:10px">Backup completo (JSON) — consigliato</button>
+      <button class="btn btn-secondary" id="export" style="margin-bottom:10px">Esporta Excel (per consultazione)</button>
+      <button class="btn btn-secondary" id="import-btn">Ripristina da backup (.json o .xlsx)</button>
+      <input type="file" id="import-file" accept=".json,.xlsx,.xls" style="display:none">
     </div>
-  `, (body, chiudi) => {
-    // listeners solo se ci sono i campi completi (conto nuovo)
-    const dataBtn = body.querySelector('#c-data-btn');
-    if (dataBtn) dataBtn.addEventListener('click', () => apriDataNativa(tmp.data_saldo, (nd) => { tmp.data_saldo = nd; dataBtn.textContent = _fmtD(nd); }));
-    const possBtn = body.querySelector('#c-possesso-btn');
-    if (possBtn) possBtn.addEventListener('click', () => apriDataNativa(tmp.possessoData || todayISO(), (nd) => { tmp.possessoData = nd; possBtn.textContent = _fmtD(nd); }));
-    const tipoSel = body.querySelector('#c-tipo');
-    if (tipoSel) tipoSel.addEventListener('change', (e) => {
-      body.querySelector('#c-possesso-wrap').style.display = e.target.value === 'asset' ? '' : 'none';
-    });
 
-    body.querySelector('#c-ok').addEventListener('click', async () => {
-      const nome = body.querySelector('#c-nome').value.trim();
-      if (!nome) { toast('Inserisci un nome'); return; }
-      const payload = id
-        ? { ...c, nome }   // rinomina: conservo tutto il resto del conto
-        : {
-            id: c.id, nome, tipo: body.querySelector('#c-tipo').value,
-            saldo_iniziale: parseFloat(String(body.querySelector('#c-saldo').value).replace(',', '.')) || 0,
-            data_saldo: tmp.data_saldo, possessoData: tmp.possessoData || null,
-          };
-      const ok = await safeWrite(() => saveConto(payload), 'Conto non salvato');
-      if (!ok) return;
-      chiudi(); toast('Salvato'); renderConti(root);
-    });
-    const del = body.querySelector('#c-del');
-    if (del) del.addEventListener('click', async () => {
-      if (!(await conferma('Eliminare il conto? I movimenti restano.', { danger: true, ok: 'Elimina' }))) return;
-      const ok = await safeWrite(() => deleteConto(c.id), 'Conto non eliminato');
-      if (!ok) return;
-      chiudi(); toast('Eliminato'); renderConti(root);
-    });
+    <div class="section-lbl"><span>Tag</span></div>
+    <div class="card">
+      <p class="meta" style="margin-bottom:14px">Applica un tag in blocco a più movimenti passati (es. tutte le spese di un viaggio).</p>
+      <button class="btn btn-secondary" id="bulk-tag">Applica tag in blocco</button>
+    </div>
+
+    <div class="section-lbl"><span>Sezioni</span></div>
+    <div class="card" style="padding:0">
+      <div class="patrow" id="go-energia" style="cursor:pointer"><div class="icon" style="background:var(--surface-2)">${UI_SVG.fulmine}</div><div class="body"><div class="row1"><span class="name">Energia</span><span class="meta num">${state.bollette.length}</span></div></div><div class="chev">›</div></div>
+    </div>
+
+    <div class="section-lbl"><span>Gestione</span></div>
+    <div class="card" style="padding:0">
+      <div class="patrow" id="go-conti" style="cursor:pointer"><div class="icon">${UI_SVG.conto}</div><div class="body"><div class="row1"><span class="name">Conti</span><span class="meta num">${nConti}</span></div></div><div class="chev">›</div></div>
+      <div class="divider"></div>
+      <div class="patrow" id="go-cat" style="cursor:pointer"><div class="icon" style="background:var(--surface-2)">${UI_SVG.tag}</div><div class="body"><div class="row1"><span class="name">Categorie</span><span class="meta num">${state.categorie.length}</span></div></div><div class="chev">›</div></div>
+    </div>
+
+    <div class="section-lbl"><span>Informazioni</span></div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;padding:5px 0"><span class="meta">Movimenti</span><span class="num">${nMov}</span></div>
+      <div style="display:flex;justify-content:space-between;padding:5px 0"><span class="meta">Tag</span><span class="num">${nTag}</span></div>
+      <div style="display:flex;justify-content:space-between;padding:5px 0"><span class="meta">Versione</span><span>${APP_VERSION}</span></div>
+    </div>
+
+    <div style="margin-top:20px"><button class="btn btn-danger" id="reset">Azzera tutti i dati</button></div>
+    <p class="meta" style="text-align:center;margin-top:16px;opacity:.6">Finanze Personali · offline · nessun dato lascia il dispositivo</p>
+  `;
+
+  // export JSON (formato di recovery primario: nativo, senza librerie)
+  root.querySelector('#export-json').addEventListener('click', async () => {
+    try {
+      await esportaJSON();
+      await registraBackupExcelFatto();
+      toast('Backup JSON esportato ✓');
+    } catch (e) { console.error('Errore export JSON:', e); toast('Errore: ' + (e.message || e)); }
+  });
+
+  // export Excel (per consultazione; richiede la libreria dal CDN la prima volta online)
+  root.querySelector('#export').addEventListener('click', async () => {
+    try {
+      if (!window.XLSX) { toast('Libreria Excel non disponibile offline: usa il backup JSON, oppure riapri l\u2019app con connessione.'); return; }
+      await esportaBackup();
+      await registraBackupExcelFatto();
+      toast('Backup Excel esportato ✓');
+    } catch (e) {
+      console.error('Errore export backup:', e);
+      toast('Errore export: ' + (e.message || e));
+    }
+  });
+
+  // import
+  const fileInp = root.querySelector('#import-file');
+  root.querySelector('#import-btn').addEventListener('click', () => fileInp.click());
+  fileInp.addEventListener('change', async () => {
+    if (!fileInp.files.length) return;
+    if (!(await conferma('Il ripristino SOSTITUISCE i dati attuali con quelli presenti nel backup. Continuare?', { titolo: 'Ripristino backup', ok: 'Ripristina', danger: true }))) { fileInp.value = ''; return; }
+    try {
+      const file = fileInp.files[0];
+      const isJSON = file.name.toLowerCase().endsWith('.json');
+      if (!isJSON && !window.XLSX) { toast('Per i file Excel serve la connessione la prima volta. Usa un backup .json.'); fileInp.value = ''; return; }
+      const r = isJSON ? await importaJSON(file) : await importaBackup(file);
+      let msg = `Ripristinati ${r.movimenti} movimenti`;
+      if (r.preservati && r.preservati.length) {
+        const nomi = { mutuo: 'mutuo', finanziamenti: 'finanziamenti', ricorrenti: 'ricorrenti', eventiMutuo: 'eventi', tag: 'tag' };
+        const lista = r.preservati.map(s => nomi[s] || s).filter(Boolean);
+        if (lista.length) msg += ` · ${lista.join(', ')} mantenuti dal dispositivo`;
+      }
+      toast(msg);
+      navigate('spese');
+    } catch (e) { console.error('Errore import:', e); toast('Errore import: ' + (e.message || e)); }
+    fileInp.value = '';
+  });
+
+  // bulk tag
+  root.querySelector('#bulk-tag').addEventListener('click', () => _bulkTag(root));
+
+  // navigazione
+  root.querySelector('#go-energia').addEventListener('click', () => navigate('energia'));
+  root.querySelector('#go-conti').addEventListener('click', () => navigate('conti'));
+  root.querySelector('#go-cat').addEventListener('click', () => navigate('categorie'));
+
+  // reset
+  root.querySelector('#reset').addEventListener('click', async () => {
+    if (!(await conferma('Verranno eliminati TUTTI i dati in modo irreversibile.', { titolo: 'Azzera tutto', ok: 'Continua', danger: true }))) return;
+    if (!(await conferma('Ultima conferma: azzerare davvero tutto?', { titolo: 'Azzera tutto', ok: 'Azzera tutto', danger: true }))) return;
+    for (const s of STORE_NAMES) await dbClear(s);
+    await refreshAll();
+    toast('Dati azzerati');
+    location.reload();
   });
 };
 
-const _fmtD = (iso) => { if (!iso) return ''; const [a, m, g] = iso.split('-'); return `${g}/${m}/${a}`; };
+// Bulk tag: cerca -> seleziona risultati -> applica tag
+const _bulkTag = (root) => {
+  apriSheet('Applica tag in blocco', `
+    <label class="meta">1. Cerca i movimenti (descrizione, categoria...)</label>
+    <div class="searchbar" style="margin:8px 0 12px"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input id="bt-q" placeholder="Es. Palermo, hotel..." autocomplete="off"></div>
+    <div id="bt-ris" style="max-height:300px;overflow-y:auto"></div>
+    <label class="meta" style="margin-top:12px;display:block">2. Tag da applicare</label>
+    <input id="bt-tag" placeholder="Es. SiciliaLuglio2025" style="width:100%;padding:13px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);color:var(--txt);font-size:16px;margin:8px 0 12px">
+    <button class="btn btn-primary" id="bt-ok">Applica a tutti i selezionati</button>
+  `, (body, chiudi) => {
+    const q = body.querySelector('#bt-q');
+    const ris = body.querySelector('#bt-ris');
+    let selezionati = new Set();
+
+    const cerca = () => {
+      const { risultati } = cercaMovimenti(q.value);
+      if (!q.value.trim()) { ris.innerHTML = '<div class="meta" style="padding:8px">Scrivi per cercare</div>'; return; }
+      ris.innerHTML = risultati.slice(0, 100).map(m => `
+        <div class="mov" data-id="${m.id}" style="cursor:pointer">
+          <div class="ic" style="font-size:14px">${selezionati.has(m.id) ? '✅' : '⬜'}</div>
+          <div class="body"><div class="d1">${escapeHtml(m.desc || m.cat)}</div><div class="d2">${fmtDataEstesa(m.data)} · ${fmtEUR(m.imp)}</div></div>
+        </div>`).join('');
+      ris.querySelectorAll('[data-id]').forEach(el => el.addEventListener('click', () => {
+        const id = el.dataset.id;
+        if (selezionati.has(id)) selezionati.delete(id); else selezionati.add(id);
+        cerca();
+      }));
+    };
+    q.addEventListener('input', cerca);
+    cerca();
+
+    body.querySelector('#bt-ok').addEventListener('click', async () => {
+      const tag = body.querySelector('#bt-tag').value.trim();
+      if (!tag) { toast('Inserisci un tag'); return; }
+      if (!selezionati.size) { toast('Seleziona almeno un movimento'); return; }
+      const n = await applicaTagBulk(Array.from(selezionati), tag);
+      chiudi(); toast(`Tag applicato a ${n} movimenti`);
+    });
+  });
+};

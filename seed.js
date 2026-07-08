@@ -1,74 +1,138 @@
-// store.js — Stato centrale dell'app in memoria.
-// Tiene una copia in RAM dei dati (per letture veloci senza colpire IndexedDB a ogni
-// render) e indici pre-calcolati. Un semplice sistema di sottoscrizione permette alle
-// schermate di re-renderizzarsi quando i dati cambiano.
+// db.js — Layer di accesso a IndexedDB.
+// Progettato per essere solido e scalabile: ogni "tabella" (store) è dichiarata una
+// volta, e l'upgrade è versionato così che futuri aggiornamenti dello schema possano
+// aggiungere store/indici senza perdere i dati esistenti dell'utente.
 
-import { dbAll } from './db.js';
-import { annomese } from './utils.js';
+const DB_NAME = 'FinanzePersonaliDB';
+const DB_VERSION = 2;   // v2: aggiunto lo store 'bollette' (sezione Energia)
 
-export const state = {
-  movimenti: [],
-  conti: [],
-  categorie: [],
-  tag: [],
-  ricorrenti: [],
-  regole: [],
-  snapshot: [],
-  mutuo: null,
-  finanziamenti: [],
-  eventiMutuo: [],
-  suggerimenti: [],
-  bollette: [],           // bollette energia elettrica (sezione Energia)
-  // indici derivati (ricalcolati a ogni refresh)
-  _idxMovByMese: {},      // '2026-06' -> [movimenti]
-  _idxContoByNome: {},    // nome conto -> conto
+// Dichiarazione centralizzata degli store. Aggiungere qui una nuova voce è tutto
+// ciò che serve per introdurre una nuova "tabella" in futuro.
+const STORES = {
+  movimenti:      { keyPath: 'id', indexes: [
+                      { name: 'data', keyPath: 'data' },
+                      { name: 'tipo', keyPath: 'tipo' },
+                      { name: 'macro', keyPath: 'macro' },
+                      { name: 'conto', keyPath: 'conto' },
+                      { name: 'annomese', keyPath: 'annomese' },
+                  ]},
+  conti:          { keyPath: 'id' },
+  categorie:      { keyPath: 'id' },
+  tag:            { keyPath: 'id' },
+  ricorrenti:     { keyPath: 'id' },
+  regole:         { keyPath: 'id' },          // regole automatiche (accantonamenti)
+  snapshot:       { keyPath: 'id' },          // rilevazioni mensili patrimonio
+  mutuo:          { keyPath: 'id' },
+  finanziamenti:  { keyPath: 'id' },
+  eventiMutuo:    { keyPath: 'id' },          // estinzioni, rinegoziazioni ecc.
+  suggerimenti:   { keyPath: 'chiave' },      // motore suggerimenti descrizione->classificazione
+  meta:           { keyPath: 'chiave' },      // flag di sistema (es. seed completato)
+  bollette:       { keyPath: 'id', indexes: [ // bollette energia elettrica (sezione Energia)
+                      { name: 'al', keyPath: 'al' },
+                      { name: 'fornitore', keyPath: 'fornitore' },
+                  ]},
 };
 
-// --- Sottoscrizioni (pattern observer minimale) ---
-const _subs = new Set();
-export const subscribe = (fn) => { _subs.add(fn); return () => _subs.delete(fn); };
-const _notify = () => _subs.forEach(fn => { try { fn(); } catch (e) { console.error(e); } });
+let _db = null;
 
-// Ricarica tutto lo stato da IndexedDB e ricostruisce gli indici.
-export const refreshAll = async () => {
-  const [movimenti, conti, categorie, tag, ricorrenti, regole, snapshot, mutuoArr, finanziamenti, eventiMutuo, suggerimenti, bollette] =
-    await Promise.all([
-      dbAll('movimenti'), dbAll('conti'), dbAll('categorie'), dbAll('tag'),
-      dbAll('ricorrenti'), dbAll('regole'), dbAll('snapshot'), dbAll('mutuo'),
-      dbAll('finanziamenti'), dbAll('eventiMutuo'), dbAll('suggerimenti'), dbAll('bollette'),
-    ]);
+export const openDB = () => new Promise((resolve, reject) => {
+  const req = indexedDB.open(DB_NAME, DB_VERSION);
 
-  state.movimenti = movimenti;
-  state.conti = conti;
-  state.categorie = categorie;
-  state.tag = tag;
-  state.ricorrenti = ricorrenti;
-  state.regole = regole;
-  state.snapshot = snapshot;
-  state.mutuo = mutuoArr[0] || null;
-  state.finanziamenti = finanziamenti;
-  state.eventiMutuo = eventiMutuo;
-  state.suggerimenti = suggerimenti;
-  state.bollette = bollette;
+  req.onupgradeneeded = (e) => {
+    const db = e.target.result;
+    for (const [name, cfg] of Object.entries(STORES)) {
+      let store;
+      if (!db.objectStoreNames.contains(name)) {
+        store = db.createObjectStore(name, { keyPath: cfg.keyPath });
+      } else {
+        store = e.target.transaction.objectStore(name);
+      }
+      // Crea gli indici mancanti (idempotente: non li ricrea se già presenti)
+      (cfg.indexes || []).forEach(ix => {
+        if (!store.indexNames.contains(ix.name)) {
+          store.createIndex(ix.name, ix.keyPath, { unique: false });
+        }
+      });
+    }
+  };
 
-  _buildIndexes();
-  _notify();
-};
+  req.onsuccess = () => { _db = req.result; resolve(_db); };
+  req.onerror = () => reject(req.error);
+});
 
-const _buildIndexes = () => {
-  const byMese = {};
-  for (const m of state.movimenti) {
-    const k = annomese(m.data);
-    (byMese[k] = byMese[k] || []).push(m);
+const tx = (store, mode = 'readonly') => _db.transaction(store, mode).objectStore(store);
+
+export const dbAdd = (store, val) => new Promise((res, rej) => {
+  const r = tx(store, 'readwrite').put(val);
+  r.onsuccess = () => res(val); r.onerror = () => rej(r.error);
+});
+
+export const dbGet = (store, key) => new Promise((res, rej) => {
+  const r = tx(store).get(key);
+  r.onsuccess = () => res(r.result || null); r.onerror = () => rej(r.error);
+});
+
+export const dbAll = (store) => new Promise((res, rej) => {
+  const r = tx(store).getAll();
+  r.onsuccess = () => res(r.result || []); r.onerror = () => rej(r.error);
+});
+
+export const dbCount = (store) => new Promise((res, rej) => {
+  const r = tx(store).count();
+  r.onsuccess = () => res(r.result || 0); r.onerror = () => rej(r.error);
+});
+
+export const dbDelete = (store, key) => new Promise((res, rej) => {
+  const r = tx(store, 'readwrite').delete(key);
+  r.onsuccess = () => res(true); r.onerror = () => rej(r.error);
+});
+
+export const dbClear = (store) => new Promise((res, rej) => {
+  const r = tx(store, 'readwrite').clear();
+  r.onsuccess = () => res(true); r.onerror = () => rej(r.error);
+});
+
+// Bulk put in un'unica transazione: essenziale per caricare i 5.625 movimenti
+// dello storico in modo veloce senza bloccare l'interfaccia (una transazione sola,
+// non 5.625 transazioni separate).
+export const dbBulkPut = (store, items) => new Promise((res, rej) => {
+  if (!items || !items.length) return res(0);
+  const t = _db.transaction(store, 'readwrite');
+  const os = t.objectStore(store);
+  let n = 0;
+  for (const it of items) { os.put(it); n++; }
+  t.oncomplete = () => res(n);
+  t.onerror = () => rej(t.error);
+});
+
+export const STORE_NAMES = Object.keys(STORES);
+export const closeDB = () => { if (_db) { _db.close(); _db = null; } };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// safeWrite — wrapper per operazioni di SCRITTURA con gestione errori uniforme.
+//
+// In un'app di finanze una scrittura fallita in silenzio è il bug peggiore: l'utente
+// crede di aver salvato un dato che non c'è. IndexedDB può fallire per quota piena,
+// storage sfrattato da iOS a metà sessione, transazione abortita da un altro tab.
+//
+// Uso:
+//   const ok = await safeWrite(() => saveMovimento(m), 'Movimento non salvato');
+//   if (!ok) return;   // l'utente ha già ricevuto il feedback
+//
+// Ritorna true se l'operazione è riuscita, false se è fallita (l'errore è già stato
+// loggato e notificato). Non rilancia: il chiamante decide cosa fare col booleano.
+// ─────────────────────────────────────────────────────────────────────────────
+let _onWriteError = (msg, err) => console.error('[safeWrite]', msg, err);
+
+// Permette all'app (che ha accesso al DOM/toast) di iniettare il notificatore utente.
+export const setWriteErrorHandler = (fn) => { if (typeof fn === 'function') _onWriteError = fn; };
+
+export const safeWrite = async (operazione, messaggioErrore = 'Salvataggio non riuscito') => {
+  try {
+    await operazione();
+    return true;
+  } catch (err) {
+    _onWriteError(messaggioErrore, err);
+    return false;
   }
-  state._idxMovByMese = byMese;
-
-  const byNome = {};
-  for (const c of state.conti) byNome[c.nome] = c;
-  state._idxContoByNome = byNome;
 };
-
-// Helper di lettura comuni
-export const movimentiDelMese = (am) => state._idxMovByMese[am] || [];
-export const contoByNome = (nome) => state._idxContoByNome[nome] || null;
-export const mesiDisponibili = () => Object.keys(state._idxMovByMese).sort();

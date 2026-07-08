@@ -1,369 +1,286 @@
-// inserimento.js — Nuova operazione e modifica.
-// Righe compatte, data NATIVA iOS, tastierino che si chiude cambiando campo,
-// trasferimento con descrizione, suggerimenti a tendina che completano desc+categoria.
+// movimenti.js — Lista movimenti raggruppati per giorno.
+// Può ricevere filtri via params (macro, cat, sub, tipo, periodo, mese) quando si arriva
+// dal drill-down o dall'icona di una categoria. Senza filtri mostra il mese corrente.
 
-import { state } from '../core/store.js';
-import { fmtEUR, todayISO, fmtDataEstesa, escapeHtml, round2 } from '../core/utils.js';
-import { iconaMacro, UI_SVG } from '../core/icons.js';
+import { state, movimentiDelMese } from '../core/store.js';
+import { fmtEUR, fmtDataEstesa, nomeMese, annomese, todayISO, escapeHtml, gruppoPer } from '../core/utils.js';
+import { iconaMacro, iconaTipo } from '../core/icons.js';
 import { navigate } from '../core/router.js';
+import { deleteMovimento, movimentiDiVoce } from '../services/movimentiService.js';
 import { safeWrite } from '../core/db.js';
-import { saveMovimento, deleteMovimento } from '../services/movimentiService.js';
-import { saveRicorrente } from '../services/ricorrentiService.js';
-import { suggerisciPerTesto, suggerisciTag } from '../services/suggerimentiService.js';
-import { apriSelettoreCategoria, apriSheet, conferma } from './shared.js';
+import { conferma } from './shared.js';
 import { toast } from '../core/utils.js';
+import { creaSelezione } from './selezioneMultipla.js';
 
-let d = null;
+let _mese = annomese(todayISO());
+let _periodo = 'mese';   // 'settimana' | 'mese' | 'anno'
+let _sel = null;         // controller selezione multipla (creato al primo render)
 
-const nuovaBozza = () => ({
-  id: null, tipo: 'spesa', imp: 0, impStr: '0',
-  macro: '', cat: '', sub: '', conto: '', contoDest: '',
-  desc: '', tag: [], data: todayISO(), ripeti: null,
-});
+export const renderMovimenti = async (root, params = {}) => {
+  const { macro, cat, sub, tipo } = params;
+  if (params.mese) _mese = params.mese;
+  if (params.periodo) _periodo = params.periodo;
 
-export const renderInserimento = async (root, params = {}) => {
-  if (params.ric) {
-    // MODIFICA RICORRENZA nella stessa UI dell'inserimento (coerenza visiva):
-    // precompila tutto dalla ricorrenza; al salvataggio aggiorna la ricorrenza
-    // (nessun nuovo movimento viene creato).
-    const r = state.ricorrenti.find(x => x.id === params.ric);
-    if (r) {
-      d = {
-        ...nuovaBozza(),
-        ricEdit: r.id,
-        tipo: r.tipo || 'spesa', imp: r.imp, impStr: String(r.imp).replace('.', ','),
-        macro: r.macro || '', cat: r.cat || '', sub: r.sub || '',
-        conto: r.conto || '', contoDest: r.contoDest || '',
-        desc: r.desc || r.nome || '', tag: Array.isArray(r.tag) ? r.tag : [],
-        data: r.prossima || todayISO(),
-        ripeti: {
-          frequenza: r.frequenza, dataInizio: r.dataInizio || r.prossima,
-          fineTipo: r.fineTipo || 'mai', fineData: r.fineData || null, fineConteggio: r.fineConteggio || null,
-        },
-      };
-    } else d = nuovaBozza();
-  } else if (params.id) {
-    const m = state.movimenti.find(x => x.id === params.id);
-    d = m ? { ...nuovaBozza(), ...m, impStr: String(m.imp).replace('.', ','), id: m.id } : nuovaBozza();
+  // La selezione multipla non deve sopravvivere all'uscita dalla pagina: se questo
+  // render NON è un refresh interno (innescato dalla selezione stessa), la azzero.
+  if (!params._interno && _sel) _sel.esciSilenzioso();
+
+  const haFiltri = macro || cat || sub || tipo || params.contoDest;
+
+  // set di movimenti SEMPRE limitato al periodo selezionato (mai tutto lo storico)
+  const [anno, mese] = _mese.split('-');
+  let movs;
+  if (_periodo === 'anno') {
+    movs = state.movimenti.filter(m => m.data.startsWith(anno));
+  } else if (_periodo === 'settimana') {
+    const oggi = new Date(); const s = new Date(); s.setDate(oggi.getDate() - 6);
+    const da = s.toISOString().slice(0, 10), a = oggi.toISOString().slice(0, 10);
+    movs = state.movimenti.filter(m => m.data >= da && m.data <= a);
   } else {
-    d = nuovaBozza();
-    const liq = state.conti.find(c => c.tipo === 'liquidita');
-    if (liq) d.conto = liq.nome;
+    movs = movimentiDelMese(_mese);
   }
-  const _title = document.getElementById('view-title');
-  const _isModifica = d.ricEdit || params.id;
-  _title.textContent = d.ricEdit ? 'Modifica ricorrenza' : params.id ? 'Modifica' : 'Nuova operazione';
-  // in modifica: titolo visibile e centrato (non si sovrappone ad Annulla)
-  if (_isModifica) { _title.style.display = 'block'; _title.classList.add('center'); }
-  else { _title.classList.remove('center'); }
-  _render(root);
-};
 
-const _render = (root) => {
-  const isTrasf = d.tipo === 'trasferimento';
-  const catLabel = d.macro ? [d.macro, d.cat, d.sub].filter(Boolean).join(' › ') : 'Seleziona categoria';
-  const impColor = d.tipo === 'entrata' ? 'var(--up)' : d.tipo === 'trasferimento' ? 'var(--transfer)' : 'var(--down)';
+  // applica i filtri di categoria/tipo DENTRO il periodo
+  if (macro) movs = movs.filter(m => m.macro === macro);
+  if (cat) movs = movs.filter(m => m.cat === cat);
+  if (sub) movs = movs.filter(m => m.sub === sub);
+  if (tipo) movs = movs.filter(m => m.tipo === tipo);
+  if (params.contoDest) movs = movs.filter(m => m.contoDest === params.contoDest);
 
-  // righe conto/categoria a seconda del tipo (il trasferimento MANTIENE la descrizione)
-  const contoRow = isTrasf ? `
-    <div class="frow"><div class="fic">${UI_SVG.conto}</div><div class="fval" id="pick-conto">${d.conto ? escapeHtml(d.conto) : '<span class="fph">Da conto</span>'}</div></div>
-    <div class="frow"><div class="fic">➡️</div><div class="fval" id="pick-conto-dest">${d.contoDest ? escapeHtml(d.contoDest) : '<span class="fph">A conto</span>'}</div></div>
-  ` : `
-    <div class="frow"><div class="fic">${UI_SVG.conto}</div><div class="fval" id="pick-conto">${d.conto ? escapeHtml(d.conto) : '<span class="fph">Conto</span>'}</div></div>
-    <div class="frow"><div class="fic act">${UI_SVG.tag}</div><div class="fval" id="pick-cat">${d.macro ? escapeHtml(catLabel) : '<span class="fph">Seleziona categoria</span>'}</div>${d.macro ? '<div class="fclear" id="clear-cat">✕</div>' : ''}</div>
-  `;
+  movs = movs.slice().sort((a, b) => b.data.localeCompare(a.data));
+
+  // titolo (mostra la categoria/filtro se presente)
+  let titolo = 'Movimenti';
+  if (tipo === 'trasferimento') titolo = 'Investimenti e accantonamenti';
+  else if (tipo === 'entrata') titolo = 'Entrate';
+  else if (tipo === 'spesa') titolo = 'Spese';
+  else if (sub) titolo = sub;
+  else if (cat) titolo = cat;
+  else if (macro) titolo = macro;
+  document.getElementById('view-title').textContent = titolo;
+
+  // raggruppa per giorno
+  const perGiorno = gruppoPer(movs, m => m.data);
+  const giorni = Object.keys(perGiorno).sort((a, b) => b.localeCompare(a));
+
+  // ── CARD AGGREGATE (solo con filtro attivo): totale, vs media, vs precedente ──
+  // Il tipo da sommare: quello del filtro se esplicito, altrimenti il prevalente
+  // nei movimenti filtrati (così "Entrate" somma entrate, non spese).
+  let tipoSomma = tipo;
+  if (!tipoSomma) {
+    const conta = {};
+    for (const m of movs) conta[m.tipo] = (conta[m.tipo] || 0) + 1;
+    tipoSomma = Object.entries(conta).sort((a, b) => b[1] - a[1])[0]?.[0] || 'spesa';
+  }
+  const clsTot = tipoSomma === 'entrata' ? 'en' : tipoSomma === 'trasferimento' ? 'tr' : 'sp';
+  const lblTot = tipoSomma === 'entrata' ? 'Entrate' : tipoSomma === 'trasferimento' ? 'Investito' : 'Spese';
+  const matchFiltro = (m) => m.tipo === tipoSomma
+    && (!macro || m.macro === macro) && (!cat || m.cat === cat) && (!sub || m.sub === sub)
+    && (!params.contoDest || m.contoDest === params.contoDest);
+  const totaleFiltro = movs.filter(m => m.tipo === tipoSomma).reduce((s, m) => s + m.imp, 0);
+
+  let cardsHTML = '';
+  if (haFiltri) {
+    // totali per periodo (mese o anno) su tutto lo storico del filtro
+    const perPeriodo = {};
+    for (const m of state.movimenti) {
+      if (!matchFiltro(m)) continue;
+      const k = _periodo === 'anno' ? m.data.slice(0, 4) : (m.annomese || m.data.slice(0, 7));
+      perPeriodo[k] = (perPeriodo[k] || 0) + m.imp;
+    }
+    const chiaveCorrente = _periodo === 'anno' ? anno : _mese;
+    const altre = Object.keys(perPeriodo).filter(k => k !== chiaveCorrente);
+    const media = altre.length ? altre.reduce((s, k) => s + perPeriodo[k], 0) / altre.length : 0;
+    // periodo precedente diretto
+    let chiavePrec;
+    if (_periodo === 'anno') chiavePrec = String(parseInt(anno) - 1);
+    else { const d = new Date(parseInt(anno), parseInt(mese) - 2, 1); chiavePrec = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
+    const valPrec = perPeriodo[chiavePrec] || 0;
+
+    // per le entrate la crescita è positiva (verde); per spese è negativa (rosso)
+    const inverti = tipoSomma === 'entrata';
+    const deltaCell = (rif, lbl) => {
+      if (_periodo === 'settimana' || rif <= 0) return `<div class="cell"><div class="lbl">${lbl}</div><div class="val sa num">—</div></div>`;
+      const pct = Math.round((totaleFiltro - rif) / rif * 100);
+      const diff = totaleFiltro - rif;
+      const buono = inverti ? pct >= 0 : pct <= 0;
+      return `<div class="cell"><div class="lbl">${lbl}</div><div class="val num ${buono ? 'en' : 'sp'}">${pct > 0 ? '+' : ''}${pct}%</div><div class="delta num" style="color:var(--txt-2)">${diff > 0 ? '+' : '−'}${fmtEUR(Math.abs(diff))}</div></div>`;
+    };
+    cardsHTML = `
+      <div class="triple" style="margin:8px 0 4px">
+        <div class="cell"><div class="lbl">${lblTot}</div><div class="val ${clsTot} num">${fmtEUR(totaleFiltro)}</div></div>
+        ${deltaCell(media, 'vs media')}
+        ${deltaCell(valPrec, _periodo === 'anno' ? 'vs anno prec.' : 'vs mese prec.')}
+      </div>`;
+  }
+
+  const listaHTML = giorni.length ? giorni.map(g => {
+    const items = perGiorno[g];
+    const totGiorno = items.reduce((s, m) => s + (m.tipo === 'spesa' ? -m.imp : m.tipo === 'entrata' ? m.imp : 0), 0);
+    const righe = items.map(m => {
+      const segno = m.tipo === 'spesa' ? '−' : m.tipo === 'entrata' ? '+' : '⇄ ';
+      const cls = m.tipo === 'spesa' ? 'sp' : m.tipo === 'entrata' ? 'en' : 'tr';
+      const icona = m.macro ? iconaMacro(m.macro) : iconaTipo(m.tipo);
+      // classificazione COMPLETA fino alla sottocategoria (per modifiche massive a colpo d'occhio)
+      const classif = [m.macro, m.cat, m.sub].filter(Boolean).join(' › ') || m.tipo;
+      const selMode = _sel && _sel.attiva();
+      const isSel = selMode && _sel.ha(m.id);
+      return `
+        <div class="mov-wrap" data-id="${m.id}">
+          <div class="del-bg">Elimina</div>
+          <div class="mov tipo-${m.tipo} ${selMode ? 'selectable' : ''} ${isSel ? 'sel' : ''}" data-mov="${m.id}">
+            ${selMode ? `<div class="selbox">${isSel ? '✓' : ''}</div>` : ''}
+            <div class="ic">${icona}</div>
+            <div class="body">
+              <div class="d1">${escapeHtml(m.desc || classif)}</div>
+              <div class="d2"><span class="cls">${escapeHtml(classif)}</span>${m.conto ? ' <span class="cnt">· ' + escapeHtml(m.conto) + '</span>' : ''}</div>
+            </div>
+            <div class="amt ${cls} num">${segno}${fmtEUR(m.imp)}</div>
+          </div>
+        </div>`;
+    }).join('');
+    return `
+      <div class="day-head"><span>${fmtDataEstesa(g)}</span><b class="num">${totGiorno < 0 ? '−' : '+'}${fmtEUR(Math.abs(totGiorno))}</b></div>
+      ${righe}`;
+  }).join('') : '<div class="empty"><div class="big-ic">📭</div>Nessun movimento in questo periodo</div>';
+
+  const labelPeriodo = _periodo === 'anno' ? anno
+    : _periodo === 'settimana' ? 'Ultimi 7 giorni'
+    : `${nomeMese(parseInt(mese) - 1)} ${anno}`;
+
+  // controller selezione multipla (creato una volta, refresh ri-renderizza la lista)
+  const refreshLista = () => renderMovimenti(root, { ...params, mese: _mese, periodo: _periodo, _interno: true });
+  if (!_sel) _sel = creaSelezione(refreshLista);
+
+  const btnSeleziona = (movs.length && !_sel.attiva())
+    ? `<button class="sel-mini" id="attiva-sel" aria-label="Seleziona operazioni"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 12l2.2 2.2L15.5 9.5"/></svg></button>`
+    : '';
+  const toolbarHTML = _sel.attiva() ? _sel.toolbarHTML() : '';
 
   root.innerHTML = `
-    <div class="ins-compact">
-      ${contoRow}
-      <div class="frow">
-        <div class="fic">${UI_SVG.descrizione}</div>
-        <input class="ffld" id="fld-desc" placeholder="Descrizione" value="${escapeHtml(d.desc)}" autocomplete="off">
-        <div class="sugg-dropdown" id="sugg-dd"></div>
-      </div>
-      <div class="frow"><div class="fic">${UI_SVG.importo}</div><div class="fval famount" id="pick-imp" style="color:${impColor}">${escapeHtml(d.impStr)} €</div></div>
-      <div class="frow"><div class="fic">📅</div><input type="date" class="ffld fdate" id="fld-data" value="${d.data}"></div>
-      <div class="frow"><div class="fic">${UI_SVG.ripeti}</div><div class="fval ${d.ripeti ? '' : 'fph'}" id="pick-ripeti">${d.ripeti ? _labelRipeti(d.ripeti) : 'Ripeti'}</div>${d.ripeti ? '<div class="fclear" id="clear-ripeti">✕</div>' : ''}</div>
-      <div class="frow"><div class="fic">${UI_SVG.hashtag}</div><div class="fval ${d.tag.length ? '' : 'fph'}" id="pick-tag">${d.tag.length ? d.tag.map(escapeHtml).join(', ') : 'Tag (opzionale)'}</div></div>
+    <div class="mov-sticky">
+      ${_periodo !== 'settimana' ? `
+        <div class="month-nav withsel" style="margin:6px 0">
+          <button class="arr" id="prev">‹</button>
+          <div class="m">${labelPeriodo}</div>
+          <button class="arr" id="next">›</button>
+          ${btnSeleziona}
+        </div>` : `<div class="month-nav withsel" style="margin:6px 0"><div class="m">${labelPeriodo}</div>${btnSeleziona}</div>`}
+      ${haFiltri ? `<div class="filtro-badge">Filtro: <b>${escapeHtml(titolo)}</b> · ${movs.length} mov <span id="clear-filtro">✕</span></div>` : ''}
+      ${toolbarHTML}
+      ${cardsHTML}
     </div>
-
-    <div class="type-switch-bottom">
-      <button data-t="spesa" class="${d.tipo === 'spesa' ? 'on' : ''}">Spesa</button>
-      <button data-t="entrata" class="${d.tipo === 'entrata' ? 'on en' : ''}">Entrata</button>
-      <button data-t="trasferimento" class="${d.tipo === 'trasferimento' ? 'on tr' : ''}">Trasferimento</button>
-    </div>
-
-    <div class="ins-actions">
-      ${d.id ? '<button class="btn btn-danger" id="del-mov">Elimina</button>' : ''}${d.ricEdit ? '<button class="btn btn-danger" id="del-ric">Elimina ricorrenza</button>' : ''}
-      <button class="btn btn-primary" id="salva">${d.id ? 'Salva modifiche' : 'Salva'}</button>
-    </div>
-
-    <div id="numpad-mount"></div>
+    ${listaHTML}
   `;
 
-  // descrizione + tendina
-  const fldDesc = root.querySelector('#fld-desc');
-  fldDesc.addEventListener('input', () => { d.desc = fldDesc.value; _mostraTendina(root); });
-  fldDesc.addEventListener('focus', () => { _chiudiTastierino(root); _mostraTendina(root); });
+  // IMPORTANTE: i listener passano SEMPRE params aggiornati (mese/periodo nuovi),
+  // altrimenti il re-render rileggerebbe quelli vecchi e la navigazione resterebbe bloccata.
+  const vaiA = (nuovi) => renderMovimenti(root, { ...params, ...nuovi });
 
-  // data nativa
-  const fldData = root.querySelector('#fld-data');
-  fldData.addEventListener('change', () => { d.data = fldData.value || d.data; });
-  fldData.addEventListener('focus', () => _chiudiTastierino(root));
+  // selettore periodo NELL'HEADER (compatto)
+  const headSeg = document.getElementById('head-seg');
+  if (headSeg) {
+    headSeg.innerHTML = `<div class="seg">
+      <button data-p="settimana" class="${_periodo === 'settimana' ? 'on' : ''}">Sett.</button>
+      <button data-p="mese" class="${_periodo === 'mese' ? 'on' : ''}">Mese</button>
+      <button data-p="anno" class="${_periodo === 'anno' ? 'on' : ''}">Anno</button>
+    </div>`;
+    headSeg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => vaiA({ periodo: b.dataset.p, mese: _mese })));
+  }
 
-  // tipo
-  root.querySelectorAll('.type-switch-bottom button').forEach(b => b.addEventListener('click', () => {
-    d.tipo = b.dataset.t;
-    if (d.tipo === 'trasferimento') { d.macro = 'Investimenti'; d.cat = ''; d.sub = ''; }
-    _render(root);
-  }));
-
-  // conto
-  root.querySelector('#pick-conto').addEventListener('click', () => { _chiudiTastierino(root); _pickConto(root, 'conto'); });
-  const pcd = root.querySelector('#pick-conto-dest');
-  if (pcd) pcd.addEventListener('click', () => { _chiudiTastierino(root); _pickConto(root, 'contoDest'); });
-
-  // categoria
-  const pc = root.querySelector('#pick-cat');
-  if (pc) pc.addEventListener('click', () => { _chiudiTastierino(root); apriSelettoreCategoria(sel => { d.macro = sel.macro; d.cat = sel.cat; d.sub = sel.sub; _render(root); }); });
-  const cc = root.querySelector('#clear-cat');
-  if (cc) cc.addEventListener('click', () => { d.macro = ''; d.cat = ''; d.sub = ''; _render(root); });
-
-  // importo (tastierino)
-  root.querySelector('#pick-imp').addEventListener('click', () => { fldDesc.blur(); _apriTastierino(root); });
-
-  // ripeti
-  root.querySelector('#pick-ripeti').addEventListener('click', () => { _chiudiTastierino(root); _pickRipeti(root); });
-  const cr = root.querySelector('#clear-ripeti');
-  if (cr) cr.addEventListener('click', () => { d.ripeti = null; _render(root); });
-
-  // tag
-  root.querySelector('#pick-tag').addEventListener('click', () => { _chiudiTastierino(root); _pickTag(root); });
-
-  // salva / elimina
-  root.querySelector('#salva').addEventListener('click', () => _salva());
-  const dr = root.querySelector('#del-ric');
-  if (dr) dr.addEventListener('click', async () => {
-    if (await conferma('Eliminare la ricorrenza? I movimenti già generati restano.', { danger: true, ok: 'Elimina' })) {
-      const { deleteRicorrente } = await import('../services/ricorrentiService.js');
-      await deleteRicorrente(d.ricEdit); toast('Eliminata'); d = null; navigate('ricorrenti');
-    }
-  });
-  const dm = root.querySelector('#del-mov');
-  if (dm) dm.addEventListener('click', async () => { if (!(await conferma('Eliminare questo movimento?', { danger: true, ok: 'Elimina' }))) return; const ok = await safeWrite(() => deleteMovimento(d.id), 'Movimento non eliminato'); if (!ok) return; toast('Eliminato'); navigate('movimenti'); });
-};
-
-const _labelRipeti = (r) => {
-  const base = { giornaliera: 'Ogni giorno', settimanale: 'Ogni settimana', mensile: 'Ogni mese', annuale: 'Ogni anno' }[r.frequenza] || 'Ricorrente';
-  let fine = '';
-  if (r.fineTipo === 'data' && r.fineData) fine = ` · fino al ${r.fineData.split('-').reverse().join('/')}`;
-  else if (r.fineTipo === 'conteggio' && r.fineConteggio) fine = ` · ${r.fineConteggio} volte`;
-  return base + fine;
-};
-
-const _mostraTendina = (root) => {
-  const dd = root.querySelector('#sugg-dd');
-  if (!dd) return;
-  const formRows = dd.closest('.form-rows');
-  const sugg = suggerisciPerTesto(d.desc, 12);
-  if (!sugg.length || d.desc.trim().length < 2) { dd.innerHTML = ''; dd.style.display = 'none'; if (formRows) formRows.classList.remove('sugg-open'); return; }
-  dd.style.display = 'block';
-  if (formRows) formRows.classList.add('sugg-open');
-  dd.innerHTML = sugg.map((s, i) => {
-    const c = s.classificazione;
-    const label = [c.macro, c.cat].filter(Boolean).join(':') || c.tipo;
-    return `<div class="sugg-item" data-sugg="${i}"><b>${escapeHtml(s.desc)}</b><span>${escapeHtml(label)}</span></div>`;
-  }).join('');
-  dd.querySelectorAll('[data-sugg]').forEach(el => el.addEventListener('click', () => {
-    const s = sugg[parseInt(el.dataset.sugg)]; const c = s.classificazione;
-    d.desc = s.desc; d.macro = c.macro || d.macro; d.cat = c.cat || ''; d.sub = c.sub || '';
-    d.tipo = c.tipo || d.tipo; if (c.conto) d.conto = c.conto;
-    _render(root);
-  }));
-};
-
-const _pickConto = (root, campo) => {
-  const conti = state.conti.filter(c => c.attivo !== false);
-  apriSheet(campo === 'contoDest' ? 'A quale conto' : 'Da quale conto', '', (body, chiudi) => {
-    body.innerHTML = conti.map(c => `<div class="mov" data-c="${escapeHtml(c.nome)}"><div class="ic">${UI_SVG.conto}</div><div class="body"><div class="d1">${escapeHtml(c.nome)}</div><div class="d2">${c.tipo}</div></div></div>`).join('');
-    body.querySelectorAll('[data-c]').forEach(el => el.addEventListener('click', () => { d[campo] = el.dataset.c; chiudi(); _render(root); }));
-  });
-};
-
-const _pickRipeti = (root) => {
-  const cur = d.ripeti || { frequenza: 'mensile', dataInizio: d.data, fineTipo: 'mai' };
-  apriSheet('Rendi ricorrente', `
-    <label class="meta">Frequenza</label>
-    <select id="r-freq" class="sheet-input">
-      <option value="giornaliera" ${cur.frequenza === 'giornaliera' ? 'selected' : ''}>Ogni giorno</option>
-      <option value="settimanale" ${cur.frequenza === 'settimanale' ? 'selected' : ''}>Ogni settimana</option>
-      <option value="mensile" ${cur.frequenza === 'mensile' ? 'selected' : ''}>Ogni mese</option>
-      <option value="annuale" ${cur.frequenza === 'annuale' ? 'selected' : ''}>Ogni anno</option>
-    </select>
-    <label class="meta">Inizia il</label>
-    <input type="date" id="r-inizio" value="${cur.dataInizio || d.data}" class="sheet-input">
-    <label class="meta">Termina</label>
-    <select id="r-fine-tipo" class="sheet-input">
-      <option value="mai" ${cur.fineTipo === 'mai' ? 'selected' : ''}>Mai</option>
-      <option value="data" ${cur.fineTipo === 'data' ? 'selected' : ''}>A una data</option>
-      <option value="conteggio" ${cur.fineTipo === 'conteggio' ? 'selected' : ''}>Dopo N volte</option>
-    </select>
-    <div id="r-fine-extra"></div>
-    <button class="btn btn-primary" id="r-ok" style="margin-top:8px">Conferma</button>
-  `, (body, chiudi) => {
-    const ftEl = body.querySelector('#r-fine-tipo'), extra = body.querySelector('#r-fine-extra');
-    const rExtra = () => {
-      if (ftEl.value === 'data') extra.innerHTML = `<label class="meta">Fino al</label><input type="date" id="r-fine-data" value="${cur.fineData || ''}" class="sheet-input">`;
-      else if (ftEl.value === 'conteggio') extra.innerHTML = `<label class="meta">Numero di volte</label><input type="number" id="r-fine-conteggio" value="${cur.fineConteggio || 12}" min="1" class="sheet-input">`;
-      else extra.innerHTML = '';
-    };
-    ftEl.addEventListener('change', rExtra); rExtra();
-    body.querySelector('#r-ok').addEventListener('click', () => {
-      const ft = ftEl.value;
-      d.ripeti = {
-        frequenza: body.querySelector('#r-freq').value, dataInizio: body.querySelector('#r-inizio').value, fineTipo: ft,
-        fineData: ft === 'data' ? (body.querySelector('#r-fine-data')?.value || null) : null,
-        fineConteggio: ft === 'conteggio' ? (parseInt(body.querySelector('#r-fine-conteggio')?.value) || null) : null,
-      };
-      chiudi(); _render(root);
-    });
-  });
-};
-
-const _pickTag = (root) => {
-  const render = (body, chiudi) => {
-    const esistenti = suggerisciTag('', 20);
-    body.innerHTML = `
-      <input id="tag-inp" placeholder="Uno o più tag, separati da virgola..." class="sheet-input" autocomplete="off">
-      <div class="chip-row" style="flex-wrap:wrap" id="tag-chips">
-        ${esistenti.map(t => `<div class="chip ${d.tag.includes(t) ? 'on' : ''}" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</div>`).join('')}
-      </div>
-      <button class="btn btn-primary" id="tag-ok" style="margin-top:16px">Fatto</button>`;
-    const inp = body.querySelector('#tag-inp');
-    // più tag in un colpo: separali con la VIRGOLA ("mare, famiglia, vacanza26")
-    const aggiungi = (testo) => {
-      const nuovi = testo.split(',').map(t => t.trim()).filter(Boolean);
-      if (nuovi.length) d.tag = Array.from(new Set([...d.tag, ...nuovi]));
-    };
-    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && inp.value.trim()) { aggiungi(inp.value); inp.value = ''; render(body, chiudi); } });
-    // filtro live dei suggerimenti mentre scrivi
-    inp.addEventListener('input', () => {
-      const filtrati = suggerisciTag(inp.value, 20);
-      body.querySelector('#tag-chips').innerHTML = filtrati.map(t => `<div class="chip ${d.tag.includes(t) ? 'on' : ''}" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</div>`).join('');
-      body.querySelectorAll('[data-tag]').forEach(el => el.addEventListener('click', () => { const t = el.dataset.tag; d.tag = d.tag.includes(t) ? d.tag.filter(x => x !== t) : [...d.tag, t]; render(body, chiudi); }));
-    });
-    body.querySelectorAll('[data-tag]').forEach(el => el.addEventListener('click', () => { const t = el.dataset.tag; d.tag = d.tag.includes(t) ? d.tag.filter(x => x !== t) : [...d.tag, t]; render(body, chiudi); }));
-    // "Fatto" raccoglie ANCHE il tag ancora scritto nell'input (senza Invio):
-    // prima si perdeva in silenzio — era il "tag non tenuto" segnalato.
-    body.querySelector('#tag-ok').addEventListener('click', () => {
-      if (inp.value.trim()) aggiungi(inp.value);
-      chiudi(); _render(root);
-    });
+  // navigazione periodo (mese o anno)
+  const vaiPrec = () => {
+    let nuovoMese;
+    if (_periodo === 'anno') nuovoMese = `${parseInt(anno) - 1}-${mese}`;
+    else { const d = new Date(parseInt(anno), parseInt(mese) - 2, 1); nuovoMese = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
+    vaiA({ mese: nuovoMese, periodo: _periodo });
   };
-  apriSheet('Tag', '', render);
+  const vaiSucc = () => {
+    let nuovoMese;
+    if (_periodo === 'anno') nuovoMese = `${parseInt(anno) + 1}-${mese}`;
+    else { const d = new Date(parseInt(anno), parseInt(mese), 1); nuovoMese = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
+    vaiA({ mese: nuovoMese, periodo: _periodo });
+  };
+  const prev = root.querySelector('#prev'), next = root.querySelector('#next');
+  if (prev) prev.addEventListener('click', vaiPrec);
+  if (next) next.addEventListener('click', vaiSucc);
+
+  // rimuovi filtro (torna a tutti i movimenti del periodo)
+  const cf = root.querySelector('#clear-filtro');
+  if (cf) cf.addEventListener('click', () => renderMovimenti(root, { periodo: _periodo, mese: _mese }));
+
+  // swipe-to-delete + tap per modifica + long-press per selezione multipla
+  _abilitaInterazioni(root, refreshLista);
+  const attivaSelBtn = root.querySelector('#attiva-sel');
+  if (attivaSelBtn) attivaSelBtn.addEventListener('click', () => _sel.avvia());
+  if (_sel.attiva()) {
+    const idsVisibili = movs.map(m => m.id);
+    _sel.bindToolbar(root, idsVisibili);
+  }
 };
 
-// Tastierino: si CHIUDE quando si tocca un altro campo (via _chiudiTastierino)
-const _chiudiTastierino = (root) => { const m = root.querySelector('#numpad-mount'); if (m) m.innerHTML = ''; };
+// Gestione interazioni su ogni riga: swipe (elimina), tap (modifica o toggle selezione),
+// long-press (avvia la selezione multipla). Il long-press di ~500ms entra in modalità
+// selezione; da lì un tap seleziona/deseleziona invece di aprire la modifica.
+const _abilitaInterazioni = (root, refresh) => {
+  root.querySelectorAll('.mov-wrap').forEach(wrap => {
+    const mov = wrap.querySelector('.mov');
+    const id = wrap.dataset.id;
+    let startX = 0, curX = 0, dragging = false, longTimer = null, longFired = false;
 
-const _apriTastierino = (root) => {
-  const mount = root.querySelector('#numpad-mount');
-  const tasti = ['7', '8', '9', '4', '5', '6', '1', '2', '3', ',', '0', '00'];
-  mount.innerHTML = `<div class="numpad">
-    ${tasti.map(t => `<button data-k="${t}">${t}</button>`).join('')
-      .replace('<button data-k="9">9</button>', '<button data-k="9">9</button><button class="sub" data-k="C">C</button>')
-      .replace('<button data-k="6">6</button>', '<button data-k="6">6</button><button class="sub" data-k="back">⌫</button>')
-      .replace('<button data-k="3">3</button>', '<button data-k="3">3</button><button class="ok" data-k="ok" style="grid-row:span 2">OK</button>')}
-  </div>`;
-  const upd = () => { d.imp = round2(parseFloat(d.impStr.replace(',', '.')) || 0); const el = root.querySelector('#pick-imp'); if (el) el.textContent = `${d.impStr} €`; };
-  mount.querySelectorAll('.numpad button').forEach(b => b.addEventListener('click', () => {
-    const k = b.dataset.k;
-    if (k === 'C') d.impStr = '0';
-    else if (k === 'back') d.impStr = d.impStr.length > 1 ? d.impStr.slice(0, -1) : '0';
-    else if (k === 'ok') { mount.innerHTML = ''; upd(); return; }
-    else if (k === ',') { if (!d.impStr.includes(',')) d.impStr += ','; }
-    else { d.impStr = d.impStr === '0' ? k : d.impStr + k; }
-    upd();
-  }));
-};
+    const clearLong = () => { if (longTimer) { clearTimeout(longTimer); longTimer = null; } };
 
-const _salva = async () => {
-  if (d.imp <= 0) { toast('Inserisci un importo'); return; }
-  if (d.tipo === 'trasferimento' && (!d.conto || !d.contoDest)) { toast('Scegli i conti'); return; }
-  if (d.tipo !== 'trasferimento' && !d.macro) { toast('Scegli una categoria'); return; }
+    const onStart = (x) => {
+      startX = x; dragging = true; longFired = false;
+      mov.style.transition = 'none';
+      // avvio timer long-press SOLO se non sono già in selezione (in selezione il tap basta)
+      if (!_sel.attiva()) {
+        longTimer = setTimeout(() => {
+          longFired = true;
+          if (navigator.vibrate) navigator.vibrate(15);   // feedback aptico
+          _sel.avvia(id);   // entra in modalità selezione con questa riga
+        }, 500);
+      }
+    };
+    const onMove = (x) => {
+      if (!dragging) return;
+      if (Math.abs(x - startX) > 8) clearLong();   // si sta muovendo: non è un long-press
+      if (_sel.attiva()) return;                   // in selezione niente swipe
+      curX = Math.min(0, x - startX);
+      mov.style.transform = `translateX(${curX}px)`;
+    };
+    const onEnd = async () => {
+      clearLong();
+      if (!dragging) return;
+      dragging = false;
+      if (longFired) { curX = 0; return; }   // il long-press ha già agito
+      mov.style.transition = 'transform .2s ease';
+      if (!_sel.attiva() && curX < -110) {
+        mov.style.transform = 'translateX(-100%)';
+        setTimeout(async () => {
+          if (await conferma('Eliminare questo movimento?', { danger: true, ok: 'Elimina' })) { const ok = await safeWrite(() => deleteMovimento(id), 'Movimento non eliminato'); if (ok) { toast('Movimento eliminato'); refresh(); } }
+          else { mov.style.transform = 'translateX(0)'; }
+        }, 150);
+      } else {
+        mov.style.transform = 'translateX(0)';
+      }
+      curX = 0;
+    };
 
-  // ── MODIFICA RICORRENZA: aggiorna solo la ricorrenza, nessun movimento nuovo ──
-  if (d.ricEdit) {
-    const r = state.ricorrenti.find(x => x.id === d.ricEdit);
-    if (r) {
-      await saveRicorrente({
-        ...r,
-        nome: d.desc || r.nome, tipo: d.tipo, imp: d.imp,
-        macro: d.macro, cat: d.cat, sub: d.sub,
-        conto: d.conto, contoDest: d.contoDest, tag: d.tag, desc: d.desc,
-        frequenza: d.ripeti ? d.ripeti.frequenza : r.frequenza,
-        fineTipo: d.ripeti ? d.ripeti.fineTipo : r.fineTipo,
-        fineData: d.ripeti ? d.ripeti.fineData : r.fineData,
-        fineConteggio: d.ripeti ? d.ripeti.fineConteggio : r.fineConteggio,
-      });
-    }
-    toast('Ricorrenza aggiornata');
-    d = null;
-    if (history.length > 1) history.back(); else navigate('ricorrenti');
-    return;
-  }
+    mov.addEventListener('touchstart', e => onStart(e.touches[0].clientX), { passive: true });
+    mov.addEventListener('touchmove', e => onMove(e.touches[0].clientX), { passive: true });
+    mov.addEventListener('touchend', onEnd);
+    // desktop: long-press col mouse
+    mov.addEventListener('mousedown', e => onStart(e.clientX));
+    mov.addEventListener('mouseup', onEnd);
+    mov.addEventListener('mouseleave', () => { clearLong(); });
 
-  const wasTrasf = d.tipo === 'trasferimento';
-  const eraModifica = !!d.id;
-  const ok = await safeWrite(() => saveMovimento({
-    id: d.id, tipo: d.tipo, imp: d.imp, data: d.data,
-    macro: d.macro, cat: d.cat, sub: d.sub, conto: d.conto, contoDest: d.contoDest,
-    desc: d.desc, tag: d.tag,
-  }), eraModifica ? 'Modifiche non salvate' : 'Movimento non salvato');
-  // se la scrittura è fallita, NON navigo: l'utente vede il toast e può riprovare
-  // senza perdere ciò che ha inserito.
-  if (!ok) return;
-
-  // crea la ricorrenza se richiesta — ANCHE in modifica (bug precedente: solo su nuovo)
-  if (d.ripeti) {
-    // Il movimento appena salvato È la prima occorrenza della ricorrenza:
-    // la ricorrenza deve partire dall'occorrenza SUCCESSIVA, altrimenti il
-    // generatore ricreerebbe il movimento di oggi (doppione).
-    // Se invece la data di inizio è futura (oltre il movimento), parte da lì.
-    const copreMovimento = d.ripeti.dataInizio <= d.data;
-    const prossima = copreMovimento ? _occorrenzaSuccessiva(d.ripeti.dataInizio, d.ripeti.frequenza) : d.ripeti.dataInizio;
-    const okRic = await safeWrite(() => saveRicorrente({
-      nome: d.desc || d.macro, tipo: d.tipo, frequenza: d.ripeti.frequenza,
-      imp: d.imp, macro: d.macro, cat: d.cat, sub: d.sub,
-      conto: d.conto, contoDest: d.contoDest, tag: d.tag, desc: d.desc,
-      dataInizio: d.ripeti.dataInizio, prossima,
-      generati: copreMovimento ? 1 : 0,   // il movimento manuale conta come prima occorrenza
-      fineTipo: d.ripeti.fineTipo, fineData: d.ripeti.fineData, fineConteggio: d.ripeti.fineConteggio,
-    }), 'Ricorrenza non impostata');
-    toast(okRic ? 'Salvato e reso ricorrente' : 'Movimento salvato, ma ricorrenza non impostata');
-  } else {
-    toast(eraModifica ? 'Modifiche salvate' : 'Salvato');
-  }
-
-  d = null;
-  // se era una MODIFICA, torna da dove sei venuto (es. la ricerca coi risultati);
-  // se era un nuovo inserimento, vai alla pagina naturale.
-  if (eraModifica && history.length > 1) history.back();
-  else navigate(wasTrasf ? 'movimenti' : 'spese');
-};
-
-// Occorrenza successiva a una data, per frequenza (fine mese gestito: 31 gen -> 28 feb)
-const _occorrenzaSuccessiva = (dataISO, frequenza) => {
-  const [y, m, g] = dataISO.split('-').map(Number);
-  if (frequenza === 'giornaliera' || frequenza === 'settimanale') {
-    const d = new Date(y, m - 1, g + (frequenza === 'giornaliera' ? 1 : 7));
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  }
-  if (frequenza === 'annuale') {
-    const maxG = new Date(y + 1, m, 0).getDate();
-    return `${y + 1}-${String(m).padStart(2, '0')}-${String(Math.min(g, maxG)).padStart(2, '0')}`;
-  }
-  const ny = m === 12 ? y + 1 : y, nm = m === 12 ? 1 : m + 1;
-  const maxG = new Date(ny, nm, 0).getDate();
-  return `${ny}-${String(nm).padStart(2, '0')}-${String(Math.min(g, maxG)).padStart(2, '0')}`;
+    // tap: in selezione -> toggle; altrimenti -> modifica
+    mov.addEventListener('click', () => {
+      if (longFired) return;              // il long-press non è un click
+      if (Math.abs(curX) > 5) return;     // era uno swipe
+      if (_sel.attiva()) { _sel.toggle(id); return; }
+      navigate('modifica', { id });
+    });
+  });
 };

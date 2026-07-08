@@ -1,167 +1,172 @@
-// ricorrentiService.js — Ricorrenze e regole automatiche (accantonamenti).
-// Una "ricorrenza" genera automaticamente movimenti alle scadenze. Le "regole
-// automatiche" sono ricorrenze speciali per gli accantonamenti (es. 20€/giorno su
-// deposito, PAC settimanale, ricarica a soglia) — parametrizzabili e modificabili.
+// energiaService.js — Logica di dominio della sezione Energia.
+// Separata dalla presentazione (come gli altri service): calcola KPI, aggregazioni
+// per anno, ripartizione fasce, serie prezzo. Il componente energia.js la consuma.
 
-import { dbAdd, dbDelete, dbGet } from '../core/db.js';
-import { state, refreshAll } from '../core/store.js';
-import { uid, round2, todayISO } from '../core/utils.js';
-import { saveMovimento } from './movimentiService.js';
-import { saldoStimato } from './contiService.js';
+import { state } from '../core/store.js';
+import { round2 } from '../core/utils.js';
 
-export const FREQUENZE = ['giornaliera', 'settimanale', 'mensile', 'annuale'];
+// Tutte le bollette ordinate dalla più recente alla più vecchia.
+export const bolletteOrdinate = () => state.bollette.slice().sort((a, b) => (b.al || '').localeCompare(a.al || ''));
 
-// --- CRUD ricorrenti ---
-export const saveRicorrente = async (r) => {
-  const dataInizio = r.dataInizio || r.prossima || todayISO();
-  const obj = {
-    id: r.id || uid(),
-    nome: r.nome || r.desc || 'Ricorrenza',
-    tipo: r.tipo || 'spesa',
-    frequenza: r.frequenza || 'mensile',
-    giorno: r.giorno || null,          // giorno del mese (mensile) o della settimana (settimanale)
-    imp: round2(r.imp || 0),
-    macro: r.macro || '', cat: r.cat || '', sub: r.sub || '',
-    conto: r.conto || '', contoDest: r.contoDest || '',
-    tag: r.tag || [],
-    desc: r.desc || '',
-    // per le regole a soglia
-    modalita: r.modalita || 'fisso',   // 'fisso' | 'soglia'
-    soglia: r.soglia || null,
-    isRegola: r.isRegola === true,     // true = regola automatica (accantonamento)
-    attiva: r.attiva !== false,
-    // inizio / fine
-    dataInizio,
-    fineTipo: r.fineTipo || 'mai',     // 'mai' | 'data' | 'conteggio'
-    fineData: r.fineData || null,      // se fineTipo === 'data'
-    fineConteggio: r.fineConteggio || null,  // se fineTipo === 'conteggio' (numero di occorrenze)
-    generati: r.generati || 0,         // quante occorrenze già generate (per il conteggio)
-    ultimaGenerazione: r.ultimaGenerazione || null,
-    prossima: r.prossima || dataInizio,
-    // collegamento con mutuo/finanziamento e provenienza: vanno SEMPRE preservati,
-    // altrimenti modificando la ricorrenza si spezza il legame col prestito
-    // e la sincronizzazione successiva ne creerebbe un doppione.
-    origineMutuo: r.origineMutuo || null,
-    origine: r.origine || '',
+// Solo le bollette complete (con consumo e totale validi), ordinate.
+export const bolletteComplete = () => bolletteOrdinate().filter(b => b.completa && b.kwhTot > 0 && b.totale != null);
+
+// L'ultima bolletta completa (per l'hero).
+export const ultimaBolletta = () => bolletteComplete()[0] || null;
+
+// Anno di una bolletta (dall'anno di fine periodo).
+const annoDi = (b) => (b.al || '').slice(0, 4);
+
+// KPI derivati da una singola bolletta.
+export const kpiBolletta = (b) => {
+  if (!b || !b.kwhTot) return null;
+  return {
+    eurKwh: round2(b.totale / b.kwhTot),          // prezzo medio "tutto compreso"
+    eurGiorno: b.giorni ? round2(b.totale / b.giorni) : null,
+    materiaKwh: b.materia != null ? round2(b.materia / b.kwhTot) : null,  // prezzo su cui incidi
   };
-  await dbAdd('ricorrenti', obj);
-  await refreshAll();
-  return obj;
 };
 
-export const deleteRicorrente = async (id) => { await dbDelete('ricorrenti', id); await refreshAll(); };
+// Aggregato per un anno: spesa totale, consumo, media, ripartizione fasce.
+export const aggregatoAnno = (anno) => {
+  const boll = bolletteComplete().filter(b => annoDi(b) === String(anno));
+  if (!boll.length) return null;
+  const spesa = boll.reduce((s, b) => s + b.totale, 0);
+  const consumo = boll.reduce((s, b) => s + b.kwhTot, 0);
+  const giorni = boll.reduce((s, b) => s + (b.giorni || 0), 0);
+  const f1 = boll.reduce((s, b) => s + (b.kwhF1 || 0), 0);
+  const f2 = boll.reduce((s, b) => s + (b.kwhF2 || 0), 0);
+  const f3 = boll.reduce((s, b) => s + (b.kwhF3 || 0), 0);
+  return {
+    anno: String(anno), bollette: boll.length,
+    spesa: round2(spesa), consumo,
+    eurKwh: consumo ? round2(spesa / consumo) : 0,
+    eurGiorno: giorni ? round2(spesa / giorni) : 0,
+    fasce: { f1, f2, f3, tot: f1 + f2 + f3 },
+  };
+};
 
-// Calcola la data della prossima occorrenza dopo una certa data
-const prossimaData = (dataISO, frequenza) => {
-  const [y, m, g] = dataISO.split('-').map(Number);
-  if (frequenza === 'giornaliera' || frequenza === 'settimanale') {
-    const d = new Date(y, m - 1, g + (frequenza === 'giornaliera' ? 1 : 7));
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+// Elenco degli anni disponibili (dal più recente).
+export const anniDisponibili = () => {
+  const anni = new Set(bolletteComplete().map(annoDi));
+  return [...anni].sort((a, b) => b.localeCompare(a));
+};
+
+// Variazione percentuale anno su anno per un dato KPI ('spesa'|'consumo'|'eurKwh'|'eurGiorno').
+export const variazioneAnno = (anno, campo) => {
+  const cur = aggregatoAnno(anno), prev = aggregatoAnno(String(Number(anno) - 1));
+  if (!cur || !prev || !prev[campo]) return null;
+  return round2(((cur[campo] - prev[campo]) / prev[campo]) * 100);
+};
+
+// Serie temporale del prezzo (per la spike-line). tipo: 'materia' | 'totale'.
+// Ritorna [{ label, valore, fornitore }] dalla più vecchia alla più recente.
+// FILTRO OUTLIER: le bollette anomale (es. l'attivazione 2018 da 19 giorni con
+// conguagli: 0,767 €/kWh contro una mediana di ~0,13) schiaccerebbero tutto il
+// grafico rendendolo illeggibile. Escludo i punti oltre 3× la mediana: il picco
+// crisi 2022 (0,34) resta ben visibile, l'anomalia amministrativa no.
+export const seriePrezzo = (tipo = 'materia') => {
+  const boll = bolletteComplete().slice().reverse();  // cronologico
+  const out = [];
+  for (const b of boll) {
+    let v = null;
+    if (tipo === 'materia' && b.materia != null) v = b.materia / b.kwhTot;
+    else if (tipo === 'totale') v = b.totale / b.kwhTot;
+    if (v == null) continue;
+    const [y, m] = b.al.split('-');
+    out.push({ label: `${m}/${y.slice(2)}`, valore: round2v3(v), fornitore: b.fornitore });
   }
-  if (frequenza === 'annuale') {
-    const maxG = new Date(y + 1, m, 0).getDate();   // gestisce 29 feb
-    return `${y + 1}-${String(m).padStart(2, '0')}-${String(Math.min(g, maxG)).padStart(2, '0')}`;
-  }
-  // mensile: giorno voluto, o ULTIMO del mese se non esiste (31 gen -> 28 feb, non 3 mar)
-  const ny = m === 12 ? y + 1 : y;
-  const nm = m === 12 ? 1 : m + 1;
-  const maxG = new Date(ny, nm, 0).getDate();
-  return `${ny}-${String(nm).padStart(2, '0')}-${String(Math.min(g, maxG)).padStart(2, '0')}`;
+  if (out.length < 4) return out;
+  const ordinati = out.map(p => p.valore).sort((a, b) => a - b);
+  const mediana = ordinati[Math.floor(ordinati.length / 2)];
+  return out.filter(p => p.valore <= mediana * 3);
 };
 
-// Genera i movimenti per tutte le ricorrenze scadute fino a oggi.
-// Rispetta la data di fine (per data o per numero di occorrenze). I movimenti vengono
-// creati SOLO quando la scadenza è effettivamente arrivata (<= oggi), mai in anticipo.
-export const generaScaduti = async () => {
-  const oggi = todayISO();
-  let generati = 0;
+// arrotonda a 3 decimali (i prezzi €/kWh hanno bisogno del terzo decimale)
+const round2v3 = (v) => Math.round(v * 1000) / 1000;
 
-  for (const r of state.ricorrenti) {
-    if (r.attiva === false) continue;
-    let cursore = r.prossima || r.ultimaGenerazione || r.dataInizio || oggi;
-    let contatore = r.generati || 0;
-    let guard = 0;
-
-    while (cursore <= oggi && guard < 1000) {
-      guard++;
-      // controllo fine per DATA
-      if (r.fineTipo === 'data' && r.fineData && cursore > r.fineData) break;
-      // controllo fine per CONTEGGIO
-      if (r.fineTipo === 'conteggio' && r.fineConteggio && contatore >= r.fineConteggio) break;
-
-      let importo = r.imp;
-      // Regola a soglia: importo = quanto serve per riportare il conto alla soglia
-      if (r.modalita === 'soglia' && r.soglia && r.contoDest) {
-        const dest = state.conti.find(c => c.nome === r.contoDest);
-        if (dest) {
-          const attuale = saldoStimato(dest);
-          importo = round2(Math.max(0, r.soglia - attuale));
-        }
-      }
-
-      if (importo > 0) {
-        // CHIAVE DI IDEMPOTENZA: id deterministico ricorrenza+data. Se per qualsiasi
-        // motivo la generazione ripartisse dallo stesso punto (reset di 'prossima',
-        // doppio avvio, bug futuro), il movimento esiste già e NON viene duplicato.
-        const idGen = `gen-${r.id}-${cursore}`;
-        const esiste = await dbGet('movimenti', idGen);
-        if (!esiste) {
-          await saveMovimento({
-            id: idGen,
-            data: cursore, tipo: r.tipo, imp: importo,
-            macro: r.macro, cat: r.cat, sub: r.sub,
-            conto: r.conto, contoDest: r.contoDest, tag: r.tag,
-            desc: r.desc || r.nome, note: 'Generato da ricorrenza', origine: 'ricorrenza',
-          });
-          generati++;
-        }
-        contatore++;
-      }
-      cursore = prossimaData(cursore, r.frequenza);
-    }
-    // aggiorna la prossima scadenza e il contatore della ricorrenza
-    await dbAdd('ricorrenti', { ...r, prossima: cursore, generati: contatore, ultimaGenerazione: oggi });
-  }
-
-  if (generati > 0) await refreshAll();
-  return generati;
+// Serie consumo per fasce di un anno (per le barre impilate).
+// Ritorna [{ label, f1, f2, f3, tot }] in ordine cronologico.
+export const serieFasce = (anno) => {
+  const boll = bolletteComplete().filter(b => annoDi(b) === String(anno)).slice().reverse();
+  return boll.map(b => {
+    const [, m] = b.al.split('-');
+    return { label: mese3(parseInt(m)), f1: b.kwhF1 || 0, f2: b.kwhF2 || 0, f3: b.kwhF3 || 0, tot: b.kwhTot };
+  });
 };
 
-// Totale "impegnato" al mese (normalizza tutte le frequenze a valore mensile)
-export const impegnatoMensile = () => {
-  let tot = 0;
-  for (const r of state.ricorrenti) {
-    if (r.attiva === false) continue;
-    if (r.tipo === 'entrata') continue;   // conto solo uscite/accantonamenti
-    let mensile = r.imp;
-    if (r.frequenza === 'giornaliera') mensile = r.imp * 30;
-    else if (r.frequenza === 'settimanale') mensile = r.imp * 4.33;
-    else if (r.frequenza === 'annuale') mensile = r.imp / 12;
-    tot += mensile;
-  }
-  return round2(tot);
+// Ripartizione fasce media sulle ultime N bollette (per i riquadri).
+export const ripartizioneFasce = (nUltime = 6) => {
+  const boll = bolletteComplete().slice(0, nUltime);
+  const f1 = boll.reduce((s, b) => s + (b.kwhF1 || 0), 0);
+  const f2 = boll.reduce((s, b) => s + (b.kwhF2 || 0), 0);
+  const f3 = boll.reduce((s, b) => s + (b.kwhF3 || 0), 0);
+  const tot = f1 + f2 + f3 || 1;
+  return {
+    f1, f2, f3, tot,
+    p1: Math.round(f1 / tot * 100), p2: Math.round(f2 / tot * 100), p3: Math.round(f3 / tot * 100),
+  };
 };
 
-export const ricorrentiAttive = () => state.ricorrenti.filter(r => r.attiva !== false)
-  .sort((a, b) => b.imp - a.imp);
-
-// Aggiorna i movimenti PASSATI generati da una ricorrenza (opzione "anche le passate").
-// Li riconosce per corrispondenza di classificazione (macro/cat/sub/tipo) e descrizione.
-export const aggiornaMovimentiDaRicorrenza = async (ricorrenza, patch) => {
-  const { dbBulkPut } = await import('../core/db.js');
-  const daAggiornare = state.movimenti.filter(m =>
-    m.tipo === ricorrenza.tipo &&
-    m.macro === ricorrenza.macro &&
-    m.cat === (ricorrenza.cat || '') &&
-    m.sub === (ricorrenza.sub || '') &&
-    (ricorrenza.desc ? m.desc === ricorrenza.desc : true)
-  ).map(m => ({
-    ...m,
-    imp: patch.imp !== undefined ? round2(patch.imp) : m.imp,
-    desc: patch.desc !== undefined ? patch.desc : m.desc,
-  }));
-  if (daAggiornare.length) await dbBulkPut('movimenti', daAggiornare);
-  await refreshAll();
-  return daAggiornare.length;
+// Composizione della spesa di una bolletta (per il dettaglio).
+export const composizioneBolletta = (b) => {
+  const voci = [
+    { nome: 'Materia energia', val: b.materia, colore: '#2E9BFF' },
+    { nome: 'Trasporto/contatore', val: b.trasporto, colore: '#5FC3FF' },
+    { nome: 'IVA', val: b.iva, colore: '#7B6CFF' },
+    { nome: 'Oneri di sistema', val: b.oneri, colore: '#9D8FFF' },
+    { nome: 'Accise', val: b.accise, colore: '#22E39A' },
+  ].filter(v => v.val != null && v.val > 0);
+  const somma = voci.reduce((s, v) => s + v.val, 0) || 1;
+  return voci.map(v => ({ ...v, pct: Math.round(v.val / somma * 100) }));
 };
 
+// Statistiche globali (per eventuali insight).
+export const statisticheGlobali = () => {
+  const boll = bolletteComplete();
+  return {
+    nBollette: state.bollette.length,
+    spesaTotale: round2(boll.reduce((s, b) => s + b.totale, 0)),
+    consumoTotale: boll.reduce((s, b) => s + b.kwhTot, 0),
+    fornitori: [...new Set(boll.map(b => b.fornitore))],
+  };
+};
+
+const MESI3 = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
+export const mese3 = (m) => MESI3[m - 1] || '';
+
+// Trova una bolletta per id.
+export const bollettaById = (id) => state.bollette.find(b => b.id === id) || null;
+
+// Numero di giorni tra due date ISO (inclusivo del giorno finale).
+export const giorniTra = (dal, al) => {
+  const d1 = new Date(dal), d2 = new Date(al);
+  return Math.round((d2 - d1) / 86400000) + 1;
+};
+
+// Costruisce l'oggetto bolletta normalizzato dai dati del form (per il salvataggio).
+// I KPI (€/kWh ecc.) NON si salvano: sono derivati e ricalcolati dal service.
+export const componiBolletta = (d, idEsistente) => {
+  const kwhF1 = d.kwhF1 || 0, kwhF2 = d.kwhF2 || 0, kwhF3 = d.kwhF3 || 0;
+  const kwhTot = d.tariffa === 'Monoraria' && d.kwhTot ? d.kwhTot : (kwhF1 + kwhF2 + kwhF3);
+  return {
+    id: idEsistente || `${d.dal}_MAN_${Date.now().toString(36)}`,
+    numero: d.numero || null,
+    dal: d.dal, al: d.al,
+    giorni: giorniTra(d.dal, d.al),
+    fornitore: d.fornitore, offerta: d.offerta || null, tariffa: d.tariffa || 'Bioraria',
+    kwhTot, kwhF1, kwhF2, kwhF3,
+    totale: round2(d.totale),
+    materia: d.materia != null ? round2(d.materia) : null,
+    trasporto: d.trasporto != null ? round2(d.trasporto) : null,
+    oneri: d.oneri != null ? round2(d.oneri) : null,
+    accise: d.accise != null ? round2(d.accise) : null,
+    iva: d.iva != null ? round2(d.iva) : null,
+    completa: true,
+    note: d.note || null,
+    origine: 'manuale',
+  };
+};
+
+// Elenco fornitori già usati (per l'autocompletamento nel form).
+export const fornitoriUsati = () => [...new Set(state.bollette.map(b => b.fornitore).filter(Boolean))].sort();

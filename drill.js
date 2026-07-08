@@ -1,286 +1,230 @@
-// movimenti.js — Lista movimenti raggruppati per giorno.
-// Può ricevere filtri via params (macro, cat, sub, tipo, periodo, mese) quando si arriva
-// dal drill-down o dall'icona di una categoria. Senza filtri mostra il mese corrente.
+// ricerca.js — Ricerca full-text con totale aggregato + selezione multipla e
+// modifica massiva di qualsiasi campo (categoria, conto, da/a conto, descrizione, tag).
 
-import { state, movimentiDelMese } from '../core/store.js';
-import { fmtEUR, fmtDataEstesa, nomeMese, annomese, todayISO, escapeHtml, gruppoPer } from '../core/utils.js';
-import { iconaMacro, iconaTipo } from '../core/icons.js';
+import { fmtEUR, escapeHtml, fmtDataEstesa } from '../core/utils.js';
+import { iconaMacro, iconaTipo, UI_SVG } from '../core/icons.js';
 import { navigate } from '../core/router.js';
-import { deleteMovimento, movimentiDiVoce } from '../services/movimentiService.js';
-import { safeWrite } from '../core/db.js';
-import { conferma } from './shared.js';
-import { toast } from '../core/utils.js';
+import { state } from '../core/store.js';
+import { cercaMovimenti } from '../services/movimentiService.js';
+import { categorieDi, sottocategorieDi } from '../services/categorieService.js';
 import { creaSelezione } from './selezioneMultipla.js';
 
-let _mese = annomese(todayISO());
-let _periodo = 'mese';   // 'settimana' | 'mese' | 'anno'
-let _sel = null;         // controller selezione multipla (creato al primo render)
+let _ultimiRisultati = [];
+let _sel = null;   // controller selezione multipla condiviso
+// STATO PERSISTENTE: query e filtri sopravvivono alla navigazione — tornando
+// dalla modifica di un movimento ritrovi la ricerca esattamente com'era.
+let _q = '';
+let _filtri = { tipo: '', macro: '', cat: '', sub: '', conto: '', da: '', a: '', min: '', max: '' };
+let _filtriAperti = false;
 
-export const renderMovimenti = async (root, params = {}) => {
-  const { macro, cat, sub, tipo } = params;
-  if (params.mese) _mese = params.mese;
-  if (params.periodo) _periodo = params.periodo;
+export const renderRicerca = async (root, params = {}) => {
+  document.getElementById('view-title').textContent = 'Cerca';
+  if (_sel) _sel.esciSilenzioso();
 
-  // La selezione multipla non deve sopravvivere all'uscita dalla pagina: se questo
-  // render NON è un refresh interno (innescato dalla selezione stessa), la azzero.
-  if (!params._interno && _sel) _sel.esciSilenzioso();
+  // La ricerca riparte PULITA a ogni ingresso: query e filtri non devono
+  // sopravvivere al cambio pagina. Fanno eccezione SOLO i parametri passati
+  // esplicitamente (es. arrivo da Analisi con categoria preimpostata).
+  const arrivaConFiltri = params.macro !== undefined || params.cat !== undefined ||
+    params.sub !== undefined || params.da !== undefined || params.a !== undefined ||
+    params.tipo !== undefined || params.conto !== undefined;
 
-  const haFiltri = macro || cat || sub || tipo || params.contoDest;
+  if (params.q) _q = params.q; else if (!arrivaConFiltri) _q = '';
 
-  // set di movimenti SEMPRE limitato al periodo selezionato (mai tutto lo storico)
-  const [anno, mese] = _mese.split('-');
-  let movs;
-  if (_periodo === 'anno') {
-    movs = state.movimenti.filter(m => m.data.startsWith(anno));
-  } else if (_periodo === 'settimana') {
-    const oggi = new Date(); const s = new Date(); s.setDate(oggi.getDate() - 6);
-    const da = s.toISOString().slice(0, 10), a = oggi.toISOString().slice(0, 10);
-    movs = state.movimenti.filter(m => m.data >= da && m.data <= a);
-  } else {
-    movs = movimentiDelMese(_mese);
-  }
-
-  // applica i filtri di categoria/tipo DENTRO il periodo
-  if (macro) movs = movs.filter(m => m.macro === macro);
-  if (cat) movs = movs.filter(m => m.cat === cat);
-  if (sub) movs = movs.filter(m => m.sub === sub);
-  if (tipo) movs = movs.filter(m => m.tipo === tipo);
-  if (params.contoDest) movs = movs.filter(m => m.contoDest === params.contoDest);
-
-  movs = movs.slice().sort((a, b) => b.data.localeCompare(a.data));
-
-  // titolo (mostra la categoria/filtro se presente)
-  let titolo = 'Movimenti';
-  if (tipo === 'trasferimento') titolo = 'Investimenti e accantonamenti';
-  else if (tipo === 'entrata') titolo = 'Entrate';
-  else if (tipo === 'spesa') titolo = 'Spese';
-  else if (sub) titolo = sub;
-  else if (cat) titolo = cat;
-  else if (macro) titolo = macro;
-  document.getElementById('view-title').textContent = titolo;
-
-  // raggruppa per giorno
-  const perGiorno = gruppoPer(movs, m => m.data);
-  const giorni = Object.keys(perGiorno).sort((a, b) => b.localeCompare(a));
-
-  // ── CARD AGGREGATE (solo con filtro attivo): totale, vs media, vs precedente ──
-  // Il tipo da sommare: quello del filtro se esplicito, altrimenti il prevalente
-  // nei movimenti filtrati (così "Entrate" somma entrate, non spese).
-  let tipoSomma = tipo;
-  if (!tipoSomma) {
-    const conta = {};
-    for (const m of movs) conta[m.tipo] = (conta[m.tipo] || 0) + 1;
-    tipoSomma = Object.entries(conta).sort((a, b) => b[1] - a[1])[0]?.[0] || 'spesa';
-  }
-  const clsTot = tipoSomma === 'entrata' ? 'en' : tipoSomma === 'trasferimento' ? 'tr' : 'sp';
-  const lblTot = tipoSomma === 'entrata' ? 'Entrate' : tipoSomma === 'trasferimento' ? 'Investito' : 'Spese';
-  const matchFiltro = (m) => m.tipo === tipoSomma
-    && (!macro || m.macro === macro) && (!cat || m.cat === cat) && (!sub || m.sub === sub)
-    && (!params.contoDest || m.contoDest === params.contoDest);
-  const totaleFiltro = movs.filter(m => m.tipo === tipoSomma).reduce((s, m) => s + m.imp, 0);
-
-  let cardsHTML = '';
-  if (haFiltri) {
-    // totali per periodo (mese o anno) su tutto lo storico del filtro
-    const perPeriodo = {};
-    for (const m of state.movimenti) {
-      if (!matchFiltro(m)) continue;
-      const k = _periodo === 'anno' ? m.data.slice(0, 4) : (m.annomese || m.data.slice(0, 7));
-      perPeriodo[k] = (perPeriodo[k] || 0) + m.imp;
-    }
-    const chiaveCorrente = _periodo === 'anno' ? anno : _mese;
-    const altre = Object.keys(perPeriodo).filter(k => k !== chiaveCorrente);
-    const media = altre.length ? altre.reduce((s, k) => s + perPeriodo[k], 0) / altre.length : 0;
-    // periodo precedente diretto
-    let chiavePrec;
-    if (_periodo === 'anno') chiavePrec = String(parseInt(anno) - 1);
-    else { const d = new Date(parseInt(anno), parseInt(mese) - 2, 1); chiavePrec = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
-    const valPrec = perPeriodo[chiavePrec] || 0;
-
-    // per le entrate la crescita è positiva (verde); per spese è negativa (rosso)
-    const inverti = tipoSomma === 'entrata';
-    const deltaCell = (rif, lbl) => {
-      if (_periodo === 'settimana' || rif <= 0) return `<div class="cell"><div class="lbl">${lbl}</div><div class="val sa num">—</div></div>`;
-      const pct = Math.round((totaleFiltro - rif) / rif * 100);
-      const diff = totaleFiltro - rif;
-      const buono = inverti ? pct >= 0 : pct <= 0;
-      return `<div class="cell"><div class="lbl">${lbl}</div><div class="val num ${buono ? 'en' : 'sp'}">${pct > 0 ? '+' : ''}${pct}%</div><div class="delta num" style="color:var(--txt-2)">${diff > 0 ? '+' : '−'}${fmtEUR(Math.abs(diff))}</div></div>`;
+  if (arrivaConFiltri) {
+    _filtri = {
+      tipo: params.tipo || '', macro: params.macro || '', cat: params.cat || '', sub: params.sub || '',
+      conto: params.conto || '', da: params.da || '', a: params.a || '', min: '', max: '',
     };
-    cardsHTML = `
-      <div class="triple" style="margin:8px 0 4px">
-        <div class="cell"><div class="lbl">${lblTot}</div><div class="val ${clsTot} num">${fmtEUR(totaleFiltro)}</div></div>
-        ${deltaCell(media, 'vs media')}
-        ${deltaCell(valPrec, _periodo === 'anno' ? 'vs anno prec.' : 'vs mese prec.')}
-      </div>`;
+    _filtriAperti = false;
+  } else {
+    // nessun parametro: azzero i filtri della sessione precedente
+    _filtri = { tipo: '', macro: '', cat: '', sub: '', conto: '', da: '', a: '', min: '', max: '' };
+    _filtriAperti = false;
   }
 
-  const listaHTML = giorni.length ? giorni.map(g => {
-    const items = perGiorno[g];
-    const totGiorno = items.reduce((s, m) => s + (m.tipo === 'spesa' ? -m.imp : m.tipo === 'entrata' ? m.imp : 0), 0);
-    const righe = items.map(m => {
+  const nFiltri = Object.values(_filtri).filter(v => v !== '').length;
+  const macros = [...new Set(state.movimenti.map(m => m.macro).filter(Boolean))].sort();
+  const conti = state.conti.filter(c => c.attivo !== false).map(c => c.nome);
+
+  root.innerHTML = `
+    <div class="searchbar">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input id="q" placeholder="Cerca (usa la virgola: hotel, volo, treno)" value="${escapeHtml(_q)}" autocomplete="off">
+      <button id="q-clear" class="q-clear" aria-label="Cancella ricerca" style="display:${_q ? 'flex' : 'none'}">
+        <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+      <button id="toggle-filtri" class="filtri-btn ${nFiltri ? 'on' : ''}">Filtri${nFiltri ? ' · ' + nFiltri : ''}</button>
+    </div>
+    <div id="pannello-filtri" style="display:${_filtriAperti ? 'block' : 'none'}" class="card filtri-card">
+      <div class="filtri-riga">
+        <label class="meta">Tipo</label>
+        <div class="chip-row">
+          ${[['', 'Tutti'], ['spesa', 'Spese'], ['entrata', 'Entrate'], ['trasferimento', 'Accant.']].map(([v, l]) =>
+            `<div class="chip ${_filtri.tipo === v ? 'on' : ''}" data-ftipo="${v}">${l}</div>`).join('')}
+        </div>
+      </div>
+      <div class="filtri-riga filtri-2col">
+        <div><label class="meta">Macro-categoria</label>
+          <select id="f-macro" class="sheet-input">
+            <option value="">Tutte</option>
+            ${macros.map(m => `<option ${_filtri.macro === m ? 'selected' : ''}>${escapeHtml(m)}</option>`).join('')}
+          </select></div>
+        <div><label class="meta">Conto</label>
+          <select id="f-conto" class="sheet-input">
+            <option value="">Tutti</option>
+            ${conti.map(c => `<option ${_filtri.conto === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+          </select></div>
+      </div>
+      <div class="filtri-riga filtri-2col">
+        <div><label class="meta">Categoria</label>
+          <select id="f-cat" class="sheet-input" ${_filtri.macro ? '' : 'disabled'}>
+            <option value="">Tutte</option>
+            ${_filtri.macro ? categorieDi(_filtri.macro).map(c => `<option ${_filtri.cat === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('') : ''}
+          </select></div>
+        <div><label class="meta">Sottocategoria</label>
+          <select id="f-sub" class="sheet-input" ${_filtri.cat ? '' : 'disabled'}>
+            <option value="">Tutte</option>
+            <option value="__vuota__" ${_filtri.sub === '__vuota__' ? 'selected' : ''}>— Senza sottocategoria —</option>
+            ${_filtri.macro && _filtri.cat ? sottocategorieDi(_filtri.macro, _filtri.cat).map(s => `<option ${_filtri.sub === s ? 'selected' : ''}>${escapeHtml(s)}</option>`).join('') : ''}
+          </select></div>
+      </div>
+      <div class="filtri-riga filtri-2col">
+        <div><label class="meta">Dal</label><input type="date" id="f-da" value="${_filtri.da}" class="sheet-input"></div>
+        <div><label class="meta">Al</label><input type="date" id="f-a" value="${_filtri.a}" class="sheet-input"></div>
+      </div>
+      <div class="filtri-riga filtri-2col">
+        <div><label class="meta">Importo min €</label><input type="text" inputmode="decimal" id="f-min" value="${_filtri.min}" class="sheet-input" placeholder="—"></div>
+        <div><label class="meta">Importo max €</label><input type="text" inputmode="decimal" id="f-max" value="${_filtri.max}" class="sheet-input" placeholder="—"></div>
+      </div>
+      <button class="btn btn-ghost" id="f-reset" style="margin-top:6px;font-size:13px">Azzera filtri</button>
+    </div>
+    <div id="ris"></div>
+  `;
+
+  const inp = root.querySelector('#q');
+  const box = root.querySelector('#ris');
+
+  const filtriNumerici = () => ({
+    ..._filtri,
+    min: _filtri.min !== '' ? parseFloat(String(_filtri.min).replace(',', '.')) : null,
+    max: _filtri.max !== '' ? parseFloat(String(_filtri.max).replace(',', '.')) : null,
+  });
+
+  const clearBtn = root.querySelector('#q-clear');
+
+  // controller selezione multipla: onChange ri-esegue la ricerca (che ridisegna la lista)
+  if (!_sel) _sel = creaSelezione(() => esegui());
+
+  const esegui = () => {
+    _q = inp.value;
+    if (clearBtn) clearBtn.style.display = _q ? 'flex' : 'none';
+    const { risultati, totali, count } = cercaMovimenti(_q, filtriNumerici());
+    _ultimiRisultati = risultati;
+    const attivi = Object.values(_filtri).some(v => v !== '');
+    if (!_q.trim() && !attivi) { box.innerHTML = '<div class="empty">Scrivi qualcosa o apri i Filtri per cercare tra tutti i tuoi movimenti</div>'; return; }
+    if (!count) { box.innerHTML = `<div class="empty"><div class="big-ic">${UI_SVG.lente}</div>Nessun risultato</div>`; return; }
+
+    // totali SEPARATI per tipo: la somma è sempre leggibile anche con risultati misti
+    const pezzi = [];
+    if (totali.spese > 0) pezzi.push(`<span class="sp num">−${fmtEUR(totali.spese)}</span> spese`);
+    if (totali.entrate > 0) pezzi.push(`<span class="en num">+${fmtEUR(totali.entrate)}</span> entrate`);
+    if (totali.trasf > 0) pezzi.push(`<span class="tr num">⇄ ${fmtEUR(totali.trasf)}</span> accantonati`);
+
+    const selMode = _sel && _sel.attiva();
+    const toolbar = selMode
+      ? _sel.toolbarHTML()
+      : `<div class="search-summary"><div class="summary-head"><div class="n">${count} movimenti trovati</div>${count ? `<button class="sel-mini" id="attiva-sel" aria-label="Seleziona risultati"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 12l2.2 2.2L15.5 9.5"/></svg></button>` : ''}</div><div style="font-size:14.5px;line-height:1.7">${pezzi.join(' · ') || '—'}</div></div>`;
+
+    box.innerHTML = toolbar + '<div>' + risultati.slice(0, 300).map(m => {
       const segno = m.tipo === 'spesa' ? '−' : m.tipo === 'entrata' ? '+' : '⇄ ';
       const cls = m.tipo === 'spesa' ? 'sp' : m.tipo === 'entrata' ? 'en' : 'tr';
       const icona = m.macro ? iconaMacro(m.macro) : iconaTipo(m.tipo);
-      // classificazione COMPLETA fino alla sottocategoria (per modifiche massive a colpo d'occhio)
       const classif = [m.macro, m.cat, m.sub].filter(Boolean).join(' › ') || m.tipo;
-      const selMode = _sel && _sel.attiva();
       const isSel = selMode && _sel.ha(m.id);
-      return `
-        <div class="mov-wrap" data-id="${m.id}">
-          <div class="del-bg">Elimina</div>
-          <div class="mov tipo-${m.tipo} ${selMode ? 'selectable' : ''} ${isSel ? 'sel' : ''}" data-mov="${m.id}">
-            ${selMode ? `<div class="selbox">${isSel ? '✓' : ''}</div>` : ''}
-            <div class="ic">${icona}</div>
-            <div class="body">
-              <div class="d1">${escapeHtml(m.desc || classif)}</div>
-              <div class="d2"><span class="cls">${escapeHtml(classif)}</span>${m.conto ? ' <span class="cnt">· ' + escapeHtml(m.conto) + '</span>' : ''}</div>
-            </div>
-            <div class="amt ${cls} num">${segno}${fmtEUR(m.imp)}</div>
-          </div>
-        </div>`;
-    }).join('');
-    return `
-      <div class="day-head"><span>${fmtDataEstesa(g)}</span><b class="num">${totGiorno < 0 ? '−' : '+'}${fmtEUR(Math.abs(totGiorno))}</b></div>
-      ${righe}`;
-  }).join('') : '<div class="empty"><div class="big-ic">📭</div>Nessun movimento in questo periodo</div>';
+      return `<div class="mov tipo-${m.tipo} ${selMode ? 'selectable' : ''} ${isSel ? 'sel' : ''}" data-mov="${m.id}">
+        ${selMode ? `<div class="selbox">${isSel ? '✓' : ''}</div>` : ''}
+        <div class="ic">${icona}</div>
+        <div class="body"><div class="d1">${escapeHtml(m.desc || classif)}</div><div class="d2"><span class="cls">${escapeHtml(classif)}</span> <span class="cnt">· ${fmtDataEstesa(m.data)}${m.conto ? ' · ' + escapeHtml(m.conto) : ''}</span></div></div>
+        <div class="amt ${cls} num">${segno}${fmtEUR(m.imp)}</div>
+      </div>`;
+    }).join('') + '</div>';
 
-  const labelPeriodo = _periodo === 'anno' ? anno
-    : _periodo === 'settimana' ? 'Ultimi 7 giorni'
-    : `${nomeMese(parseInt(mese) - 1)} ${anno}`;
-
-  // controller selezione multipla (creato una volta, refresh ri-renderizza la lista)
-  const refreshLista = () => renderMovimenti(root, { ...params, mese: _mese, periodo: _periodo, _interno: true });
-  if (!_sel) _sel = creaSelezione(refreshLista);
-
-  const btnSeleziona = (movs.length && !_sel.attiva())
-    ? `<button class="sel-mini" id="attiva-sel" aria-label="Seleziona operazioni"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 12l2.2 2.2L15.5 9.5"/></svg></button>`
-    : '';
-  const toolbarHTML = _sel.attiva() ? _sel.toolbarHTML() : '';
-
-  root.innerHTML = `
-    <div class="mov-sticky">
-      ${_periodo !== 'settimana' ? `
-        <div class="month-nav withsel" style="margin:6px 0">
-          <button class="arr" id="prev">‹</button>
-          <div class="m">${labelPeriodo}</div>
-          <button class="arr" id="next">›</button>
-          ${btnSeleziona}
-        </div>` : `<div class="month-nav withsel" style="margin:6px 0"><div class="m">${labelPeriodo}</div>${btnSeleziona}</div>`}
-      ${haFiltri ? `<div class="filtro-badge">Filtro: <b>${escapeHtml(titolo)}</b> · ${movs.length} mov <span id="clear-filtro">✕</span></div>` : ''}
-      ${toolbarHTML}
-      ${cardsHTML}
-    </div>
-    ${listaHTML}
-  `;
-
-  // IMPORTANTE: i listener passano SEMPRE params aggiornati (mese/periodo nuovi),
-  // altrimenti il re-render rileggerebbe quelli vecchi e la navigazione resterebbe bloccata.
-  const vaiA = (nuovi) => renderMovimenti(root, { ...params, ...nuovi });
-
-  // selettore periodo NELL'HEADER (compatto)
-  const headSeg = document.getElementById('head-seg');
-  if (headSeg) {
-    headSeg.innerHTML = `<div class="seg">
-      <button data-p="settimana" class="${_periodo === 'settimana' ? 'on' : ''}">Sett.</button>
-      <button data-p="mese" class="${_periodo === 'mese' ? 'on' : ''}">Mese</button>
-      <button data-p="anno" class="${_periodo === 'anno' ? 'on' : ''}">Anno</button>
-    </div>`;
-    headSeg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => vaiA({ periodo: b.dataset.p, mese: _mese })));
-  }
-
-  // navigazione periodo (mese o anno)
-  const vaiPrec = () => {
-    let nuovoMese;
-    if (_periodo === 'anno') nuovoMese = `${parseInt(anno) - 1}-${mese}`;
-    else { const d = new Date(parseInt(anno), parseInt(mese) - 2, 1); nuovoMese = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
-    vaiA({ mese: nuovoMese, periodo: _periodo });
-  };
-  const vaiSucc = () => {
-    let nuovoMese;
-    if (_periodo === 'anno') nuovoMese = `${parseInt(anno) + 1}-${mese}`;
-    else { const d = new Date(parseInt(anno), parseInt(mese), 1); nuovoMese = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
-    vaiA({ mese: nuovoMese, periodo: _periodo });
-  };
-  const prev = root.querySelector('#prev'), next = root.querySelector('#next');
-  if (prev) prev.addEventListener('click', vaiPrec);
-  if (next) next.addEventListener('click', vaiSucc);
-
-  // rimuovi filtro (torna a tutti i movimenti del periodo)
-  const cf = root.querySelector('#clear-filtro');
-  if (cf) cf.addEventListener('click', () => renderMovimenti(root, { periodo: _periodo, mese: _mese }));
-
-  // swipe-to-delete + tap per modifica + long-press per selezione multipla
-  _abilitaInterazioni(root, refreshLista);
-  const attivaSelBtn = root.querySelector('#attiva-sel');
-  if (attivaSelBtn) attivaSelBtn.addEventListener('click', () => _sel.avvia());
-  if (_sel.attiva()) {
-    const idsVisibili = movs.map(m => m.id);
-    _sel.bindToolbar(root, idsVisibili);
-  }
-};
-
-// Gestione interazioni su ogni riga: swipe (elimina), tap (modifica o toggle selezione),
-// long-press (avvia la selezione multipla). Il long-press di ~500ms entra in modalità
-// selezione; da lì un tap seleziona/deseleziona invece di aprire la modifica.
-const _abilitaInterazioni = (root, refresh) => {
-  root.querySelectorAll('.mov-wrap').forEach(wrap => {
-    const mov = wrap.querySelector('.mov');
-    const id = wrap.dataset.id;
-    let startX = 0, curX = 0, dragging = false, longTimer = null, longFired = false;
-
-    const clearLong = () => { if (longTimer) { clearTimeout(longTimer); longTimer = null; } };
-
-    const onStart = (x) => {
-      startX = x; dragging = true; longFired = false;
-      mov.style.transition = 'none';
-      // avvio timer long-press SOLO se non sono già in selezione (in selezione il tap basta)
-      if (!_sel.attiva()) {
-        longTimer = setTimeout(() => {
+    // interazioni righe: tap (modifica o toggle selezione) + long-press (avvia selezione)
+    box.querySelectorAll('[data-mov]').forEach(el => {
+      const id = el.dataset.mov;
+      let longTimer = null, longFired = false;
+      const clearLong = () => { if (longTimer) { clearTimeout(longTimer); longTimer = null; } };
+      const start = () => {
+        longFired = false;
+        if (!_sel.attiva()) longTimer = setTimeout(() => {
           longFired = true;
-          if (navigator.vibrate) navigator.vibrate(15);   // feedback aptico
-          _sel.avvia(id);   // entra in modalità selezione con questa riga
+          if (navigator.vibrate) navigator.vibrate(15);
+          _sel.avvia(id);
         }, 500);
-      }
-    };
-    const onMove = (x) => {
-      if (!dragging) return;
-      if (Math.abs(x - startX) > 8) clearLong();   // si sta muovendo: non è un long-press
-      if (_sel.attiva()) return;                   // in selezione niente swipe
-      curX = Math.min(0, x - startX);
-      mov.style.transform = `translateX(${curX}px)`;
-    };
-    const onEnd = async () => {
-      clearLong();
-      if (!dragging) return;
-      dragging = false;
-      if (longFired) { curX = 0; return; }   // il long-press ha già agito
-      mov.style.transition = 'transform .2s ease';
-      if (!_sel.attiva() && curX < -110) {
-        mov.style.transform = 'translateX(-100%)';
-        setTimeout(async () => {
-          if (await conferma('Eliminare questo movimento?', { danger: true, ok: 'Elimina' })) { const ok = await safeWrite(() => deleteMovimento(id), 'Movimento non eliminato'); if (ok) { toast('Movimento eliminato'); refresh(); } }
-          else { mov.style.transform = 'translateX(0)'; }
-        }, 150);
-      } else {
-        mov.style.transform = 'translateX(0)';
-      }
-      curX = 0;
-    };
-
-    mov.addEventListener('touchstart', e => onStart(e.touches[0].clientX), { passive: true });
-    mov.addEventListener('touchmove', e => onMove(e.touches[0].clientX), { passive: true });
-    mov.addEventListener('touchend', onEnd);
-    // desktop: long-press col mouse
-    mov.addEventListener('mousedown', e => onStart(e.clientX));
-    mov.addEventListener('mouseup', onEnd);
-    mov.addEventListener('mouseleave', () => { clearLong(); });
-
-    // tap: in selezione -> toggle; altrimenti -> modifica
-    mov.addEventListener('click', () => {
-      if (longFired) return;              // il long-press non è un click
-      if (Math.abs(curX) > 5) return;     // era uno swipe
-      if (_sel.attiva()) { _sel.toggle(id); return; }
-      navigate('modifica', { id });
+      };
+      el.addEventListener('touchstart', start, { passive: true });
+      el.addEventListener('touchend', clearLong);
+      el.addEventListener('touchmove', clearLong, { passive: true });
+      el.addEventListener('mousedown', start);
+      el.addEventListener('mouseup', clearLong);
+      el.addEventListener('mouseleave', clearLong);
+      el.addEventListener('click', () => {
+        if (longFired) return;
+        if (_sel.attiva()) { _sel.toggle(id); return; }
+        navigate('modifica', { id });
+      });
     });
+
+    const attiva = box.querySelector('#attiva-sel');
+    if (attiva) attiva.addEventListener('click', () => _sel.avvia());
+    if (selMode) _sel.bindToolbar(box, risultati.map(m => m.id));
+  };
+
+  inp.addEventListener('input', esegui);
+
+  // X per cancellare rapidamente la ricerca
+  if (clearBtn) clearBtn.addEventListener('click', () => {
+    inp.value = '';
+    _q = '';
+    esegui();
+    inp.focus();
   });
+
+  // pannello filtri
+  root.querySelector('#toggle-filtri').addEventListener('click', () => {
+    _filtriAperti = !_filtriAperti;
+    root.querySelector('#pannello-filtri').style.display = _filtriAperti ? 'block' : 'none';
+  });
+  root.querySelectorAll('[data-ftipo]').forEach(el => el.addEventListener('click', () => {
+    _filtri.tipo = el.dataset.ftipo;
+    root.querySelectorAll('[data-ftipo]').forEach(x => x.classList.toggle('on', x.dataset.ftipo === _filtri.tipo));
+    esegui();
+  }));
+  const bindFiltro = (sel, campo) => {
+    const el = root.querySelector(sel);
+    if (el) el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => { _filtri[campo] = el.value; esegui(); });
+  };
+  // macro: cambia -> azzera cat/sub e ri-renderizza (per popolare i menu a cascata)
+  const elMacro = root.querySelector('#f-macro');
+  if (elMacro) elMacro.addEventListener('change', () => {
+    _filtri.macro = elMacro.value; _filtri.cat = ''; _filtri.sub = '';
+    renderRicerca(root);
+  });
+  // cat: cambia -> azzera sub e ri-renderizza
+  const elCat = root.querySelector('#f-cat');
+  if (elCat) elCat.addEventListener('change', () => {
+    _filtri.cat = elCat.value; _filtri.sub = '';
+    renderRicerca(root);
+  });
+  bindFiltro('#f-sub', 'sub'); bindFiltro('#f-conto', 'conto');
+  bindFiltro('#f-da', 'da'); bindFiltro('#f-a', 'a');
+  bindFiltro('#f-min', 'min'); bindFiltro('#f-max', 'max');
+  root.querySelector('#f-reset').addEventListener('click', () => {
+    _filtri = { tipo: '', macro: '', cat: '', sub: '', conto: '', da: '', a: '', min: '', max: '' };
+    renderRicerca(root);
+  });
+
+  esegui();
+  // il focus solo quando parti da zero: tornando dalla modifica NON ruba la vista dei risultati
+  if (!_q && !Object.values(_filtri).some(v => v !== '')) setTimeout(() => inp.focus(), 100);
 };

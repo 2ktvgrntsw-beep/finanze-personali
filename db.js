@@ -1,247 +1,213 @@
-// movimentiService.js — CRUD movimenti + aggregazioni per la home e il drill-down.
+// prestitiService.js — Mutuo e finanziamenti: piano di ammortamento e stato attuale.
+// Ammortamento alla francese (rata costante). Il residuo debito serve al Patrimonio;
+// la rata mensile appare come spesa nella home.
 
 import { dbAdd, dbDelete, dbBulkPut } from '../core/db.js';
 import { state, refreshAll } from '../core/store.js';
-import { uid, round2, annomese, annoDi } from '../core/utils.js';
-import { apprendiDaMovimento } from './suggerimentiService.js';
+import { uid, round2 } from '../core/utils.js';
 
-// --- CRUD ---
-export const saveMovimento = async (m) => {
-  const obj = {
-    id: m.id || uid(),
-    data: m.data,
-    annomese: annomese(m.data),
-    tipo: m.tipo || 'spesa',
-    macro: m.macro || '',
-    cat: m.cat || '',
-    sub: m.sub || '',
-    conto: m.conto || '',
-    contoDest: m.contoDest || '',
-    tag: Array.isArray(m.tag) ? m.tag : [],
-    desc: m.desc || '',
-    note: m.note || '',
-    imp: round2(m.imp),
-    origine: m.origine || 'utente',
+// Calcola il piano di ammortamento completo di un prestito (mutuo o finanziamento).
+export const calcolaPiano = (p, eventi = []) => {
+  const rate = [];
+  const tassoMensile = (p.tasso / 100) / 12;
+  let residuo = p.importo_iniziale;
+  const start = new Date(p.data_inizio + 'T00:00:00');
+
+  // eventi di estinzione parziale indicizzati per data
+  const estinzioni = eventi.filter(e => e.tipo === 'estinzione_parziale');
+
+  const [sy, sm, sg] = p.data_inizio.split('-').map(Number);
+  // giorno delle rate successive alla prima: il giorno di addebito se impostato,
+  // altrimenti il giorno della data di inizio (la prima rata cade sempre alla data di inizio)
+  const giornoRata = p.giorno_addebito || sg;
+
+  for (let i = 1; i <= p.durata_mesi && residuo > 0.005; i++) {
+    // ogni rata è calcolata DALLA DATA DI INIZIO (mese di partenza + i-1), preservando
+    // il giorno voluto, o l'ultimo giorno del mese se non esiste (31 -> 28 feb).
+    const mesiTot = sm - 1 + (i - 1);
+    const anno = sy + Math.floor(mesiTot / 12);
+    const mese = (mesiTot % 12) + 1;
+    const maxG = new Date(anno, mese, 0).getDate();
+    const giorno = i === 1 ? sg : giornoRata;
+    const dataRata = new Date(anno, mese - 1, Math.min(giorno, maxG));
+    const interessi = tassoMensile > 0 ? residuo * tassoMensile : 0;
+    let capitale = p.rata - interessi;
+    if (capitale > residuo) capitale = residuo;
+    residuo = residuo - capitale;
+
+    // applica estinzioni avvenute in questo mese
+    for (const est of estinzioni) {
+      const de = new Date(est.data + 'T00:00:00');
+      if (de.getFullYear() === dataRata.getFullYear() && de.getMonth() === dataRata.getMonth()) {
+        residuo = Math.max(0, residuo - (est.importo || 0));
+      }
+    }
+
+    const oggi = new Date();
+    rate.push({
+      n: i,
+      data: dataRata.toISOString().slice(0, 10),
+      rata: round2(p.rata),
+      quotaCapitale: round2(capitale),
+      quotaInteressi: round2(interessi),
+      residuo: round2(residuo),
+      pagata: dataRata <= oggi,
+    });
+  }
+  return rate;
+};
+
+// Stato attuale sintetico del prestito
+export const statoPrestito = (p, eventi = []) => {
+  if (!p || !p.importo_iniziale) return null;
+  const piano = calcolaPiano(p, eventi);
+  if (!piano.length) return null;
+  const oggi = new Date();
+  const pagate = piano.filter(r => r.pagata);
+  const prossima = piano.find(r => !r.pagata);
+  const residuo = pagate.length ? pagate[pagate.length - 1].residuo : p.importo_iniziale;
+  const restituito = round2(p.importo_iniziale - residuo);
+  const pct = Math.round((restituito / p.importo_iniziale) * 100);
+
+  return {
+    piano,
+    rata: round2(p.rata),
+    quotaUtente: round2(p.rata * (p.quota_utente || 100) / 100),
+    residuo: round2(residuo),
+    restituito,
+    ratePagate: pagate.length,
+    rateTotali: piano.length,
+    prossimaData: prossima ? prossima.data : null,
+    dataFine: piano[piano.length - 1].data,
+    pctCompletamento: pct,
   };
-  await dbAdd('movimenti', obj);
-  // l'app impara da ogni inserimento (descrizione -> classificazione)
-  if (obj.desc && obj.origine === 'utente') await apprendiDaMovimento(obj);
+};
+
+// Somma dei debiti residui per il patrimonio. Con escludiMutuo=true il mutuo NON
+// viene contato: serve quando si esclude la casa dal patrimonio (il mutuo è il
+// debito legato a quella casa, quindi va tolto insieme ad essa).
+export const debitoTotaleResiduo = (escludiMutuo = false) => {
+  let tot = 0;
+  if (state.mutuo && !escludiMutuo) {
+    const s = statoPrestito(state.mutuo, state.eventiMutuo);
+    if (s) tot += s.residuo * (state.mutuo.quota_utente || 100) / 100;
+  }
+  for (const f of state.finanziamenti) {
+    if (f.attivo === false) continue;
+    const s = statoPrestito(f, []);
+    if (s) tot += s.residuo * (f.quota_utente || 100) / 100;
+  }
+  return round2(tot);
+};
+
+// --- Salvataggi ---
+export const saveMutuo = async (m) => {
+  const obj = { id: 'mutuo-principale', ...m };
+  await dbAdd('mutuo', obj);
   await refreshAll();
+  await sincronizzaRicorrenzaPrestito(obj, 'mutuo');
   return obj;
 };
-
-export const deleteMovimento = async (id) => {
-  await dbDelete('movimenti', id);
+export const saveFinanziamento = async (f) => {
+  const obj = { id: f.id || 'fin-' + uid(), ...f, attivo: f.attivo !== false };
+  await dbAdd('finanziamenti', obj);
+  await refreshAll();
+  await sincronizzaRicorrenzaPrestito(obj, 'finanziamento');
+  return obj;
+};
+export const deleteFinanziamento = async (id) => {
+  await dbDelete('finanziamenti', id);
+  // rimuovi anche la ricorrenza collegata
+  const { dbAll: _all, dbDelete: _del } = await import('../core/db.js');
+  const ric = await _all('ricorrenti');
+  for (const r of ric) if (r.origineMutuo === id) await _del('ricorrenti', r.id);
   await refreshAll();
 };
 
-// Applica una modifica ai movimenti passati che corrispondono a una ricorrenza
-// (riconosciuti per descrizione + importo, o sottocategoria + importo per le rate).
-// Usato dalla modifica ricorrente con ambito "anche le passate".
-export const applicaModificaAmbito = async (ricorrenza, modifiche, ambito) => {
-  if (ambito !== 'tutte') return 0;
-  const desc = (ricorrenza.desc || ricorrenza.nome || '').toLowerCase();
-  const sub = ricorrenza.sub || '';
-  const impVecchio = ricorrenza.imp;
+// Crea/aggiorna la ricorrenza della rata di un prestito.
+// REGOLA D'ORO: genera movimenti solo dal presente in avanti. Il passato è già coperto
+// dai movimenti reali nello storico (riconosciuti tramite sottocategoria, es. "Rata Mutuo").
+export const sincronizzaRicorrenzaPrestito = async (prestito, tipo) => {
+  const { dbAll: _all, dbAdd: _add, dbDelete: _del } = await import('../core/db.js');
+  const rif = tipo === 'mutuo' ? 'mutuo-principale' : prestito.id;
 
-  const daAggiornare = state.movimenti.filter(m => {
-    const matchDesc = desc && (m.desc || '').toLowerCase() === desc;
-    const matchSub = sub && m.sub === sub && Math.abs(m.imp - impVecchio) < 0.02;
-    return matchDesc || matchSub;
-  }).map(m => { const n = { ...m, ...modifiche }; n.annomese = annomese(n.data); return n; });
+  // trova una eventuale ricorrenza già collegata (per id di origine).
+  const tutte = await _all('ricorrenti');
+  const esistente = tutte.find(r => r.origineMutuo === rif);
 
-  if (daAggiornare.length) { await dbBulkPut('movimenti', daAggiornare); await refreshAll(); }
-  return daAggiornare.length;
-};
+  // se il prestito non deve generare ricorrenza, rimuovi quella collegata e basta
+  if (prestito.generaRicorrenza === false) {
+    if (esistente) { await _del('ricorrenti', esistente.id); await refreshAll(); }
+    return;
+  }
 
-// Modifica massiva: applica un set di modifiche a una lista di id di movimenti.
-// Usata dalla selezione multipla nella ricerca. Ogni campo in `modifiche` sovrascrive.
-export const modificaMassiva = async (ids, modifiche) => {
-  const set = new Set(ids);
-  const daAggiornare = state.movimenti.filter(m => set.has(m.id)).map(m => {
-    const nuovo = { ...m };
-    for (const [k, v] of Object.entries(modifiche)) {
-      if (v !== undefined && v !== null && v !== '') nuovo[k] = v;
-    }
-    nuovo.annomese = annomese(nuovo.data);
-    return nuovo;
-  });
-  if (daAggiornare.length) { await dbBulkPut('movimenti', daAggiornare); await refreshAll(); }
-  return daAggiornare.length;
-};
+  const piano = calcolaPiano(prestito, tipo === 'mutuo' ? (await _all('eventiMutuo')) : []);
+  const oggiISO = new Date().toISOString().slice(0, 10);
+  const prossimaRata = piano.find(r => r.data >= oggiISO);
+  if (!prossimaRata) {
+    // prestito concluso: la ricorrenza muore
+    if (esistente) await _del('ricorrenti', esistente.id);
+    await refreshAll();
+    return;
+  }
 
-// Modifica massiva multi-campo: applica a tutti gli id selezionati i campi indicati.
-// patch può contenere: tipo, macro, cat, sub, conto, contoDest, desc, e tagAdd (tag da aggiungere).
-export const modificaBulk = async (ids, patch) => {
-  const set = new Set(ids);
-  const daAggiornare = state.movimenti.filter(m => set.has(m.id)).map(m => {
-    const nuovo = { ...m };
-    if (patch.tipo !== undefined) nuovo.tipo = patch.tipo;
-    if (patch.macro !== undefined) { nuovo.macro = patch.macro; nuovo.cat = patch.cat || ''; nuovo.sub = patch.sub || ''; }
-    if (patch.conto !== undefined) nuovo.conto = patch.conto;
-    if (patch.contoDest !== undefined) nuovo.contoDest = patch.contoDest;
-    if (patch.desc !== undefined && patch.desc !== '') nuovo.desc = patch.desc;
-    if (patch.tagAdd) nuovo.tag = Array.from(new Set([...(m.tag || []), patch.tagAdd]));
-    return nuovo;
-  });
-  await dbBulkPut('movimenti', daAggiornare);
+  const rec = {
+    id: esistente ? esistente.id : uid(),
+    nome: prestito.descMovimento || prestito.nome,
+    tipo: 'spesa',
+    frequenza: 'mensile',
+    giorno: prestito.giorno_addebito || null,
+    imp: round2(prestito.rata * (prestito.quota_utente || 100) / 100),   // rata per la TUA quota
+    macro: prestito.macro || 'Casa',
+    cat: prestito.cat || '',
+    sub: prestito.sub || (tipo === 'mutuo' ? 'Rata Mutuo' : ''),
+    conto: prestito.conto || '',
+    contoDest: '',
+    tag: [],
+    desc: prestito.descMovimento || '',
+    modalita: 'fisso', soglia: null, isRegola: false,
+    attiva: true,
+    // PRESERVA lo stato di generazione se la ricorrenza esisteva già: altrimenti
+    // ad ogni salvataggio rigenererebbe i movimenti già creati (doppioni).
+    dataInizio: esistente ? esistente.dataInizio : prossimaRata.data,
+    prossima: esistente ? esistente.prossima : prossimaRata.data,
+    fineTipo: 'data',
+    fineData: piano[piano.length - 1].data,
+    fineConteggio: null,
+    generati: esistente ? (esistente.generati || 0) : 0,
+    origineMutuo: rif,
+  };
+  await _add('ricorrenti', rec);
   await refreshAll();
-  return daAggiornare.length;
 };
 
-// Applica un tag in blocco a una lista di movimenti (wrapper di modificaBulk).
-// Usato dalla ricerca (selezione multipla) e dalle impostazioni (bulk tag retroattivo).
-export const applicaTagBulk = async (ids, tagNome) => {
-  if (!tagNome) return 0;
-  return modificaBulk(ids, { tagAdd: tagNome });
+export const saveEventoMutuo = async (ev) => {
+  await dbAdd('eventiMutuo', { id: ev.id || uid(), ...ev });
+  await refreshAll();
 };
+export const deleteEventoMutuo = async (id) => { await dbDelete('eventiMutuo', id); await refreshAll(); };
+export const eventiMutuo = () => state.eventiMutuo.filter(e => e.riferimento === 'mutuo-principale' || !e.riferimento);
 
-// --- Filtri di base ---
-// Le spese "vere" per la home escludono i trasferimenti (che non sono spese).
-export const soloSpese = (movs) => movs.filter(m => m.tipo === 'spesa');
-export const soloEntrate = (movs) => movs.filter(m => m.tipo === 'entrata');
-export const soloTrasferimenti = (movs) => movs.filter(m => m.tipo === 'trasferimento');
-
-// --- Totali di periodo ---
-export const totaliPeriodo = (movs) => {
-  let spese = 0, entrate = 0, investito = 0;
-  for (const m of movs) {
-    if (m.tipo === 'spesa') spese += m.imp;
-    else if (m.tipo === 'entrata') entrate += m.imp;
-    else if (m.tipo === 'trasferimento') {
-      // conta come "investito/accantonato" se la destinazione è un conto risparmio/investimenti
-      const dest = state.conti.find(c => c.nome === m.contoDest);
-      if (dest && (dest.tipo === 'investimenti' || dest.tipo === 'risparmio')) investito += m.imp;
-    }
+// Sincronizza le ricorrenze delle rate di TUTTI i prestiti (mutuo + finanziamenti).
+// Chiamata all'avvio dell'app. Usa sincronizzaRicorrenzaPrestito, che rispetta la
+// regola d'oro (solo dal presente in avanti, niente doppioni col passato).
+export const sincronizzaPrestiti = async () => {
+  // DEDUP DI SICUREZZA: se per un bug passato un prestito ha più ricorrenze
+  // collegate (stesso origineMutuo), tengo la prima ed elimino le altre.
+  const { dbAll: _all, dbDelete: _del } = await import('../core/db.js');
+  const tutte = await _all('ricorrenti');
+  const viste = new Map();
+  for (const r of tutte) {
+    if (!r.origineMutuo) continue;
+    if (viste.has(r.origineMutuo)) await _del('ricorrenti', r.id);
+    else viste.set(r.origineMutuo, r.id);
   }
-  return { spese: round2(spese), entrate: round2(entrate), saldo: round2(entrate - spese), investito: round2(investito) };
-};
 
-// --- Aggregazione per livello (drill-down) ---
-// livello: 'macro' | 'cat' | 'sub'. filtro opzionale { macro, cat }.
-// Ritorna righe { chiave, totale, count } ordinate per totale desc.
-export const aggregaPerLivello = (movs, livello, filtro = {}) => {
-  let spese = soloSpese(movs);
-  if (filtro.macro) spese = spese.filter(m => m.macro === filtro.macro);
-  if (filtro.cat) spese = spese.filter(m => m.cat === filtro.cat);
-
-  const campo = livello === 'macro' ? 'macro' : livello === 'cat' ? 'cat' : 'sub';
-  const agg = {};
-  for (const m of spese) {
-    const k = m[campo] || '(senza)';
-    agg[k] = agg[k] || { chiave: k, totale: 0, count: 0 };
-    agg[k].totale += m.imp;
-    agg[k].count++;
+  if (state.mutuo && state.mutuo.importo_iniziale && state.mutuo.generaRicorrenza !== false) {
+    await sincronizzaRicorrenzaPrestito(state.mutuo, 'mutuo');
   }
-  const righe = Object.values(agg).map(r => ({ ...r, totale: round2(r.totale) }));
-  righe.sort((a, b) => b.totale - a.totale);
-  const tot = righe.reduce((s, r) => s + r.totale, 0);
-  righe.forEach(r => r.pct = tot > 0 ? (r.totale / tot * 100) : 0);
-  return righe;
-};
-
-// Movimenti di una specifica voce (per l'accesso diretto via icona)
-export const movimentiDiVoce = (movs, filtro = {}) => {
-  let out = movs;
-  if (filtro.tipo) out = out.filter(m => m.tipo === filtro.tipo);
-  if (filtro.macro) out = out.filter(m => m.macro === filtro.macro);
-  if (filtro.cat) out = out.filter(m => m.cat === filtro.cat);
-  if (filtro.sub) out = out.filter(m => m.sub === filtro.sub);
-  return out.sort((a, b) => b.data.localeCompare(a.data));
-};
-
-// --- Media mensile spese (per i delta "vs media") ---
-export const mediaSpeseMensile = (meseCorrente) => {
-  const perMese = {};
-  for (const m of state.movimenti) {
-    if (m.tipo !== 'spesa') continue;
-    if (m.annomese === meseCorrente) continue;      // escludo il mese in corso
-    perMese[m.annomese] = (perMese[m.annomese] || 0) + m.imp;
+  for (const f of state.finanziamenti) {
+    if (f.attivo === false || !f.importo_iniziale || f.generaRicorrenza === false) continue;
+    await sincronizzaRicorrenzaPrestito(f, 'finanziamento');
   }
-  const valori = Object.values(perMese);
-  if (!valori.length) return 0;
-  return round2(valori.reduce((s, v) => s + v, 0) / valori.length);
-};
-
-// --- Spese per anno (vista Anno) ---
-export const spesePerAnno = () => {
-  const perAnno = {};
-  for (const m of state.movimenti) {
-    if (m.tipo !== 'spesa') continue;
-    const a = annoDi(m.data);
-    perAnno[a] = (perAnno[a] || 0) + m.imp;
-  }
-  return Object.entries(perAnno)
-    .map(([anno, tot]) => ({ anno, totale: round2(tot) }))
-    .sort((a, b) => a.anno.localeCompare(b.anno));
-};
-
-// --- Investito per mese (vista investimenti nel tempo) ---
-export const investitoPerMese = () => {
-  const perMese = {};
-  for (const m of state.movimenti) {
-    if (m.tipo !== 'trasferimento') continue;
-    const dest = state.conti.find(c => c.nome === m.contoDest);
-    const isInv = dest ? (dest.tipo === 'investimenti') : (m.macro === 'Investimenti');
-    if (!isInv) continue;
-    perMese[m.annomese] = (perMese[m.annomese] || 0) + m.imp;
-  }
-  return Object.entries(perMese)
-    .map(([mese, tot]) => ({ mese, totale: round2(tot) }))
-    .sort((a, b) => a.mese.localeCompare(b.mese));
-};
-
-// --- Ricerca full-text con totale aggregato ---
-// Ricerca potenziata: testo libero + FILTRI (tipo, macro, conto, intervallo date,
-// intervallo importi). Ritorna totali SEPARATI per tipo, così la somma è sempre
-// leggibile anche con risultati misti (spese+entrate insieme confondevano).
-// Il confronto testuale IGNORA GLI ACCENTI: "caffe" trova "Caffè".
-const _norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-export const cercaMovimenti = (query, filtri = {}) => {
-  const q = _norm((query || '').trim());
-  const haFiltri = filtri.tipo || filtri.macro || filtri.cat || filtri.sub || filtri.conto || filtri.da || filtri.a || filtri.min != null || filtri.max != null;
-  if (!q && !haFiltri) return { risultati: [], totali: { spese: 0, entrate: 0, trasf: 0 }, count: 0 };
-
-  // Termini di ricerca: separati da virgola = logica OR (trova chi contiene ANCHE SOLO uno).
-  // "hotel, volo, marocco" -> match se il movimento contiene hotel OPPURE volo OPPURE marocco.
-  // Senza virgole si comporta come prima: un unico termine.
-  const termini = q ? q.split(',').map(t => t.trim()).filter(Boolean) : [];
-
-  // un singolo termine matcha un movimento se compare in uno qualsiasi dei campi
-  const terminMatch = (m, t) => {
-    const num = parseFloat(t.replace(',', '.'));
-    if (m.desc && _norm(m.desc).includes(t)) return true;
-    if (m.macro && _norm(m.macro).includes(t)) return true;
-    if (m.cat && _norm(m.cat).includes(t)) return true;
-    if (m.sub && _norm(m.sub).includes(t)) return true;
-    if (m.conto && _norm(m.conto).includes(t)) return true;
-    if (m.tag && m.tag.some(tag => _norm(tag).includes(t))) return true;
-    if (!isNaN(num) && Math.abs(m.imp - num) < 0.005) return true;
-    return false;
-  };
-
-  const risultati = state.movimenti.filter(m => {
-    // filtri strutturati (tutti in AND)
-    if (filtri.tipo && m.tipo !== filtri.tipo) return false;
-    if (filtri.macro && m.macro !== filtri.macro) return false;
-    if (filtri.cat && m.cat !== filtri.cat) return false;
-    // sub: '__vuota__' = solo movimenti SENZA sottocategoria; altrimenti match esatto
-    if (filtri.sub === '__vuota__') { if (m.sub) return false; }
-    else if (filtri.sub && m.sub !== filtri.sub) return false;
-    if (filtri.conto && m.conto !== filtri.conto) return false;
-    if (filtri.da && m.data < filtri.da) return false;
-    if (filtri.a && m.data > filtri.a) return false;
-    if (filtri.min != null && m.imp < filtri.min) return false;
-    if (filtri.max != null && m.imp > filtri.max) return false;
-    // testo libero: basta che UNO dei termini matchi (OR)
-    if (!termini.length) return true;
-    return termini.some(t => terminMatch(m, t));
-  }).sort((a, b) => b.data.localeCompare(a.data));
-
-  const totali = {
-    spese: round2(risultati.filter(m => m.tipo === 'spesa').reduce((s, m) => s + m.imp, 0)),
-    entrate: round2(risultati.filter(m => m.tipo === 'entrata').reduce((s, m) => s + m.imp, 0)),
-    trasf: round2(risultati.filter(m => m.tipo === 'trasferimento').reduce((s, m) => s + m.imp, 0)),
-  };
-  return { risultati, totali, count: risultati.length };
 };

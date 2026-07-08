@@ -1,223 +1,108 @@
-// excelService.js — Backup ed export/import Excel COMPLETO per recovery.
-// Regola fondamentale: tutto ciò che si esporta si deve poter reimportare (simmetria).
-// Copre: movimenti, conti, categorie, tag, ricorrenti, mutuo, finanziamenti, eventi,
-// e le impostazioni (meta). Un backup che perde pezzi non è un backup.
+// backupService.js — Backup automatico interno + rilevamento perdita dati.
+// A ogni avvio salva una copia compatta di tutti i dati in uno store separato ('meta',
+// chiave dedicata). Se all'avvio i dati principali risultano vuoti MA esiste una copia,
+// propone il ripristino. Copre bug/corruzioni/azzeramenti; NON copre lo "sfratto" di iOS
+// (che cancella tutto il contenitore) — per quello serve il backup Excel.
 
-import { state, refreshAll } from '../core/store.js';
-import { dbBulkPut, dbClear, dbAll, dbAdd } from '../core/db.js';
-import { uid, round2, annomese, parseDataEU } from '../core/utils.js';
+import { dbAll, dbAdd, dbGet, dbBulkPut, dbClear } from '../core/db.js';
+import { refreshAll } from '../core/store.js';
 
-const XLSX = () => window.XLSX;
-const b = (v) => v === true || v === 'true' || v === 1 || v === '1' || v === 'VERO' || v === 'SI';
+const CHIAVE_BACKUP = '_backup_auto';
+const CHIAVE_ULTIMO_EXCEL = '_ultimo_backup_excel';
+const STORE_DATI = ['movimenti', 'conti', 'categorie', 'tag', 'ricorrenti', 'mutuo', 'finanziamenti', 'eventiMutuo', 'bollette'];
 
-// --- EXPORT (backup completo) ---
-export const esportaBackup = async () => {
-  const wb = XLSX().utils.book_new();
-  const sheet = (nome, rows) => XLSX().utils.book_append_sheet(wb, XLSX().utils.json_to_sheet(rows.length ? rows : [{}]), nome);
-
-  // Movimenti
-  sheet('Movimenti', state.movimenti.map(m => ({
-    Data: m.data, Tipo: m.tipo, Macro: m.macro, Categoria: m.cat, Sottocategoria: m.sub,
-    Conto: m.conto, ContoDest: m.contoDest, Tag: (m.tag || []).join(', '),
-    Descrizione: m.desc, Note: m.note, Importo: m.imp, Origine: m.origine || 'utente',
-  })));
-
-  // Conti (con dataPossesso per gli asset)
-  sheet('Conti', state.conti.map(c => ({
-    Nome: c.nome, Tipo: c.tipo, SaldoIniziale: c.saldo_iniziale, DataSaldo: c.data_saldo,
-    DataPossesso: c.possessoData || '', Note: c.note, Attivo: c.attivo !== false,
-  })));
-
-  // Categorie
-  sheet('Categorie', state.categorie.map(c => ({ Macro: c.macro, Categoria: c.cat, Sottocategoria: c.sub })));
-
-  // Tag
-  sheet('Tag', state.tag.map(t => ({ Nome: t.nome, Colore: t.colore || '' })));
-
-  // Ricorrenti (TUTTI i campi, incluse date inizio/fine)
-  sheet('Ricorrenti', state.ricorrenti.map(r => ({
-    Nome: r.nome, Tipo: r.tipo, Frequenza: r.frequenza, Giorno: r.giorno || '', Importo: r.imp,
-    Macro: r.macro, Categoria: r.cat, Sottocategoria: r.sub, Conto: r.conto, ContoDest: r.contoDest,
-    Tag: (r.tag || []).join(', '), Descrizione: r.desc,
-    Modalita: r.modalita, Soglia: r.soglia || '', IsRegola: r.isRegola === true,
-    Attiva: r.attiva !== false, DataInizio: r.dataInizio || '', Prossima: r.prossima || '',
-    FineTipo: r.fineTipo || 'mai', FineData: r.fineData || '', FineConteggio: r.fineConteggio || '',
-    Generati: r.generati || 0, Origine: r.origine || '',
-  })));
-
-  // Mutuo
-  if (state.mutuo) {
-    const m = state.mutuo;
-    sheet('Mutuo', Object.entries({
-      Nome: m.nome, Banca: m.banca, ImportoIniziale: m.importo_iniziale, Tasso: m.tasso,
-      DurataMesi: m.durata_mesi, Rata: m.rata, DataInizio: m.data_inizio, GiornoAddebito: m.giorno_addebito,
-      QuotaUtente: m.quota_utente, Conto: m.conto, Macro: m.macro || 'Casa', Categoria: m.cat || '',
-      Sottocategoria: m.sub || 'Rata Mutuo', GeneraRicorrenza: m.generaRicorrenza !== false,
-    }).map(([Campo, Valore]) => ({ Campo, Valore })));
-  }
-
-  // Finanziamenti (uno per riga, con classificazione)
-  sheet('Finanziamenti', state.finanziamenti.map(f => ({
-    Nome: f.nome, ImportoIniziale: f.importo_iniziale, Tasso: f.tasso, DurataMesi: f.durata_mesi,
-    Rata: f.rata, DataInizio: f.data_inizio, GiornoAddebito: f.giorno_addebito || 1, QuotaUtente: f.quota_utente,
-    Conto: f.conto || '', Macro: f.macro || 'Casa', Categoria: f.cat || '', Sottocategoria: f.sub || '',
-    GeneraRicorrenza: f.generaRicorrenza !== false, Attivo: f.attivo !== false,
-  })));
-
-  // Eventi mutuo (estinzioni)
-  sheet('EventiMutuo', state.eventiMutuo.map(e => ({
-    Tipo: e.tipo, Importo: e.importo, Data: e.data, Riferimento: e.riferimento || 'mutuo-principale',
-  })));
-
-  // Bollette energia elettrica (sezione Energia)
-  sheet('Bollette', state.bollette.map(b => ({
-    ID: b.id, Numero: b.numero || '', Dal: b.dal, Al: b.al, Giorni: b.giorni,
-    Fornitore: b.fornitore, Offerta: b.offerta || '', Tariffa: b.tariffa || '',
-    ConsumoTot_kWh: b.kwhTot, F1_kWh: b.kwhF1, F2_kWh: b.kwhF2, F3_kWh: b.kwhF3,
-    Totale: b.totale, MateriaEnergia: b.materia ?? '', Trasporto: b.trasporto ?? '',
-    Oneri: b.oneri ?? '', Accise: b.accise ?? '', IVA: b.iva ?? '',
-    Completa: b.completa ? 'Sì' : 'No', Note: b.note || '',
-  })));
-
-  // Meta / impostazioni (backup automatico, versione, ecc.)
-  // Meta / impostazioni — ESCLUSO il backup automatico interno ('_backup_auto'):
-  // contiene tutti i dati serializzati e supererebbe il limite di 32.767 caratteri
-  // per cella di Excel, facendo fallire l'intero export. Escludo per sicurezza anche
-  // qualsiasi altro valore anomalo oltre i 30.000 caratteri.
-  const meta = await dbAll('meta');
-  const metaRows = meta
-    .filter(x => x.chiave !== '_backup_auto')
-    .map(x => ({ Chiave: x.chiave, Valore: typeof x.valore === 'object' ? JSON.stringify(x.valore) : String(x.valore ?? '') }))
-    .filter(x => x.Valore.length < 30000);
-  sheet('_Meta', metaRows);
-
-  const oggi = new Date();
-  const nome = `backup_finanze_${String(oggi.getDate()).padStart(2, '0')}-${String(oggi.getMonth() + 1).padStart(2, '0')}-${oggi.getFullYear()}.xlsx`;
-  XLSX().writeFile(wb, nome);
-};
-
-// --- IMPORT (recovery completo, RESILIENTE tra versioni) ---
-// Regola di robustezza: uno store viene azzerato e reimportato SOLO se il foglio
-// corrispondente esiste nel file (con almeno una riga utile). Se il backup proviene
-// da una versione precedente che non aveva quel foglio, i dati attuali di quello
-// store vengono PRESERVATI invece di essere cancellati.
-export const importaBackup = async (file) => {
-  const buf = await file.arrayBuffer();
-  const wb = XLSX().read(buf, { type: 'array' });
-  const leggi = (nome) => { const ws = wb.Sheets[nome]; return ws ? XLSX().utils.sheet_to_json(ws, { defval: '' }) : []; };
-  // un foglio "esiste davvero" se è presente e ha almeno una riga con contenuto
-  const haFoglio = (nome) => {
-    const righe = leggi(nome);
-    return righe.length > 0 && righe.some(r => Object.values(r).some(v => v !== '' && v !== null && v !== undefined));
-  };
-
-  // Azzera in modo CONDIZIONALE: solo gli store coperti dal file
-  const mappaFogli = {
-    movimenti: 'Movimenti', conti: 'Conti', categorie: 'Categorie', tag: 'Tag',
-    ricorrenti: 'Ricorrenti', mutuo: 'Mutuo', finanziamenti: 'Finanziamenti', eventiMutuo: 'EventiMutuo',
-    bollette: 'Bollette',
-  };
-  const preservati = [];
-  for (const [store, foglio] of Object.entries(mappaFogli)) {
-    if (haFoglio(foglio)) await dbClear(store);
-    else preservati.push(store);
-  }
-
-  // Movimenti
-  const movs = leggi('Movimenti').map((r, i) => {
-    const data = parseDataEU(r.Data);
-    return {
-      id: 'imp' + i, data, annomese: annomese(data), tipo: (r.Tipo || 'spesa').toLowerCase(),
-      macro: r.Macro || '', cat: r.Categoria || '', sub: r.Sottocategoria || '',
-      conto: r.Conto || '', contoDest: r.ContoDest || '',
-      tag: r.Tag ? String(r.Tag).split(',').map(s => s.trim()).filter(Boolean) : [],
-      desc: r.Descrizione || '', note: r.Note || '',
-      imp: round2(parseFloat(String(r.Importo).replace(',', '.')) || 0), origine: r.Origine || 'backup',
-    };
-  });
-  await dbBulkPut('movimenti', movs);
-
-  // Conti
-  await dbBulkPut('conti', leggi('Conti').map(r => ({
-    id: uid(), nome: r.Nome, tipo: r.Tipo || 'liquidita',
-    saldo_iniziale: round2(parseFloat(String(r.SaldoIniziale).replace(',', '.')) || 0),
-    data_saldo: parseDataEU(r.DataSaldo), possessoData: r.DataPossesso ? parseDataEU(r.DataPossesso) : '',
-    note: r.Note || '', attivo: r.Attivo === '' ? true : b(r.Attivo),
-  })).filter(c => c.nome));
-
-  // Categorie
-  await dbBulkPut('categorie', leggi('Categorie').map(r => ({ id: uid(), macro: r.Macro || '', cat: r.Categoria || '', sub: r.Sottocategoria || '', attiva: true })).filter(c => c.macro));
-
-  // Tag
-  await dbBulkPut('tag', leggi('Tag').map(r => ({ id: uid(), nome: r.Nome, colore: r.Colore || '' })).filter(t => t.nome));
-
-  // Ricorrenti (TUTTI i campi)
-  await dbBulkPut('ricorrenti', leggi('Ricorrenti').map(r => ({
-    id: uid(), nome: r.Nome || 'Ricorrenza', tipo: (r.Tipo || 'spesa').toLowerCase(),
-    frequenza: r.Frequenza || 'mensile', giorno: r.Giorno || null,
-    imp: round2(parseFloat(String(r.Importo).replace(',', '.')) || 0),
-    macro: r.Macro || '', cat: r.Categoria || '', sub: r.Sottocategoria || '',
-    conto: r.Conto || '', contoDest: r.ContoDest || '',
-    tag: r.Tag ? String(r.Tag).split(',').map(s => s.trim()).filter(Boolean) : [],
-    desc: r.Descrizione || '', modalita: r.Modalita || 'fisso',
-    soglia: r.Soglia !== '' ? round2(parseFloat(String(r.Soglia).replace(',', '.'))) : null,
-    isRegola: b(r.IsRegola), attiva: r.Attiva === '' ? true : b(r.Attiva),
-    dataInizio: r.DataInizio ? parseDataEU(r.DataInizio) : '', prossima: r.Prossima ? parseDataEU(r.Prossima) : '',
-    fineTipo: r.FineTipo || 'mai', fineData: r.FineData ? parseDataEU(r.FineData) : null,
-    fineConteggio: r.FineConteggio !== '' ? parseInt(r.FineConteggio) : null,
-    generati: parseInt(r.Generati) || 0, origine: r.Origine || '',
-  })).filter(r => r.nome));
-
-  // Mutuo (formato chiave/valore)
-  const mutuoRows = leggi('Mutuo');
-  if (mutuoRows.length) {
-    const kv = {}; mutuoRows.forEach(r => { if (r.Campo) kv[r.Campo] = r.Valore; });
-    if (kv.ImportoIniziale) {
-      await dbAdd('mutuo', {
-        id: 'mutuo-principale', nome: kv.Nome || 'Mutuo', banca: kv.Banca || '',
-        importo_iniziale: round2(parseFloat(String(kv.ImportoIniziale).replace(',', '.')) || 0),
-        tasso: parseFloat(String(kv.Tasso).replace(',', '.')) || 0, durata_mesi: parseInt(kv.DurataMesi) || 0,
-        rata: round2(parseFloat(String(kv.Rata).replace(',', '.')) || 0), data_inizio: parseDataEU(kv.DataInizio),
-        giorno_addebito: parseInt(kv.GiornoAddebito) || 1, quota_utente: parseFloat(kv.QuotaUtente) || 100,
-        conto: kv.Conto || '', macro: kv.Macro || 'Casa', cat: kv.Categoria || '', sub: kv.Sottocategoria || 'Rata Mutuo',
-        generaRicorrenza: kv.GeneraRicorrenza === '' ? true : b(kv.GeneraRicorrenza),
-      });
+// Salva una copia interna di tutti i dati (chiamata a ogni avvio, dopo il refresh).
+export const salvaBackupAuto = async () => {
+  const dati = {};
+  for (const s of STORE_DATI) dati[s] = await dbAll(s);
+  const totMov = (dati.movimenti || []).length;
+  // non sovrascrivere un backup buono con uno vuoto (se per qualche motivo i dati sono spariti)
+  if (totMov === 0) {
+    const esistente = await dbGet('meta', CHIAVE_BACKUP);
+    if (esistente && esistente.valore && esistente.valore.contatori && esistente.valore.contatori.movimenti > 0) {
+      return; // preserva il backup precedente (che ha dati)
     }
   }
+  await dbAdd('meta', {
+    chiave: CHIAVE_BACKUP,
+    valore: {
+      data: new Date().toISOString(),
+      contatori: Object.fromEntries(Object.entries(dati).map(([k, v]) => [k, v.length])),
+      dati,
+    },
+  });
+};
 
-  // Finanziamenti
-  await dbBulkPut('finanziamenti', leggi('Finanziamenti').map((r, i) => ({
-    id: 'fin-imp-' + i, nome: r.Nome,
-    importo_iniziale: round2(parseFloat(String(r.ImportoIniziale).replace(',', '.')) || 0),
-    tasso: parseFloat(String(r.Tasso).replace(',', '.')) || 0, durata_mesi: parseInt(r.DurataMesi) || 0,
-    rata: round2(parseFloat(String(r.Rata).replace(',', '.')) || 0), data_inizio: parseDataEU(r.DataInizio),
-    giorno_addebito: parseInt(r.GiornoAddebito) || 1, quota_utente: parseFloat(r.QuotaUtente) || 100,
-    conto: r.Conto || '', macro: r.Macro || 'Casa', cat: r.Categoria || '', sub: r.Sottocategoria || '',
-    generaRicorrenza: r.GeneraRicorrenza === '' ? true : b(r.GeneraRicorrenza), attivo: r.Attivo === '' ? true : b(r.Attivo),
-  })).filter(f => f.nome));
-
-  // Eventi mutuo
-  await dbBulkPut('eventiMutuo', leggi('EventiMutuo').map(r => ({
-    id: uid(), tipo: r.Tipo || 'estinzione_parziale',
-    importo: round2(parseFloat(String(r.Importo).replace(',', '.')) || 0),
-    data: parseDataEU(r.Data), riferimento: r.Riferimento || 'mutuo-principale',
-  })).filter(e => e.importo > 0));
-
-  // Bollette energia (solo se il foglio esiste nel file)
-  if (haFoglio('Bollette')) {
-    const numO = (v) => { const s = String(v).replace(',', '.'); return s === '' || isNaN(parseFloat(s)) ? null : round2(parseFloat(s)); };
-    const intO = (v) => { const n = parseInt(v); return isNaN(n) ? 0 : n; };
-    await dbBulkPut('bollette', leggi('Bollette').map((r, i) => ({
-      id: r.ID || `imp_boll_${i}`, numero: r.Numero || null,
-      dal: r.Dal, al: r.Al, giorni: intO(r.Giorni),
-      fornitore: r.Fornitore || '', offerta: r.Offerta || null, tariffa: r.Tariffa || 'Bioraria',
-      kwhTot: intO(r.ConsumoTot_kWh), kwhF1: intO(r.F1_kWh), kwhF2: intO(r.F2_kWh), kwhF3: intO(r.F3_kWh),
-      totale: numO(r.Totale) ?? 0, materia: numO(r.MateriaEnergia), trasporto: numO(r.Trasporto),
-      oneri: numO(r.Oneri), accise: numO(r.Accise), iva: numO(r.IVA),
-      completa: String(r.Completa).toLowerCase() !== 'no', note: r.Note || null, origine: 'backup',
-    })).filter(b => b.dal && b.al && b.fornitore));
+// Verifica se serve proporre un ripristino: dati principali vuoti ma backup con dati.
+export const rilevaPerdita = async () => {
+  const movimenti = await dbAll('movimenti');
+  if (movimenti.length > 0) return null;   // dati presenti, nessuna perdita
+  const backup = await dbGet('meta', CHIAVE_BACKUP);
+  if (backup && backup.valore && backup.valore.contatori && backup.valore.contatori.movimenti > 0) {
+    return { data: backup.valore.data, contatori: backup.valore.contatori };
   }
+  return null;
+};
 
+// Ripristina dal backup interno.
+export const ripristinaBackupAuto = async () => {
+  const backup = await dbGet('meta', CHIAVE_BACKUP);
+  if (!backup || !backup.valore || !backup.valore.dati) return false;
+  const dati = backup.valore.dati;
+  for (const s of STORE_DATI) {
+    await dbClear(s);
+    if (dati[s] && dati[s].length) await dbBulkPut(s, dati[s]);
+  }
   await refreshAll();
-  return { movimenti: movs.length, preservati };
+  return true;
+};
+
+// --- Promemoria backup Excel ---
+export const registraBackupExcelFatto = async () => {
+  await dbAdd('meta', { chiave: CHIAVE_ULTIMO_EXCEL, valore: new Date().toISOString() });
+};
+
+// Giorni dall'ultimo backup Excel (null se mai fatto).
+export const giorniDaUltimoBackupExcel = async () => {
+  const rec = await dbGet('meta', CHIAVE_ULTIMO_EXCEL);
+  if (!rec || !rec.valore) return null;
+  const diff = Date.now() - new Date(rec.valore).getTime();
+  return Math.floor(diff / (1000 * 60 * 60 * 24));
+};
+
+// --- Backup JSON (formato di recovery PRIMARIO) ---
+// Nessuna libreria esterna, nessun limite di cella, nessuna perdita di tipo:
+// il file .json contiene tutti gli store così come sono. È il formato più
+// affidabile per il ripristino; l'Excel resta per la consultazione umana.
+export const esportaJSON = async () => {
+  const dati = { _formato: 'finanze-backup', _versione: 1, _data: new Date().toISOString() };
+  for (const s of STORE_DATI) dati[s] = await dbAll(s);
+  const blob = new Blob([JSON.stringify(dati)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const oggi = new Date();
+  a.href = url;
+  a.download = `backup_finanze_${String(oggi.getDate()).padStart(2, '0')}-${String(oggi.getMonth() + 1).padStart(2, '0')}-${oggi.getFullYear()}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+};
+
+// Import JSON, RESILIENTE come l'import Excel: azzera e reimporta solo gli store
+// presenti nel file (con dati); gli altri vengono preservati.
+export const importaJSON = async (file) => {
+  const testo = await file.text();
+  const dati = JSON.parse(testo);
+  if (dati._formato !== 'finanze-backup') throw new Error('File non riconosciuto come backup Finanze');
+  const preservati = [];
+  for (const s of STORE_DATI) {
+    const righe = dati[s];
+    if (Array.isArray(righe) && righe.length > 0) {
+      await dbClear(s);
+      await dbBulkPut(s, righe);
+    } else {
+      preservati.push(s);
+    }
+  }
+  await refreshAll();
+  return { movimenti: (dati.movimenti || []).length, preservati };
 };

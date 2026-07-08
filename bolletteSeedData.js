@@ -1,64 +1,136 @@
-// suggerimentiService.js — Motore di suggerimento descrizione -> classificazione.
-// Impara da ogni movimento inserito (e dallo storico al seed). Quando l'utente scrive
-// 2-3 lettere nella descrizione, propone la classificazione (macro/cat/sub/conto) usata
-// più spesso per descrizioni simili. Distingue descrizione (libera) da classificazione.
+// patrimonioService.js — Calcolo del patrimonio netto e della sua composizione.
 
-import { dbAdd, dbGet } from '../core/db.js';
-import { state } from '../core/store.js';
-import { _normDesc } from '../core/seed.js';
+import { dbAdd } from '../core/db.js';
+import { state, refreshAll } from '../core/store.js';
+import { uid, round2, annomese, todayISO } from '../core/utils.js';
+import { saldoStimato, contiPerTipo } from './contiService.js';
+import { debitoTotaleResiduo } from './prestitiService.js';
 
-// Apprende (o rinforza) l'associazione descrizione -> classificazione da un movimento.
-export const apprendiDaMovimento = async (m) => {
-  const chiave = _normDesc(m.desc);
-  if (!chiave) return;
-  const esistente = await dbGet('suggerimenti', chiave);
-  const classificazione = { macro: m.macro, cat: m.cat, sub: m.sub, conto: m.conto, tipo: m.tipo };
-
-  if (!esistente) {
-    await dbAdd('suggerimenti', { chiave, desc: m.desc, classificazione, occorrenze: 1 });
-  } else {
-    // rinforza: se la classificazione coincide aumenta il contatore, altrimenti
-    // aggiorna verso l'ultima usata (l'utente potrebbe aver cambiato abitudine)
-    const stessa = JSON.stringify(esistente.classificazione) === JSON.stringify(classificazione);
-    await dbAdd('suggerimenti', {
-      chiave,
-      desc: m.desc,
-      classificazione: stessa ? esistente.classificazione : classificazione,
-      occorrenze: (esistente.occorrenze || 1) + 1,
-    });
+// Composizione delle attività per tipologia (liquidita/risparmio/investimenti/asset)
+export const composizioneAttivita = () => {
+  const perTipo = contiPerTipo();
+  const out = [];
+  for (const tipo of ['asset', 'investimenti', 'risparmio', 'liquidita']) {
+    const conti = perTipo[tipo] || [];
+    if (!conti.length) continue;
+    const totale = round2(conti.reduce((s, c) => s + saldoStimato(c), 0));
+    out.push({ tipo, totale, conti });
   }
-};
-
-// Restituisce fino a `limite` suggerimenti per il testo digitato.
-// Ogni suggerimento: { desc, classificazione, occorrenze }.
-export const suggerisciPerTesto = (testo, limite = 5) => {
-  const q = _normDesc(testo);
-  if (q.length < 2) return [];
-  const out = state.suggerimenti
-    .filter(s => s.chiave.includes(q))
-    .sort((a, b) => {
-      // priorità: chi inizia col testo, poi più frequente
-      const aStart = a.chiave.startsWith(q) ? 0 : 1;
-      const bStart = b.chiave.startsWith(q) ? 0 : 1;
-      if (aStart !== bStart) return aStart - bStart;
-      return (b.occorrenze || 0) - (a.occorrenze || 0);
-    })
-    .slice(0, limite);
   return out;
 };
 
-// --- Suggerimento tag (auto-completamento) ---
-export const suggerisciTag = (testo, limite = 8) => {
-  const q = (testo || '').trim().toLowerCase();
-  // unione: anagrafica tag + tag REALMENTE USATI nei movimenti (ordinati per frequenza).
-  // Prima pescava solo dall'anagrafica (popolata solo dall'inserimento massivo):
-  // i tag inseriti a mano nei movimenti non venivano mai suggeriti.
-  const freq = {};
-  for (const t of state.tag) freq[t.nome] = (freq[t.nome] || 0) + 1;
-  for (const m of state.movimenti) {
-    if (Array.isArray(m.tag)) for (const t of m.tag) if (t) freq[t] = (freq[t] || 0) + 1;
+export const totaleAttivita = (escludiTipi = []) => composizioneAttivita().filter(r => !escludiTipi.includes(r.tipo)).reduce((s, r) => s + r.totale, 0);
+// se escludo gli asset (la casa), escludo anche il mutuo ad essa legato
+export const totalePassivita = (escludiTipi = []) => debitoTotaleResiduo(escludiTipi.includes('asset'));
+
+// Patrimonio LIQUIDO: liquidità + risparmio + investimenti (esclude i beni/asset come
+// la casa, non liquidabili nell'immediato). È la base per l'obiettivo annuale.
+export const patrimonioLiquido = () => composizioneAttivita()
+  .filter(r => r.tipo !== 'asset')
+  .reduce((s, r) => s + r.totale, 0);
+
+export const patrimonioNetto = (escludiTipi = []) => round2(totaleAttivita(escludiTipi) - totalePassivita(escludiTipi));
+
+// --- Snapshot mensili (per il delta e lo storico patrimoniale) ---
+export const salvaSnapshotMese = async () => {
+  const am = annomese(todayISO());
+  const netto = patrimonioNetto();
+  await dbAdd('snapshot', {
+    id: am,                    // uno per mese (sovrascrive se rieseguito nello stesso mese)
+    annomese: am,
+    data: todayISO(),
+    netto,
+    attivita: round2(totaleAttivita()),
+    passivita: round2(totalePassivita()),
+  });
+  await refreshAll();
+};
+
+export const snapshotMeseMancante = () => {
+  const am = annomese(todayISO());
+  return !state.snapshot.some(s => s.annomese === am);
+};
+
+// Delta del netto rispetto allo snapshot del mese precedente (se esiste)
+export const deltaNettoMese = () => {
+  if (!state.snapshot.length) return null;
+  const ordinati = [...state.snapshot].sort((a, b) => a.annomese.localeCompare(b.annomese));
+  const ultimo = ordinati[ordinati.length - 1];
+  const nettoAttuale = patrimonioNetto();
+  return round2(nettoAttuale - ultimo.netto);
+};
+
+// Serie storica del patrimonio per il grafico a linea.
+// Combina due fonti, distinte visivamente:
+//  - STIMA: ricostruita a ritroso dai movimenti (entrate - uscite), a partire dal netto
+//    attuale, per avere una linea storica già popolata fin dal primo giorno.
+//  - REALE: gli snapshot mensili effettivamente salvati dall'utente ("rilevazioni").
+// Ritorna { punti: [{annomese, valore, stima}], primoReale }.
+// ── Memoizzazione: la serie itera TUTTI i movimenti (migliaia) a ogni chiamata,
+// ma i dati cambiano solo dopo un refreshAll (che riassegna gli array dello state).
+// Cache per (identità array movimenti/conti/snapshot + tipi esclusi): con anni di
+// dati evita ricalcoli O(n) a ogni apertura di Patrimonio o toggle del filtro. ──
+let _cacheSerie = { movs: null, conti: null, snap: null, chiavi: new Map() };
+
+export const serieStoricoPatrimonio = (escludiTipi = []) => {
+  const chiave = escludiTipi.slice().sort().join(',');
+  if (_cacheSerie.movs === state.movimenti && _cacheSerie.conti === state.conti &&
+      _cacheSerie.snap === state.snapshot && _cacheSerie.chiavi.has(chiave)) {
+    return _cacheSerie.chiavi.get(chiave);
   }
-  const nomi = Object.keys(freq).sort((a, b) => freq[b] - freq[a]);
-  if (!q) return nomi.slice(0, limite);
-  return nomi.filter(n => n.toLowerCase().includes(q)).slice(0, limite);
+  if (_cacheSerie.movs !== state.movimenti || _cacheSerie.conti !== state.conti || _cacheSerie.snap !== state.snapshot) {
+    _cacheSerie = { movs: state.movimenti, conti: state.conti, snap: state.snapshot, chiavi: new Map() };
+  }
+  const out = _serieStoricoCalcolo(escludiTipi);
+  _cacheSerie.chiavi.set(chiave, out);
+  return out;
+};
+
+const _serieStoricoCalcolo = (escludiTipi = []) => {
+  const nettoOggi = patrimonioNetto(escludiTipi);
+
+  // flusso netto mensile (entrate - spese; i trasferimenti sono interni)
+  // se escludo un tipo, i flussi restano gli stessi (il flusso è entrate/spese, non per conto)
+  const flussoMese = {};
+  for (const m of state.movimenti) {
+    const am = m.annomese || m.data.slice(0, 7);
+    if (m.tipo === 'entrata') flussoMese[am] = (flussoMese[am] || 0) + m.imp;
+    else if (m.tipo === 'spesa') flussoMese[am] = (flussoMese[am] || 0) - m.imp;
+  }
+  const mesi = Object.keys(flussoMese).sort();
+  if (!mesi.length) return { punti: [], primoReale: null };
+
+  const meseCorrente = new Date().toISOString().slice(0, 7);
+  const tuttiMesi = Array.from(new Set([...mesi, meseCorrente])).sort();
+
+  // Asset con data di possesso: il loro valore va SOTTRATTO dalla stima nei mesi
+  // precedenti al possesso. Se il tipo 'asset' è escluso, non li consideriamo affatto.
+  const assetDatati = escludiTipi.includes('asset') ? [] : state.conti.filter(c => c.tipo === 'asset' && c.possessoData);
+
+  const stima = {};
+  let valore = nettoOggi;
+  for (let i = tuttiMesi.length - 1; i >= 0; i--) {
+    const am = tuttiMesi[i];
+    // se un asset non era ancora posseduto in questo mese, il suo valore non c'era
+    let correzioneAsset = 0;
+    for (const a of assetDatati) {
+      const meseAcq = a.possessoData.slice(0, 7);
+      if (am < meseAcq) correzioneAsset += (a.saldo_iniziale || 0);
+    }
+    stima[am] = round2(valore - correzioneAsset);
+    valore = valore - (flussoMese[am] || 0);
+  }
+
+  const realeByMese = {};
+  const filtrato = escludiTipi.length > 0;
+  if (!filtrato) { for (const s of state.snapshot) realeByMese[s.annomese] = s.netto; }
+  const primoReale = filtrato ? null : (Object.keys(realeByMese).sort()[0] || null);
+
+  const punti = tuttiMesi.map(am => ({
+    annomese: am,
+    valore: realeByMese[am] !== undefined ? realeByMese[am] : stima[am],
+    stima: realeByMese[am] === undefined,
+  }));
+
+  return { punti, primoReale };
 };

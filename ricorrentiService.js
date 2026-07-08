@@ -1,183 +1,216 @@
-// categorie.js — Anagrafica categorie: elenco a sezioni espandibili con GESTIONE
-// COMPLETA: rinomina (propagata a movimenti/ricorrenze/rate), eliminazione con
-// conteggio movimenti e riassegnazione opzionale, aggiunta.
+// spese.js — Home "Spese": la schermata che si apre ogni giorno.
+// Vista per periodo (Settimana/Mese/Anno) delle spese per categoria, con drill-down.
 
-import { state } from '../core/store.js';
-import { escapeHtml, fmtEUR } from '../core/utils.js';
-import {
-  listaMacro, categorieDi, sottocategorieDi, saveCategoria,
-  contaMovimentiNodo, rinominaNodo, eliminaNodo,
-} from '../services/categorieService.js';
+import { state, movimentiDelMese } from '../core/store.js';
+import { fmtEUR, fmtEUR0, fmtPct, nomeMese, annomese, todayISO, escapeHtml, clamp } from '../core/utils.js';
+import { iconaMacro } from '../core/icons.js';
 import { navigate } from '../core/router.js';
-import { apriSheet, apriSelettoreCategoria, conferma } from './shared.js';
-import { UI_SVG } from '../core/icons.js';
-import { safeWrite } from '../core/db.js';
-import { toast } from '../core/utils.js';
+import { costruisciSparkline, agganciaSparkline } from '../core/sparkline.js';
+import {
+  totaliPeriodo, aggregaPerLivello, mediaSpeseMensile, soloSpese,
+} from '../services/movimentiService.js';
+import { calcolaDelta } from './shared.js';
 
-const _aperte = new Set();      // macro espanse
-const _aperteCat = new Set();   // categorie espanse ("macro|cat")
+// stato locale della schermata (periodo selezionato)
+let _periodo = 'mese';                 // 'settimana' | 'mese' | 'anno'
+let _meseCorrente = annomese(todayISO());
+let _sparkAperto = false;              // grafico andamento spese: nascosto di default, apribile dall'icona
 
-export const renderCategorie = async (root) => {
-  document.getElementById('view-title').textContent = 'Categorie';
-  const macros = listaMacro();
+const mesePrec = (am) => { const [a, m] = am.split('-').map(Number); const d = new Date(a, m - 2, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
+const meseSucc = (am) => { const [a, m] = am.split('-').map(Number); const d = new Date(a, m, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
+
+// Movimenti del periodo attualmente selezionato
+const movimentiPeriodo = () => {
+  if (_periodo === 'mese') return movimentiDelMese(_meseCorrente);
+  if (_periodo === 'anno') {
+    const anno = _meseCorrente.slice(0, 4);
+    return state.movimenti.filter(m => m.data.startsWith(anno));
+  }
+  // settimana: ultimi 7 giorni da oggi
+  const oggi = new Date(); const sette = new Date(); sette.setDate(oggi.getDate() - 6);
+  const da = sette.toISOString().slice(0, 10), a = oggi.toISOString().slice(0, 10);
+  return state.movimenti.filter(m => m.data >= da && m.data <= a);
+};
+
+export const renderSpese = async (root) => {
+  const movs = movimentiPeriodo();
+  const tot = totaliPeriodo(movs);
+
+  // etichetta periodo
+  const [anno, mese] = _meseCorrente.split('-');
+  const labelPeriodo = _periodo === 'anno' ? anno
+    : _periodo === 'mese' ? `${nomeMese(parseInt(mese) - 1)} ${anno}`
+    : 'Ultimi 7 giorni';
+
+  // delta spese vs media mensile (solo in vista mese)
+  let deltaHTML = '';
+  if (_periodo === 'mese') {
+    const media = mediaSpeseMensile(_meseCorrente);
+    const d = calcolaDelta(tot.spese, media);
+    if (d) deltaHTML = `<div class="delta ${d.classe} num">${d.testo}</div>`;
+  }
+
+  // barra "dove sto col mese": solo il filo con la tacca, niente testi (compatta)
+  let paceHTML = '';
+  if (_periodo === 'mese' && _meseCorrente === annomese(todayISO())) {
+    const giorno = new Date().getDate();
+    const giorniMese = new Date(parseInt(anno), parseInt(mese), 0).getDate();
+    const pctTempo = Math.round(giorno / giorniMese * 100);
+    const media = mediaSpeseMensile(_meseCorrente);
+    const pctSpeso = media > 0 ? clamp(Math.round(tot.spese / media * 100), 0, 100) : 0;
+    paceHTML = `
+      <div class="pace pace-slim" title="Speso ${pctSpeso}% del solito · giorno ${giorno}/${giorniMese}">
+        <div class="track"><span class="fill" style="width:${pctSpeso}%"></span><span class="marker" style="left:${pctTempo}%"></span></div>
+      </div>`;
+  }
+
+  // lista categorie a barre
+  const righe = aggregaPerLivello(movs, 'macro');
+  const maxTot = righe.length ? righe[0].totale : 1;
+  const _intensita = (pct) => pct >= 30 ? 'hi' : pct >= 15 ? 'md' : pct >= 7 ? 'lo' : 'xlo';
+  const righeHTML = righe.length ? righe.map(r => `
+    <div class="catrow">
+      <div class="icon" data-macro-mov="${escapeHtml(r.chiave)}">${iconaMacro(r.chiave)}</div>
+      <div class="body" data-macro-drill="${escapeHtml(r.chiave)}">
+        <div class="row1">
+          <span class="name">${escapeHtml(r.chiave)}</span>
+          <span class="right"><span class="amt num">${fmtEUR(r.totale)}</span><span class="pct num">${fmtPct(r.pct)}</span></span>
+        </div>
+        <div class="bar ${_intensita(r.pct)}"><span style="width:${Math.max(1.5, r.totale / maxTot * 100)}%"></span></div>
+      </div>
+      <div class="chev" data-macro-drill="${escapeHtml(r.chiave)}">›</div>
+    </div>`).join('') : '<div class="empty">Nessuna spesa in questo periodo</div>';
 
   root.innerHTML = `
-    <p class="meta" style="margin:12px 4px">Tocca per aprire l'albero, la matita per rinominare o eliminare. Le rinomine aggiornano anche i movimenti passati.</p>
-    ${macros.map(macro => {
-      const cats = categorieDi(macro);
-      const aperta = _aperte.has(macro);
-      return `
-        <div class="cat-accordion">
-          <div class="cat-acc-head" data-macro="${escapeHtml(macro)}">
-            <div class="cat-acc-title">${escapeHtml(macro)}</div>
-            <div class="cat-acc-meta">${cats.length} categorie</div>
-            <div class="cat-gest" data-gest-macro="${escapeHtml(macro)}" role="button" aria-label="Gestisci ${escapeHtml(macro)}">${UI_SVG.matita}</div>
-            <div class="cat-acc-chev">${aperta ? '⌄' : '›'}</div>
-          </div>
-          ${aperta ? `<div class="cat-acc-body">
-            ${cats.length ? cats.map(cat => {
-              const subs = sottocategorieDi(macro, cat);
-              const kCat = macro + '|' + cat;
-              const catAperta = _aperteCat.has(kCat);
-              return `
-                <div class="cat-riga" data-togglecat="${escapeHtml(kCat)}">
-                  <div class="cat-riga-nome" style="flex:1">${escapeHtml(cat)}${subs.length ? ` <span class="meta">· ${subs.length} sub</span>` : ''}</div>
-                  <div class="cat-gest" data-gest-cat="${escapeHtml(kCat)}" role="button" aria-label="Gestisci categoria">${UI_SVG.matita}</div>
-                  ${subs.length ? `<div class="cat-acc-chev">${catAperta ? '⌄' : '›'}</div>` : '<div class="cat-acc-chev" style="opacity:.25">·</div>'}
-                </div>
-                ${catAperta && subs.length ? subs.map(s => `
-                  <div class="cat-riga cat-riga-sub">
-                    <div class="cat-riga-nome" style="flex:1;color:var(--txt-2)">${escapeHtml(s)}</div>
-                    <div class="cat-gest" data-gest-sub="${escapeHtml(macro)}|${escapeHtml(cat)}|${escapeHtml(s)}" role="button" aria-label="Gestisci sottocategoria">${UI_SVG.matita}</div>
-                    <div class="cat-acc-chev" style="opacity:0">·</div>
-                  </div>`).join('') : ''}`;
-            }).join('') : '<div class="meta" style="padding:12px 16px">Nessuna categoria</div>'}
-          </div>` : ''}
-        </div>`;
-    }).join('')}
-    <div style="margin-top:20px"><button class="btn btn-primary" id="nuova">Nuova categoria</button></div>
+    ${_periodo !== 'settimana' ? `
+      <div class="month-nav">
+        <button class="arr" id="prev">‹</button>
+        <div class="m">${labelPeriodo}</div>
+        <button class="arr" id="next">›</button>
+      </div>` : `<div class="month-nav"><div class="m">${labelPeriodo}</div></div>`}
+
+    <div class="hero-spese">
+      ${_periodo === 'mese' ? '<button class="spark-toggle" id="spark-toggle" title="Andamento spese" aria-label="Mostra andamento"><svg viewBox="0 0 24 24"><path d="M4 18l5-6 4 4 6-8"/><path d="M3 21h18"/></svg></button>' : ''}
+      <div class="cell-spese-main" data-tot="spesa" style="cursor:pointer">
+        <div class="cap">${_periodo === 'anno' ? 'Spese ' + anno : _periodo === 'mese' ? 'Spese di ' + nomeMese(parseInt(mese) - 1).toLowerCase() : 'Spese'}</div>
+        <div class="big-spese num">${fmtEUR(tot.spese)}</div>
+        ${deltaHTML}
+      </div>
+      <div class="metrics-row">
+        <div class="metric" data-tot="entrata" style="cursor:pointer"><div class="lbl">Entrate</div><div class="val en num">${fmtEUR(tot.entrate)}</div></div>
+        <div class="metric"><div class="lbl">Saldo</div><div class="val sa num">${tot.saldo < 0 ? '−' : ''}${fmtEUR(Math.abs(tot.saldo))}</div></div>
+        <div class="metric" data-tot="trasferimento" style="cursor:pointer"><div class="lbl">Accant.</div><div class="val tr num">${fmtEUR(tot.investito || 0)}</div></div>
+      </div>
+    </div>
+
+    ${_periodo === 'mese' ? `<div class="spark-wrap ${_sparkAperto ? 'open' : ''}" id="spark-wrap">${_sparklineCard(_meseCorrente)}</div>` : ''}
+
+    ${paceHTML}
+
+
+    <div class="section-lbl"><span>Per categoria</span></div>
+    ${righeHTML}
   `;
 
-  root.querySelectorAll('[data-macro]').forEach(el => el.addEventListener('click', () => {
-    const m = el.dataset.macro;
-    if (_aperte.has(m)) _aperte.delete(m); else _aperte.add(m);
-    renderCategorie(root);
+  // --- eventi ---
+  // selettore periodo NELL'HEADER (compatto, come la vecchia app)
+  const headSeg = document.getElementById('head-seg');
+  if (headSeg) {
+    headSeg.innerHTML = `<div class="seg">
+      <button data-p="settimana" class="${_periodo === 'settimana' ? 'on' : ''}">Sett.</button>
+      <button data-p="mese" class="${_periodo === 'mese' ? 'on' : ''}">Mese</button>
+      <button data-p="anno" class="${_periodo === 'anno' ? 'on' : ''}">Anno</button>
+    </div>`;
+    headSeg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+      _periodo = b.dataset.p; renderSpese(root);
+    }));
+  }
+
+  const vaiPrec = () => {
+    _meseCorrente = _periodo === 'anno' ? `${parseInt(anno) - 1}-${mese}` : mesePrec(_meseCorrente);
+    renderSpese(root);
+  };
+  const vaiSucc = () => {
+    _meseCorrente = _periodo === 'anno' ? `${parseInt(anno) + 1}-${mese}` : meseSucc(_meseCorrente);
+    renderSpese(root);
+  };
+  const prev = root.querySelector('#prev'), next = root.querySelector('#next');
+  if (prev) prev.addEventListener('click', vaiPrec);
+  if (next) next.addEventListener('click', vaiSucc);
+
+  // doppio tap-target: icona -> movimenti diretti; barra/corpo -> scendi di livello
+  root.querySelectorAll('[data-macro-mov]').forEach(el => el.addEventListener('click', (e) => {
+    e.stopPropagation();
+    navigate('movimenti', { macro: el.dataset.macroMov, periodo: _periodo, mese: _meseCorrente });
   }));
-  root.querySelectorAll('[data-togglecat]').forEach(el => el.addEventListener('click', () => {
-    const k = el.dataset.togglecat;
-    if (_aperteCat.has(k)) _aperteCat.delete(k); else _aperteCat.add(k);
-    renderCategorie(root);
+  root.querySelectorAll('[data-macro-drill]').forEach(el => el.addEventListener('click', () => {
+    navigate('drill', { macro: el.dataset.macroDrill, periodo: _periodo, mese: _meseCorrente });
   }));
-  root.querySelectorAll('[data-gest-macro]').forEach(el => el.addEventListener('click', (e) => {
-    e.stopPropagation(); _gestisciNodo(root, 'macro', el.dataset.gestMacro, '', '');
+
+  // totaloni cliccabili: rosso -> movimenti spese, verde -> movimenti entrate (del periodo)
+  root.querySelectorAll('[data-tot]').forEach(el => el.addEventListener('click', () => {
+    navigate('movimenti', { tipo: el.dataset.tot, periodo: _periodo, mese: _meseCorrente });
   }));
-  root.querySelectorAll('[data-gest-cat]').forEach(el => el.addEventListener('click', (e) => {
-    e.stopPropagation(); const [ma, ca] = el.dataset.gestCat.split('|'); _gestisciNodo(root, 'cat', ma, ca, '');
-  }));
-  root.querySelectorAll('[data-gest-sub]').forEach(el => el.addEventListener('click', (e) => {
-    e.stopPropagation(); const [ma, ca, su] = el.dataset.gestSub.split('|'); _gestisciNodo(root, 'sub', ma, ca, su);
-  }));
-  root.querySelector('#nuova').addEventListener('click', () => _nuovaCategoria(root, macros));
+
+  // sparkline interattivo: attacca il tocco (solo se presente, cioè in vista mese)
+  _agganciaSparkline(root);
+
+  // toggle grafico andamento (icona nella card spese)
+  const sparkToggle = root.querySelector('#spark-toggle');
+  const sparkWrap = root.querySelector('#spark-wrap');
+  if (sparkToggle && sparkWrap) {
+    sparkToggle.classList.toggle('on', _sparkAperto);
+    sparkToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      _sparkAperto = !_sparkAperto;
+      sparkWrap.classList.toggle('open', _sparkAperto);
+      sparkToggle.classList.toggle('on', _sparkAperto);
+    });
+  }
+
 };
 
-// Sheet di gestione di un nodo (macro/cat/sub): rinomina propagata, elimina con scelte
-const _gestisciNodo = (root, livello, macro, cat, sub) => {
-  const nome = livello === 'macro' ? macro : livello === 'cat' ? cat : sub;
-  const nMov = contaMovimentiNodo(macro, livello !== 'macro' ? cat : '', livello === 'sub' ? sub : '');
-  const lblLiv = livello === 'macro' ? 'macrocategoria' : livello === 'cat' ? 'categoria' : 'sottocategoria';
+// ═══ SPARKLINE spese ultimi 6 mesi (additivo, puramente visivo) ═══
+// Ritorna { mesi:[{label,mese,val}], min, max } per gli ultimi 6 mesi fino a quello dato.
+const _datiSparkline = (meseRif) => {
+  const [y, m] = meseRif.split('-').map(Number);
+  const out = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(y, m - 1 - i, 1);
+    const am = annomese(d.toISOString().slice(0, 10));
+    const t = totaliPeriodo(movimentiDelMese(am));
+    const idxMese = parseInt(am.slice(5, 7), 10) - 1;
+    out.push({ label: nomeMese(idxMese).slice(0, 3), mese: am, val: t.spese || 0 });
+  }
+  const vals = out.map(o => o.val);
+  return { mesi: out, min: Math.min(...vals), max: Math.max(...vals) };
+};
 
-  apriSheet(`${nome}`, `
-    <p class="meta" style="margin-bottom:14px">${lblLiv.charAt(0).toUpperCase() + lblLiv.slice(1)} · <b>${nMov}</b> movimenti la usano</p>
-
-    <label class="meta">Rinomina</label>
-    <input id="g-nome" value="${escapeHtml(nome)}" class="sheet-input">
-    <button class="btn btn-primary" id="g-rinomina" style="margin-bottom:16px">Rinomina (aggiorna anche i ${nMov} movimenti)</button>
-
-    <div class="divider" style="margin:6px 0 14px"></div>
-    <label class="meta">Elimina</label>
-    ${nMov > 0 ? `
-      <p class="meta" style="font-size:12px;margin:4px 0 10px;color:var(--down)">Questa ${lblLiv} è usata da ${nMov} movimenti. Scegli cosa farne:</p>
-      <button class="btn btn-secondary" id="g-del-riassegna" style="margin-bottom:8px">Elimina e riassegna i movimenti a un'altra categoria…</button>
-      <button class="btn btn-danger" id="g-del-lascia">Elimina, lasciando i movimenti come sono</button>
-      <p class="meta" style="font-size:11px;margin-top:6px;opacity:.8">Lasciandoli, i movimenti conservano l'etichetta attuale e restano visibili ovunque: sparisce solo dal selettore per i nuovi inserimenti.</p>
-    ` : `
-      <button class="btn btn-danger" id="g-del-lascia">Elimina (nessun movimento la usa)</button>
-    `}
-  `, (body, chiudi) => {
-    body.querySelector('#g-rinomina').addEventListener('click', async () => {
-      const nuovo = body.querySelector('#g-nome').value.trim();
-      if (!nuovo || nuovo === nome) { toast('Inserisci un nome diverso'); return; }
-      try {
-        const n = await rinominaNodo(livello, macro, cat, sub, nuovo, true);
-        chiudi(); toast(`Rinominata · ${n} movimenti aggiornati`); renderCategorie(root);
-      } catch (e) { toast(e.message); }
-    });
-
-    body.querySelector('#g-del-lascia').addEventListener('click', async () => {
-      const msg = nMov > 0
-        ? `Eliminare "${nome}" dall'anagrafica? I ${nMov} movimenti NON verranno toccati.`
-        : `Eliminare "${nome}"?`;
-      if (!(await conferma(msg, { danger: true, ok: 'Elimina' }))) return;
-      await eliminaNodo(livello, macro, cat, sub, null);
-      chiudi(); toast('Eliminata'); renderCategorie(root);
-    });
-
-    const delRi = body.querySelector('#g-del-riassegna');
-    if (delRi) delRi.addEventListener('click', () => {
-      chiudi();
-      apriSelettoreCategoria(async (sel) => {
-        if (!(await conferma(`Riassegnare ${nMov} movimenti a "${[sel.macro, sel.cat, sel.sub].filter(Boolean).join(' › ')}" ed eliminare "${nome}"?`, { ok: 'Riassegna ed elimina', danger: true }))) return;
-        const n = await eliminaNodo(livello, macro, cat, sub, sel);
-        toast(`Eliminata · ${n} movimenti riassegnati`); renderCategorie(root);
-      });
-    });
+const _sparklineCard = (meseRif) => {
+  const d = _datiSparkline(meseRif);
+  if (d.max <= 0) return '';   // niente dati, niente grafico
+  const punti = d.mesi.map(o => ({ label: o.label, valore: o.val }));
+  const { svg, dataAttr } = costruisciSparkline(punti, {
+    vw: 300, vh: 96, padX: 10, padTop: 14, padBot: 26,
+    idLinea: 'spkl', idArea: 'spka',
+    coloreLinea0: '#2E9BFF', coloreLinea1: '#7B6CFF',   // blu -> viola (identità Spese)
+    larghezzaLinea: 2.2,
+    mostraEtichette: true, mostraDots: true, mostraUltimoPunto: false,
   });
+  return `<div class="card spark-card">
+    <div class="spark-title">Andamento spese · ultimi 6 mesi</div>
+    <div class="spark" ${dataAttr}>
+      ${svg}
+      <div class="spark-vline"></div>
+      <div class="spark-tip"></div>
+    </div>
+  </div>`;
 };
 
-const _nuovaCategoria = (root, macros) => {
-  apriSheet('Nuova categoria', `
-    <label class="meta">Macrocategoria</label>
-    <input id="nc-macro" list="macro-list" placeholder="Es. Casa" class="sheet-input" autocomplete="off">
-    <datalist id="macro-list">${macros.map(m => `<option>${escapeHtml(m)}</option>`).join('')}</datalist>
-    <label class="meta">Categoria</label>
-    <input id="nc-cat" list="cat-list" placeholder="Es. Bollette" class="sheet-input" autocomplete="off">
-    <datalist id="cat-list"></datalist>
-    <label class="meta">Sottocategoria (opzionale)</label>
-    <input id="nc-sub" list="sub-list" placeholder="Es. Luce" class="sheet-input" autocomplete="off">
-    <datalist id="sub-list"></datalist>
-    <button class="btn btn-primary" id="nc-ok" style="margin-top:8px">Aggiungi</button>
-  `, (body, chiudi) => {
-    const inMacro = body.querySelector('#nc-macro');
-    const inCat = body.querySelector('#nc-cat');
-    const dlCat = body.querySelector('#cat-list');
-    const dlSub = body.querySelector('#sub-list');
-    // cascata: le opzioni di categoria dipendono dalla macro digitata
-    const aggiornaCat = () => {
-      const m = inMacro.value.trim();
-      const cats = m ? categorieDi(m) : [];
-      dlCat.innerHTML = cats.map(c => `<option>${escapeHtml(c)}</option>`).join('');
-      aggiornaSub();
-    };
-    // le sub dipendono da macro + categoria digitate
-    const aggiornaSub = () => {
-      const m = inMacro.value.trim(), c = inCat.value.trim();
-      const subs = (m && c) ? sottocategorieDi(m, c) : [];
-      dlSub.innerHTML = subs.map(s => `<option>${escapeHtml(s)}</option>`).join('');
-    };
-    inMacro.addEventListener('input', aggiornaCat);
-    inMacro.addEventListener('change', aggiornaCat);
-    inCat.addEventListener('input', aggiornaSub);
-    inCat.addEventListener('change', aggiornaSub);
-
-    body.querySelector('#nc-ok').addEventListener('click', async () => {
-      const macro = inMacro.value.trim();
-      const cat = inCat.value.trim();
-      const sub = body.querySelector('#nc-sub').value.trim();
-      if (!macro) { toast('Inserisci la macrocategoria'); return; }
-      const ok = await safeWrite(() => saveCategoria({ macro, cat, sub }), 'Categoria non salvata');
-      if (!ok) return;
-      _aperte.add(macro);
-      chiudi(); toast('Categoria aggiunta'); renderCategorie(root);
-    });
-  });
+// interattività: tocco/trascinamento sul grafico mostra mese + spesa
+const _agganciaSparkline = (root) => {
+  agganciaSparkline(root.querySelector('.spark'), fmtEUR);
 };
+
+// esportati per il drill-down (condivide il periodo corrente)
+export const periodoCorrente = () => ({ periodo: _periodo, mese: _meseCorrente });

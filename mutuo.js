@@ -1,173 +1,369 @@
-// impostazioni.js — Impostazioni: backup/recovery Excel, bulk tag, gestione dati.
+// inserimento.js — Nuova operazione e modifica.
+// Righe compatte, data NATIVA iOS, tastierino che si chiude cambiando campo,
+// trasferimento con descrizione, suggerimenti a tendina che completano desc+categoria.
 
-import { UI_SVG } from '../core/icons.js';
-import { state, refreshAll } from '../core/store.js';
-import { APP_VERSION } from '../core/version.js';
-import { escapeHtml, fmtEUR, fmtDataEstesa } from '../core/utils.js';
+import { state } from '../core/store.js';
+import { fmtEUR, todayISO, fmtDataEstesa, escapeHtml, round2 } from '../core/utils.js';
+import { iconaMacro, UI_SVG } from '../core/icons.js';
 import { navigate } from '../core/router.js';
-import { esportaBackup, importaBackup } from '../services/excelService.js';
-import { registraBackupExcelFatto, giorniDaUltimoBackupExcel, esportaJSON, importaJSON } from '../services/backupService.js';
-import { applicaTagBulk, cercaMovimenti } from '../services/movimentiService.js';
-import { STORE_NAMES } from '../core/db.js';
-import { dbClear } from '../core/db.js';
-import { apriSheet, conferma } from './shared.js';
+import { safeWrite } from '../core/db.js';
+import { saveMovimento, deleteMovimento } from '../services/movimentiService.js';
+import { saveRicorrente } from '../services/ricorrentiService.js';
+import { suggerisciPerTesto, suggerisciTag } from '../services/suggerimentiService.js';
+import { apriSelettoreCategoria, apriSheet, conferma } from './shared.js';
 import { toast } from '../core/utils.js';
 
-export const renderImpostazioni = async (root) => {
-  document.getElementById('view-title').textContent = 'Impostazioni';
+let d = null;
 
-  const nMov = state.movimenti.length;
-  const nConti = state.conti.length;
-  const nTag = state.tag.length;
+const nuovaBozza = () => ({
+  id: null, tipo: 'spesa', imp: 0, impStr: '0',
+  macro: '', cat: '', sub: '', conto: '', contoDest: '',
+  desc: '', tag: [], data: todayISO(), ripeti: null,
+});
 
-  const giorniBackup = await giorniDaUltimoBackupExcel();
-  const promemoriaBackup = giorniBackup === null
-    ? '<span style="color:var(--down)">Non hai ancora mai esportato un backup.</span>'
-    : giorniBackup > 7
-      ? `<span style="color:var(--down)">Ultimo backup: ${giorniBackup} giorni fa — è ora di rifarlo.</span>`
-      : `Ultimo backup: ${giorniBackup === 0 ? 'oggi' : giorniBackup + ' giorni fa'} ✓`;
+export const renderInserimento = async (root, params = {}) => {
+  if (params.ric) {
+    // MODIFICA RICORRENZA nella stessa UI dell'inserimento (coerenza visiva):
+    // precompila tutto dalla ricorrenza; al salvataggio aggiorna la ricorrenza
+    // (nessun nuovo movimento viene creato).
+    const r = state.ricorrenti.find(x => x.id === params.ric);
+    if (r) {
+      d = {
+        ...nuovaBozza(),
+        ricEdit: r.id,
+        tipo: r.tipo || 'spesa', imp: r.imp, impStr: String(r.imp).replace('.', ','),
+        macro: r.macro || '', cat: r.cat || '', sub: r.sub || '',
+        conto: r.conto || '', contoDest: r.contoDest || '',
+        desc: r.desc || r.nome || '', tag: Array.isArray(r.tag) ? r.tag : [],
+        data: r.prossima || todayISO(),
+        ripeti: {
+          frequenza: r.frequenza, dataInizio: r.dataInizio || r.prossima,
+          fineTipo: r.fineTipo || 'mai', fineData: r.fineData || null, fineConteggio: r.fineConteggio || null,
+        },
+      };
+    } else d = nuovaBozza();
+  } else if (params.id) {
+    const m = state.movimenti.find(x => x.id === params.id);
+    d = m ? { ...nuovaBozza(), ...m, impStr: String(m.imp).replace('.', ','), id: m.id } : nuovaBozza();
+  } else {
+    d = nuovaBozza();
+    const liq = state.conti.find(c => c.tipo === 'liquidita');
+    if (liq) d.conto = liq.nome;
+  }
+  const _title = document.getElementById('view-title');
+  const _isModifica = d.ricEdit || params.id;
+  _title.textContent = d.ricEdit ? 'Modifica ricorrenza' : params.id ? 'Modifica' : 'Nuova operazione';
+  // in modifica: titolo visibile e centrato (non si sovrappone ad Annulla)
+  if (_isModifica) { _title.style.display = 'block'; _title.classList.add('center'); }
+  else { _title.classList.remove('center'); }
+  _render(root);
+};
 
-  root.innerHTML = `
-    <div class="section-lbl"><span>Backup e ripristino</span></div>
-    <div class="card">
-      <p class="meta" style="margin-bottom:8px">I tuoi dati vivono solo su questo dispositivo. L'app fa un <b>backup automatico interno</b> a ogni avvio, ma per essere davvero al sicuro esporta ogni tanto un file: è l'unico che sopravvive se iOS libera spazio.</p>
-      <p class="meta" style="margin-bottom:14px">${promemoriaBackup}</p>
-      <button class="btn btn-primary" id="export-json" style="margin-bottom:10px">Backup completo (JSON) — consigliato</button>
-      <button class="btn btn-secondary" id="export" style="margin-bottom:10px">Esporta Excel (per consultazione)</button>
-      <button class="btn btn-secondary" id="import-btn">Ripristina da backup (.json o .xlsx)</button>
-      <input type="file" id="import-file" accept=".json,.xlsx,.xls" style="display:none">
-    </div>
+const _render = (root) => {
+  const isTrasf = d.tipo === 'trasferimento';
+  const catLabel = d.macro ? [d.macro, d.cat, d.sub].filter(Boolean).join(' › ') : 'Seleziona categoria';
+  const impColor = d.tipo === 'entrata' ? 'var(--up)' : d.tipo === 'trasferimento' ? 'var(--transfer)' : 'var(--down)';
 
-    <div class="section-lbl"><span>Tag</span></div>
-    <div class="card">
-      <p class="meta" style="margin-bottom:14px">Applica un tag in blocco a più movimenti passati (es. tutte le spese di un viaggio).</p>
-      <button class="btn btn-secondary" id="bulk-tag">Applica tag in blocco</button>
-    </div>
-
-    <div class="section-lbl"><span>Sezioni</span></div>
-    <div class="card" style="padding:0">
-      <div class="patrow" id="go-energia" style="cursor:pointer"><div class="icon" style="background:var(--surface-2)">${UI_SVG.fulmine}</div><div class="body"><div class="row1"><span class="name">Energia</span><span class="meta num">${state.bollette.length}</span></div></div><div class="chev">›</div></div>
-    </div>
-
-    <div class="section-lbl"><span>Gestione</span></div>
-    <div class="card" style="padding:0">
-      <div class="patrow" id="go-conti" style="cursor:pointer"><div class="icon">${UI_SVG.conto}</div><div class="body"><div class="row1"><span class="name">Conti</span><span class="meta num">${nConti}</span></div></div><div class="chev">›</div></div>
-      <div class="divider"></div>
-      <div class="patrow" id="go-cat" style="cursor:pointer"><div class="icon" style="background:var(--surface-2)">${UI_SVG.tag}</div><div class="body"><div class="row1"><span class="name">Categorie</span><span class="meta num">${state.categorie.length}</span></div></div><div class="chev">›</div></div>
-    </div>
-
-    <div class="section-lbl"><span>Informazioni</span></div>
-    <div class="card">
-      <div style="display:flex;justify-content:space-between;padding:5px 0"><span class="meta">Movimenti</span><span class="num">${nMov}</span></div>
-      <div style="display:flex;justify-content:space-between;padding:5px 0"><span class="meta">Tag</span><span class="num">${nTag}</span></div>
-      <div style="display:flex;justify-content:space-between;padding:5px 0"><span class="meta">Versione</span><span>${APP_VERSION}</span></div>
-    </div>
-
-    <div style="margin-top:20px"><button class="btn btn-danger" id="reset">Azzera tutti i dati</button></div>
-    <p class="meta" style="text-align:center;margin-top:16px;opacity:.6">Finanze Personali · offline · nessun dato lascia il dispositivo</p>
+  // righe conto/categoria a seconda del tipo (il trasferimento MANTIENE la descrizione)
+  const contoRow = isTrasf ? `
+    <div class="frow"><div class="fic">${UI_SVG.conto}</div><div class="fval" id="pick-conto">${d.conto ? escapeHtml(d.conto) : '<span class="fph">Da conto</span>'}</div></div>
+    <div class="frow"><div class="fic">➡️</div><div class="fval" id="pick-conto-dest">${d.contoDest ? escapeHtml(d.contoDest) : '<span class="fph">A conto</span>'}</div></div>
+  ` : `
+    <div class="frow"><div class="fic">${UI_SVG.conto}</div><div class="fval" id="pick-conto">${d.conto ? escapeHtml(d.conto) : '<span class="fph">Conto</span>'}</div></div>
+    <div class="frow"><div class="fic act">${UI_SVG.tag}</div><div class="fval" id="pick-cat">${d.macro ? escapeHtml(catLabel) : '<span class="fph">Seleziona categoria</span>'}</div>${d.macro ? '<div class="fclear" id="clear-cat">✕</div>' : ''}</div>
   `;
 
-  // export JSON (formato di recovery primario: nativo, senza librerie)
-  root.querySelector('#export-json').addEventListener('click', async () => {
-    try {
-      await esportaJSON();
-      await registraBackupExcelFatto();
-      toast('Backup JSON esportato ✓');
-    } catch (e) { console.error('Errore export JSON:', e); toast('Errore: ' + (e.message || e)); }
-  });
+  root.innerHTML = `
+    <div class="ins-compact">
+      ${contoRow}
+      <div class="frow">
+        <div class="fic">${UI_SVG.descrizione}</div>
+        <input class="ffld" id="fld-desc" placeholder="Descrizione" value="${escapeHtml(d.desc)}" autocomplete="off">
+        <div class="sugg-dropdown" id="sugg-dd"></div>
+      </div>
+      <div class="frow"><div class="fic">${UI_SVG.importo}</div><div class="fval famount" id="pick-imp" style="color:${impColor}">${escapeHtml(d.impStr)} €</div></div>
+      <div class="frow"><div class="fic">📅</div><input type="date" class="ffld fdate" id="fld-data" value="${d.data}"></div>
+      <div class="frow"><div class="fic">${UI_SVG.ripeti}</div><div class="fval ${d.ripeti ? '' : 'fph'}" id="pick-ripeti">${d.ripeti ? _labelRipeti(d.ripeti) : 'Ripeti'}</div>${d.ripeti ? '<div class="fclear" id="clear-ripeti">✕</div>' : ''}</div>
+      <div class="frow"><div class="fic">${UI_SVG.hashtag}</div><div class="fval ${d.tag.length ? '' : 'fph'}" id="pick-tag">${d.tag.length ? d.tag.map(escapeHtml).join(', ') : 'Tag (opzionale)'}</div></div>
+    </div>
 
-  // export Excel (per consultazione; richiede la libreria dal CDN la prima volta online)
-  root.querySelector('#export').addEventListener('click', async () => {
-    try {
-      if (!window.XLSX) { toast('Libreria Excel non disponibile offline: usa il backup JSON, oppure riapri l\u2019app con connessione.'); return; }
-      await esportaBackup();
-      await registraBackupExcelFatto();
-      toast('Backup Excel esportato ✓');
-    } catch (e) {
-      console.error('Errore export backup:', e);
-      toast('Errore export: ' + (e.message || e));
+    <div class="type-switch-bottom">
+      <button data-t="spesa" class="${d.tipo === 'spesa' ? 'on' : ''}">Spesa</button>
+      <button data-t="entrata" class="${d.tipo === 'entrata' ? 'on en' : ''}">Entrata</button>
+      <button data-t="trasferimento" class="${d.tipo === 'trasferimento' ? 'on tr' : ''}">Trasferimento</button>
+    </div>
+
+    <div class="ins-actions">
+      ${d.id ? '<button class="btn btn-danger" id="del-mov">Elimina</button>' : ''}${d.ricEdit ? '<button class="btn btn-danger" id="del-ric">Elimina ricorrenza</button>' : ''}
+      <button class="btn btn-primary" id="salva">${d.id ? 'Salva modifiche' : 'Salva'}</button>
+    </div>
+
+    <div id="numpad-mount"></div>
+  `;
+
+  // descrizione + tendina
+  const fldDesc = root.querySelector('#fld-desc');
+  fldDesc.addEventListener('input', () => { d.desc = fldDesc.value; _mostraTendina(root); });
+  fldDesc.addEventListener('focus', () => { _chiudiTastierino(root); _mostraTendina(root); });
+
+  // data nativa
+  const fldData = root.querySelector('#fld-data');
+  fldData.addEventListener('change', () => { d.data = fldData.value || d.data; });
+  fldData.addEventListener('focus', () => _chiudiTastierino(root));
+
+  // tipo
+  root.querySelectorAll('.type-switch-bottom button').forEach(b => b.addEventListener('click', () => {
+    d.tipo = b.dataset.t;
+    if (d.tipo === 'trasferimento') { d.macro = 'Investimenti'; d.cat = ''; d.sub = ''; }
+    _render(root);
+  }));
+
+  // conto
+  root.querySelector('#pick-conto').addEventListener('click', () => { _chiudiTastierino(root); _pickConto(root, 'conto'); });
+  const pcd = root.querySelector('#pick-conto-dest');
+  if (pcd) pcd.addEventListener('click', () => { _chiudiTastierino(root); _pickConto(root, 'contoDest'); });
+
+  // categoria
+  const pc = root.querySelector('#pick-cat');
+  if (pc) pc.addEventListener('click', () => { _chiudiTastierino(root); apriSelettoreCategoria(sel => { d.macro = sel.macro; d.cat = sel.cat; d.sub = sel.sub; _render(root); }); });
+  const cc = root.querySelector('#clear-cat');
+  if (cc) cc.addEventListener('click', () => { d.macro = ''; d.cat = ''; d.sub = ''; _render(root); });
+
+  // importo (tastierino)
+  root.querySelector('#pick-imp').addEventListener('click', () => { fldDesc.blur(); _apriTastierino(root); });
+
+  // ripeti
+  root.querySelector('#pick-ripeti').addEventListener('click', () => { _chiudiTastierino(root); _pickRipeti(root); });
+  const cr = root.querySelector('#clear-ripeti');
+  if (cr) cr.addEventListener('click', () => { d.ripeti = null; _render(root); });
+
+  // tag
+  root.querySelector('#pick-tag').addEventListener('click', () => { _chiudiTastierino(root); _pickTag(root); });
+
+  // salva / elimina
+  root.querySelector('#salva').addEventListener('click', () => _salva());
+  const dr = root.querySelector('#del-ric');
+  if (dr) dr.addEventListener('click', async () => {
+    if (await conferma('Eliminare la ricorrenza? I movimenti già generati restano.', { danger: true, ok: 'Elimina' })) {
+      const { deleteRicorrente } = await import('../services/ricorrentiService.js');
+      await deleteRicorrente(d.ricEdit); toast('Eliminata'); d = null; navigate('ricorrenti');
     }
   });
+  const dm = root.querySelector('#del-mov');
+  if (dm) dm.addEventListener('click', async () => { if (!(await conferma('Eliminare questo movimento?', { danger: true, ok: 'Elimina' }))) return; const ok = await safeWrite(() => deleteMovimento(d.id), 'Movimento non eliminato'); if (!ok) return; toast('Eliminato'); navigate('movimenti'); });
+};
 
-  // import
-  const fileInp = root.querySelector('#import-file');
-  root.querySelector('#import-btn').addEventListener('click', () => fileInp.click());
-  fileInp.addEventListener('change', async () => {
-    if (!fileInp.files.length) return;
-    if (!(await conferma('Il ripristino SOSTITUISCE i dati attuali con quelli presenti nel backup. Continuare?', { titolo: 'Ripristino backup', ok: 'Ripristina', danger: true }))) { fileInp.value = ''; return; }
-    try {
-      const file = fileInp.files[0];
-      const isJSON = file.name.toLowerCase().endsWith('.json');
-      if (!isJSON && !window.XLSX) { toast('Per i file Excel serve la connessione la prima volta. Usa un backup .json.'); fileInp.value = ''; return; }
-      const r = isJSON ? await importaJSON(file) : await importaBackup(file);
-      let msg = `Ripristinati ${r.movimenti} movimenti`;
-      if (r.preservati && r.preservati.length) {
-        const nomi = { mutuo: 'mutuo', finanziamenti: 'finanziamenti', ricorrenti: 'ricorrenti', eventiMutuo: 'eventi', tag: 'tag' };
-        const lista = r.preservati.map(s => nomi[s] || s).filter(Boolean);
-        if (lista.length) msg += ` · ${lista.join(', ')} mantenuti dal dispositivo`;
-      }
-      toast(msg);
-      navigate('spese');
-    } catch (e) { console.error('Errore import:', e); toast('Errore import: ' + (e.message || e)); }
-    fileInp.value = '';
-  });
+const _labelRipeti = (r) => {
+  const base = { giornaliera: 'Ogni giorno', settimanale: 'Ogni settimana', mensile: 'Ogni mese', annuale: 'Ogni anno' }[r.frequenza] || 'Ricorrente';
+  let fine = '';
+  if (r.fineTipo === 'data' && r.fineData) fine = ` · fino al ${r.fineData.split('-').reverse().join('/')}`;
+  else if (r.fineTipo === 'conteggio' && r.fineConteggio) fine = ` · ${r.fineConteggio} volte`;
+  return base + fine;
+};
 
-  // bulk tag
-  root.querySelector('#bulk-tag').addEventListener('click', () => _bulkTag(root));
+const _mostraTendina = (root) => {
+  const dd = root.querySelector('#sugg-dd');
+  if (!dd) return;
+  const formRows = dd.closest('.form-rows');
+  const sugg = suggerisciPerTesto(d.desc, 12);
+  if (!sugg.length || d.desc.trim().length < 2) { dd.innerHTML = ''; dd.style.display = 'none'; if (formRows) formRows.classList.remove('sugg-open'); return; }
+  dd.style.display = 'block';
+  if (formRows) formRows.classList.add('sugg-open');
+  dd.innerHTML = sugg.map((s, i) => {
+    const c = s.classificazione;
+    const label = [c.macro, c.cat].filter(Boolean).join(':') || c.tipo;
+    return `<div class="sugg-item" data-sugg="${i}"><b>${escapeHtml(s.desc)}</b><span>${escapeHtml(label)}</span></div>`;
+  }).join('');
+  dd.querySelectorAll('[data-sugg]').forEach(el => el.addEventListener('click', () => {
+    const s = sugg[parseInt(el.dataset.sugg)]; const c = s.classificazione;
+    d.desc = s.desc; d.macro = c.macro || d.macro; d.cat = c.cat || ''; d.sub = c.sub || '';
+    d.tipo = c.tipo || d.tipo; if (c.conto) d.conto = c.conto;
+    _render(root);
+  }));
+};
 
-  // navigazione
-  root.querySelector('#go-energia').addEventListener('click', () => navigate('energia'));
-  root.querySelector('#go-conti').addEventListener('click', () => navigate('conti'));
-  root.querySelector('#go-cat').addEventListener('click', () => navigate('categorie'));
-
-  // reset
-  root.querySelector('#reset').addEventListener('click', async () => {
-    if (!(await conferma('Verranno eliminati TUTTI i dati in modo irreversibile.', { titolo: 'Azzera tutto', ok: 'Continua', danger: true }))) return;
-    if (!(await conferma('Ultima conferma: azzerare davvero tutto?', { titolo: 'Azzera tutto', ok: 'Azzera tutto', danger: true }))) return;
-    for (const s of STORE_NAMES) await dbClear(s);
-    await refreshAll();
-    toast('Dati azzerati');
-    location.reload();
+const _pickConto = (root, campo) => {
+  const conti = state.conti.filter(c => c.attivo !== false);
+  apriSheet(campo === 'contoDest' ? 'A quale conto' : 'Da quale conto', '', (body, chiudi) => {
+    body.innerHTML = conti.map(c => `<div class="mov" data-c="${escapeHtml(c.nome)}"><div class="ic">${UI_SVG.conto}</div><div class="body"><div class="d1">${escapeHtml(c.nome)}</div><div class="d2">${c.tipo}</div></div></div>`).join('');
+    body.querySelectorAll('[data-c]').forEach(el => el.addEventListener('click', () => { d[campo] = el.dataset.c; chiudi(); _render(root); }));
   });
 };
 
-// Bulk tag: cerca -> seleziona risultati -> applica tag
-const _bulkTag = (root) => {
-  apriSheet('Applica tag in blocco', `
-    <label class="meta">1. Cerca i movimenti (descrizione, categoria...)</label>
-    <div class="searchbar" style="margin:8px 0 12px"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input id="bt-q" placeholder="Es. Palermo, hotel..." autocomplete="off"></div>
-    <div id="bt-ris" style="max-height:300px;overflow-y:auto"></div>
-    <label class="meta" style="margin-top:12px;display:block">2. Tag da applicare</label>
-    <input id="bt-tag" placeholder="Es. SiciliaLuglio2025" style="width:100%;padding:13px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);color:var(--txt);font-size:16px;margin:8px 0 12px">
-    <button class="btn btn-primary" id="bt-ok">Applica a tutti i selezionati</button>
+const _pickRipeti = (root) => {
+  const cur = d.ripeti || { frequenza: 'mensile', dataInizio: d.data, fineTipo: 'mai' };
+  apriSheet('Rendi ricorrente', `
+    <label class="meta">Frequenza</label>
+    <select id="r-freq" class="sheet-input">
+      <option value="giornaliera" ${cur.frequenza === 'giornaliera' ? 'selected' : ''}>Ogni giorno</option>
+      <option value="settimanale" ${cur.frequenza === 'settimanale' ? 'selected' : ''}>Ogni settimana</option>
+      <option value="mensile" ${cur.frequenza === 'mensile' ? 'selected' : ''}>Ogni mese</option>
+      <option value="annuale" ${cur.frequenza === 'annuale' ? 'selected' : ''}>Ogni anno</option>
+    </select>
+    <label class="meta">Inizia il</label>
+    <input type="date" id="r-inizio" value="${cur.dataInizio || d.data}" class="sheet-input">
+    <label class="meta">Termina</label>
+    <select id="r-fine-tipo" class="sheet-input">
+      <option value="mai" ${cur.fineTipo === 'mai' ? 'selected' : ''}>Mai</option>
+      <option value="data" ${cur.fineTipo === 'data' ? 'selected' : ''}>A una data</option>
+      <option value="conteggio" ${cur.fineTipo === 'conteggio' ? 'selected' : ''}>Dopo N volte</option>
+    </select>
+    <div id="r-fine-extra"></div>
+    <button class="btn btn-primary" id="r-ok" style="margin-top:8px">Conferma</button>
   `, (body, chiudi) => {
-    const q = body.querySelector('#bt-q');
-    const ris = body.querySelector('#bt-ris');
-    let selezionati = new Set();
-
-    const cerca = () => {
-      const { risultati } = cercaMovimenti(q.value);
-      if (!q.value.trim()) { ris.innerHTML = '<div class="meta" style="padding:8px">Scrivi per cercare</div>'; return; }
-      ris.innerHTML = risultati.slice(0, 100).map(m => `
-        <div class="mov" data-id="${m.id}" style="cursor:pointer">
-          <div class="ic" style="font-size:14px">${selezionati.has(m.id) ? '✅' : '⬜'}</div>
-          <div class="body"><div class="d1">${escapeHtml(m.desc || m.cat)}</div><div class="d2">${fmtDataEstesa(m.data)} · ${fmtEUR(m.imp)}</div></div>
-        </div>`).join('');
-      ris.querySelectorAll('[data-id]').forEach(el => el.addEventListener('click', () => {
-        const id = el.dataset.id;
-        if (selezionati.has(id)) selezionati.delete(id); else selezionati.add(id);
-        cerca();
-      }));
+    const ftEl = body.querySelector('#r-fine-tipo'), extra = body.querySelector('#r-fine-extra');
+    const rExtra = () => {
+      if (ftEl.value === 'data') extra.innerHTML = `<label class="meta">Fino al</label><input type="date" id="r-fine-data" value="${cur.fineData || ''}" class="sheet-input">`;
+      else if (ftEl.value === 'conteggio') extra.innerHTML = `<label class="meta">Numero di volte</label><input type="number" id="r-fine-conteggio" value="${cur.fineConteggio || 12}" min="1" class="sheet-input">`;
+      else extra.innerHTML = '';
     };
-    q.addEventListener('input', cerca);
-    cerca();
-
-    body.querySelector('#bt-ok').addEventListener('click', async () => {
-      const tag = body.querySelector('#bt-tag').value.trim();
-      if (!tag) { toast('Inserisci un tag'); return; }
-      if (!selezionati.size) { toast('Seleziona almeno un movimento'); return; }
-      const n = await applicaTagBulk(Array.from(selezionati), tag);
-      chiudi(); toast(`Tag applicato a ${n} movimenti`);
+    ftEl.addEventListener('change', rExtra); rExtra();
+    body.querySelector('#r-ok').addEventListener('click', () => {
+      const ft = ftEl.value;
+      d.ripeti = {
+        frequenza: body.querySelector('#r-freq').value, dataInizio: body.querySelector('#r-inizio').value, fineTipo: ft,
+        fineData: ft === 'data' ? (body.querySelector('#r-fine-data')?.value || null) : null,
+        fineConteggio: ft === 'conteggio' ? (parseInt(body.querySelector('#r-fine-conteggio')?.value) || null) : null,
+      };
+      chiudi(); _render(root);
     });
   });
+};
+
+const _pickTag = (root) => {
+  const render = (body, chiudi) => {
+    const esistenti = suggerisciTag('', 20);
+    body.innerHTML = `
+      <input id="tag-inp" placeholder="Uno o più tag, separati da virgola..." class="sheet-input" autocomplete="off">
+      <div class="chip-row" style="flex-wrap:wrap" id="tag-chips">
+        ${esistenti.map(t => `<div class="chip ${d.tag.includes(t) ? 'on' : ''}" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</div>`).join('')}
+      </div>
+      <button class="btn btn-primary" id="tag-ok" style="margin-top:16px">Fatto</button>`;
+    const inp = body.querySelector('#tag-inp');
+    // più tag in un colpo: separali con la VIRGOLA ("mare, famiglia, vacanza26")
+    const aggiungi = (testo) => {
+      const nuovi = testo.split(',').map(t => t.trim()).filter(Boolean);
+      if (nuovi.length) d.tag = Array.from(new Set([...d.tag, ...nuovi]));
+    };
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && inp.value.trim()) { aggiungi(inp.value); inp.value = ''; render(body, chiudi); } });
+    // filtro live dei suggerimenti mentre scrivi
+    inp.addEventListener('input', () => {
+      const filtrati = suggerisciTag(inp.value, 20);
+      body.querySelector('#tag-chips').innerHTML = filtrati.map(t => `<div class="chip ${d.tag.includes(t) ? 'on' : ''}" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</div>`).join('');
+      body.querySelectorAll('[data-tag]').forEach(el => el.addEventListener('click', () => { const t = el.dataset.tag; d.tag = d.tag.includes(t) ? d.tag.filter(x => x !== t) : [...d.tag, t]; render(body, chiudi); }));
+    });
+    body.querySelectorAll('[data-tag]').forEach(el => el.addEventListener('click', () => { const t = el.dataset.tag; d.tag = d.tag.includes(t) ? d.tag.filter(x => x !== t) : [...d.tag, t]; render(body, chiudi); }));
+    // "Fatto" raccoglie ANCHE il tag ancora scritto nell'input (senza Invio):
+    // prima si perdeva in silenzio — era il "tag non tenuto" segnalato.
+    body.querySelector('#tag-ok').addEventListener('click', () => {
+      if (inp.value.trim()) aggiungi(inp.value);
+      chiudi(); _render(root);
+    });
+  };
+  apriSheet('Tag', '', render);
+};
+
+// Tastierino: si CHIUDE quando si tocca un altro campo (via _chiudiTastierino)
+const _chiudiTastierino = (root) => { const m = root.querySelector('#numpad-mount'); if (m) m.innerHTML = ''; };
+
+const _apriTastierino = (root) => {
+  const mount = root.querySelector('#numpad-mount');
+  const tasti = ['7', '8', '9', '4', '5', '6', '1', '2', '3', ',', '0', '00'];
+  mount.innerHTML = `<div class="numpad">
+    ${tasti.map(t => `<button data-k="${t}">${t}</button>`).join('')
+      .replace('<button data-k="9">9</button>', '<button data-k="9">9</button><button class="sub" data-k="C">C</button>')
+      .replace('<button data-k="6">6</button>', '<button data-k="6">6</button><button class="sub" data-k="back">⌫</button>')
+      .replace('<button data-k="3">3</button>', '<button data-k="3">3</button><button class="ok" data-k="ok" style="grid-row:span 2">OK</button>')}
+  </div>`;
+  const upd = () => { d.imp = round2(parseFloat(d.impStr.replace(',', '.')) || 0); const el = root.querySelector('#pick-imp'); if (el) el.textContent = `${d.impStr} €`; };
+  mount.querySelectorAll('.numpad button').forEach(b => b.addEventListener('click', () => {
+    const k = b.dataset.k;
+    if (k === 'C') d.impStr = '0';
+    else if (k === 'back') d.impStr = d.impStr.length > 1 ? d.impStr.slice(0, -1) : '0';
+    else if (k === 'ok') { mount.innerHTML = ''; upd(); return; }
+    else if (k === ',') { if (!d.impStr.includes(',')) d.impStr += ','; }
+    else { d.impStr = d.impStr === '0' ? k : d.impStr + k; }
+    upd();
+  }));
+};
+
+const _salva = async () => {
+  if (d.imp <= 0) { toast('Inserisci un importo'); return; }
+  if (d.tipo === 'trasferimento' && (!d.conto || !d.contoDest)) { toast('Scegli i conti'); return; }
+  if (d.tipo !== 'trasferimento' && !d.macro) { toast('Scegli una categoria'); return; }
+
+  // ── MODIFICA RICORRENZA: aggiorna solo la ricorrenza, nessun movimento nuovo ──
+  if (d.ricEdit) {
+    const r = state.ricorrenti.find(x => x.id === d.ricEdit);
+    if (r) {
+      await saveRicorrente({
+        ...r,
+        nome: d.desc || r.nome, tipo: d.tipo, imp: d.imp,
+        macro: d.macro, cat: d.cat, sub: d.sub,
+        conto: d.conto, contoDest: d.contoDest, tag: d.tag, desc: d.desc,
+        frequenza: d.ripeti ? d.ripeti.frequenza : r.frequenza,
+        fineTipo: d.ripeti ? d.ripeti.fineTipo : r.fineTipo,
+        fineData: d.ripeti ? d.ripeti.fineData : r.fineData,
+        fineConteggio: d.ripeti ? d.ripeti.fineConteggio : r.fineConteggio,
+      });
+    }
+    toast('Ricorrenza aggiornata');
+    d = null;
+    if (history.length > 1) history.back(); else navigate('ricorrenti');
+    return;
+  }
+
+  const wasTrasf = d.tipo === 'trasferimento';
+  const eraModifica = !!d.id;
+  const ok = await safeWrite(() => saveMovimento({
+    id: d.id, tipo: d.tipo, imp: d.imp, data: d.data,
+    macro: d.macro, cat: d.cat, sub: d.sub, conto: d.conto, contoDest: d.contoDest,
+    desc: d.desc, tag: d.tag,
+  }), eraModifica ? 'Modifiche non salvate' : 'Movimento non salvato');
+  // se la scrittura è fallita, NON navigo: l'utente vede il toast e può riprovare
+  // senza perdere ciò che ha inserito.
+  if (!ok) return;
+
+  // crea la ricorrenza se richiesta — ANCHE in modifica (bug precedente: solo su nuovo)
+  if (d.ripeti) {
+    // Il movimento appena salvato È la prima occorrenza della ricorrenza:
+    // la ricorrenza deve partire dall'occorrenza SUCCESSIVA, altrimenti il
+    // generatore ricreerebbe il movimento di oggi (doppione).
+    // Se invece la data di inizio è futura (oltre il movimento), parte da lì.
+    const copreMovimento = d.ripeti.dataInizio <= d.data;
+    const prossima = copreMovimento ? _occorrenzaSuccessiva(d.ripeti.dataInizio, d.ripeti.frequenza) : d.ripeti.dataInizio;
+    const okRic = await safeWrite(() => saveRicorrente({
+      nome: d.desc || d.macro, tipo: d.tipo, frequenza: d.ripeti.frequenza,
+      imp: d.imp, macro: d.macro, cat: d.cat, sub: d.sub,
+      conto: d.conto, contoDest: d.contoDest, tag: d.tag, desc: d.desc,
+      dataInizio: d.ripeti.dataInizio, prossima,
+      generati: copreMovimento ? 1 : 0,   // il movimento manuale conta come prima occorrenza
+      fineTipo: d.ripeti.fineTipo, fineData: d.ripeti.fineData, fineConteggio: d.ripeti.fineConteggio,
+    }), 'Ricorrenza non impostata');
+    toast(okRic ? 'Salvato e reso ricorrente' : 'Movimento salvato, ma ricorrenza non impostata');
+  } else {
+    toast(eraModifica ? 'Modifiche salvate' : 'Salvato');
+  }
+
+  d = null;
+  // se era una MODIFICA, torna da dove sei venuto (es. la ricerca coi risultati);
+  // se era un nuovo inserimento, vai alla pagina naturale.
+  if (eraModifica && history.length > 1) history.back();
+  else navigate(wasTrasf ? 'movimenti' : 'spese');
+};
+
+// Occorrenza successiva a una data, per frequenza (fine mese gestito: 31 gen -> 28 feb)
+const _occorrenzaSuccessiva = (dataISO, frequenza) => {
+  const [y, m, g] = dataISO.split('-').map(Number);
+  if (frequenza === 'giornaliera' || frequenza === 'settimanale') {
+    const d = new Date(y, m - 1, g + (frequenza === 'giornaliera' ? 1 : 7));
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  if (frequenza === 'annuale') {
+    const maxG = new Date(y + 1, m, 0).getDate();
+    return `${y + 1}-${String(m).padStart(2, '0')}-${String(Math.min(g, maxG)).padStart(2, '0')}`;
+  }
+  const ny = m === 12 ? y + 1 : y, nm = m === 12 ? 1 : m + 1;
+  const maxG = new Date(ny, nm, 0).getDate();
+  return `${ny}-${String(nm).padStart(2, '0')}-${String(Math.min(g, maxG)).padStart(2, '0')}`;
 };
