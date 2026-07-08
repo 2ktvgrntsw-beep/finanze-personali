@@ -1,31 +1,119 @@
-<!DOCTYPE html>
-<html lang="it">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no, maximum-scale=1.0">
-  <title>Finanze</title>
+// router.js — Routing basato su hash con supporto a parametri.
+// Formato rotta: #/nome?chiave=valore&... — i parametri servono per il drill-down
+// (es. #/spese?macro=Casa&cat=Bollette) e per i filtri dei movimenti.
 
-  <!-- PWA -->
-  <link rel="manifest" href="./manifest.json">
-  <meta name="theme-color" content="#080B12">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Finanze">
-  <link rel="apple-touch-icon" href="./icons/icon-192.png?v=216">
+const routes = {};
+let _current = null;
 
-  <link rel="stylesheet" href="./css/styles.css">
-</head>
-<body>
-  <header class="app-header" id="app-header"></header>
+export const registerRoute = (name, handler) => { routes[name] = handler; };
 
-  <main class="app-main" id="app-root"></main>
+// Costruisce un hash con parametri
+export const buildHash = (name, params = {}) => {
+  const q = Object.entries(params)
+    .filter(([, v]) => v !== undefined && v !== null && v !== '')
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join('&');
+  return `#/${name}${q ? '?' + q : ''}`;
+};
 
-  <nav class="bottom-nav" id="bottom-nav"></nav>
+export const navigate = (name, params = {}) => {
+  const h = buildHash(name, params);
+  if (location.hash === h) renderCurrent(); else location.hash = h;
+};
 
-  <!-- SheetJS per backup/import Excel (caricato da CDN; l'app resta offline per il resto) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+export const parseHash = () => {
+  const raw = location.hash.replace(/^#\//, '') || 'spese';
+  const [name, query] = raw.split('?');
+  const params = {};
+  if (query) for (const pair of query.split('&')) {
+    const [k, v] = pair.split('=');
+    params[decodeURIComponent(k)] = decodeURIComponent(v || '');
+  }
+  return { name, params };
+};
 
-  <!-- App (moduli ES) -->
-  <script type="module" src="./js/app.js"></script>
-</body>
-</html>
+export const currentRoute = () => _current;
+
+export const renderCurrent = async () => {
+  const { name, params } = parseHash();
+  _current = { name, params };
+  const handler = routes[name] || routes['spese'];
+
+  const root = document.getElementById('app-root');
+  root.className = 'app-main view-' + name;
+  root.innerHTML = '';
+  // il chrome (header) si aggiorna PRIMA del render: così il componente può
+  // sovrascriverlo quando serve (es. breadcrumb del drill in Analisi).
+  _updateChrome(name);
+  await handler(root, params);
+
+  window.scrollTo(0, 0);
+};
+
+// Aggiorna barra di navigazione attiva e visibilità del tasto indietro
+const ROTTE_PRINCIPALI = ['spese', 'movimenti', 'patrimonio', 'ricorrenti', 'analisi', 'impostazioni'];
+const _updateChrome = (name) => {
+  document.querySelectorAll('.bottom-nav a').forEach(a =>
+    a.classList.toggle('active', a.dataset.route === name));
+  // pagine di inserimento/modifica: 'nuovo' (nuova operazione), 'modifica' (spesa
+  // o ricorrenza). Header uniforme: niente + né freccia, solo "Annulla" a sinistra
+  // e il titolo CENTRATO. Per il nuovo inserimento il titolo è nascosto del tutto.
+  const isInserimento = name === 'nuovo' || name === 'modifica';
+  const isRicerca = name === 'ricerca';
+  const back = document.getElementById('btn-back');
+  if (back) back.style.display = (ROTTE_PRINCIPALI.includes(name) || isInserimento || isRicerca) ? 'none' : 'flex';
+  // HEADER COMPATTO: nelle pagine principali il titolo è ridondante (c'è il tab
+  // evidenziato sotto) e sparisce; resta nelle sottopagine come breadcrumb.
+  // La lente vive solo nei Movimenti. Il selettore periodo (head-seg) vive
+  // nell'header in Spese e Movimenti; il + si sposta a destra nelle sottopagine.
+  const titolo = document.getElementById('view-title');
+  if (titolo) {
+    // Patrimonio mostra il titolo nell'header (col filtro a sinistra); le altre
+    // principali no. Le sottopagine sì.
+    const mostraTitolo = !(ROTTE_PRINCIPALI.includes(name) && name !== 'patrimonio') && name !== 'nuovo';
+    titolo.style.display = mostraTitolo ? 'block' : 'none';
+    if (name === 'patrimonio') titolo.textContent = 'Patrimonio';
+    // titolo centrato nelle pagine con Annulla a sinistra (modifica, modifica ricorrenza)
+    titolo.classList.toggle('center', isInserimento && name !== 'nuovo');
+  }
+  // lente: VISIBILE solo nei Movimenti; nelle altre principali resta invisibile ma
+  // occupa il suo spazio (il selettore centrale rimane perfettamente centrato).
+  const lente = document.getElementById('btn-search');
+  if (lente) {
+    if (name === 'patrimonio') {
+      lente.style.display = 'none';   // in Patrimonio al suo posto c'è il filtro
+    } else if (ROTTE_PRINCIPALI.includes(name)) {
+      lente.style.display = 'flex';
+      lente.style.visibility = name === 'movimenti' ? 'visible' : 'hidden';
+      lente.style.pointerEvents = name === 'movimenti' ? 'auto' : 'none';
+    } else {
+      lente.style.display = 'none';
+    }
+  }
+  // + e Annulla: gestiti con isInserimento/isRicerca
+  const addBtn = document.getElementById('btn-add');
+  if (addBtn) addBtn.style.display = (isInserimento || isRicerca) ? 'none' : 'flex';
+  const annulla = document.getElementById('btn-annulla');
+  if (annulla) annulla.style.display = (isInserimento || isRicerca) ? 'flex' : 'none';
+  // filtro patrimonio: visibile SOLO nella pagina Patrimonio, a sinistra del titolo
+  const filtroPat = document.getElementById('btn-filtro-pat');
+  if (filtroPat) filtroPat.style.display = (name === 'patrimonio') ? 'flex' : 'none';
+  const seg = document.getElementById('head-seg');
+  if (seg) {
+    const usaSeg = name === 'spese' || name === 'movimenti' || name === 'analisi';
+    seg.style.display = usaSeg ? 'flex' : 'none';
+    if (!usaSeg) seg.innerHTML = '';
+  }
+  const spacer = document.getElementById('head-spacer');
+  if (spacer) spacer.style.display = (ROTTE_PRINCIPALI.includes(name) && !['spese', 'movimenti', 'analisi'].includes(name)) ? 'block' : 'none';
+  const headerEl = document.getElementById('app-header');
+  if (headerEl) headerEl.classList.toggle('sub', !ROTTE_PRINCIPALI.includes(name));
+};
+
+export const initRouter = () => {
+  window.addEventListener('hashchange', renderCurrent);
+  if (!location.hash) location.hash = '#/spese';
+  else renderCurrent();
+};
+
+export { ROTTE_PRINCIPALI };
