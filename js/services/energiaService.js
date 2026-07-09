@@ -170,3 +170,134 @@ export const componiBolletta = (d, idEsistente) => {
 
 // Elenco fornitori già usati (per l'autocompletamento nel form).
 export const fornitoriUsati = () => [...new Set(state.bollette.map(b => b.fornitore).filter(Boolean))].sort();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Aggregazioni per la dashboard (grafici anno per anno, heatmap, fornitori)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Consumo per fasce ANNO PER ANNO (per le barre impilate della home).
+// Ritorna [{ anno, f1, f2, f3, tot }] in ordine cronologico.
+export const serieFasceAnnuale = () => {
+  return anniDisponibili().slice().reverse().map(anno => {
+    const agg = aggregatoAnno(anno);
+    return { anno, f1: agg.fasce.f1, f2: agg.fasce.f2, f3: agg.fasce.f3, tot: agg.consumo };
+  });
+};
+
+// Distribuisce i kWh di ogni bolletta sui mesi del periodo, in proporzione ai
+// giorni: una bolletta bimestrale Apr–Mag da 323 kWh contribuisce a Aprile e a
+// Maggio per la quota di giorni di ciascun mese. Serve a heatmap e viste mensili,
+// perché le bollette non coincidono coi mesi di calendario.
+const _distribuisciSuiMesi = (b, prendi) => {
+  const out = [];   // [{ anno, mese(1-12), quota }]
+  const val = prendi(b);
+  if (val == null || !b.dal || !b.al) return out;
+  const d1 = new Date(b.dal + 'T00:00:00'), d2 = new Date(b.al + 'T00:00:00');
+  const totGiorni = Math.round((d2 - d1) / 86400000) + 1;
+  if (totGiorni <= 0) return out;
+  let cur = new Date(d1);
+  while (cur <= d2) {
+    const anno = cur.getFullYear(), mese = cur.getMonth();
+    const fineMese = new Date(anno, mese + 1, 0);
+    const fine = fineMese < d2 ? fineMese : d2;
+    const giorniNelMese = Math.round((fine - cur) / 86400000) + 1;
+    out.push({ anno: String(anno), mese: mese + 1, quota: val * giorniNelMese / totGiorni });
+    cur = new Date(anno, mese + 1, 1);
+  }
+  return out;
+};
+
+// Heatmap consumi: matrice { anni: [..], celle: { 'anno-mese': kWh }, max }.
+// kWh mensili ottenuti ripartendo le bollette sui mesi (vedi sopra).
+export const heatmapConsumi = () => {
+  const celle = {};
+  for (const b of bolletteComplete()) {
+    for (const q of _distribuisciSuiMesi(b, x => x.kwhTot)) {
+      const k = `${q.anno}-${q.mese}`;
+      celle[k] = (celle[k] || 0) + q.quota;
+    }
+  }
+  Object.keys(celle).forEach(k => { celle[k] = Math.round(celle[k]); });
+  const anni = anniDisponibili().slice().reverse();
+  const max = Math.max(1, ...Object.values(celle));
+  return { anni, celle, max };
+};
+
+// Voci di costo di una bolletta (chiave, etichetta, colore) — ordine e palette
+// unici per scomposizioni e dettaglio.
+export const VOCI_COSTO = [
+  { k: 'materia', nome: 'Materia energia', colore: '#2E9BFF' },
+  { k: 'trasporto', nome: 'Trasporto', colore: '#5FC3FF' },
+  { k: 'oneri', nome: 'Oneri', colore: '#9D8FFF' },
+  { k: 'accise', nome: 'Accise', colore: '#22E39A' },
+  { k: 'iva', nome: 'IVA', colore: '#7B6CFF' },
+];
+
+// Scomposizione delle voci di costo ANNO PER ANNO (barre impilate in €).
+// Ritorna [{ anno, materia, trasporto, oneri, accise, iva, tot }].
+export const scomposizioneCostiAnnuale = () => {
+  return anniDisponibili().slice().reverse().map(anno => {
+    const boll = bolletteComplete().filter(b => (b.al || '').startsWith(anno));
+    const r = { anno, tot: 0 };
+    for (const { k } of VOCI_COSTO) r[k] = round2(boll.reduce((s, b) => s + (b[k] || 0), 0));
+    r.tot = round2(VOCI_COSTO.reduce((s, { k }) => s + r[k], 0));
+    return r;
+  });
+};
+
+// Scomposizione voci di costo MESE PER MESE di un anno (per la pagina Riepilogo).
+// Le bollette a cavallo di due mesi vengono ripartite in proporzione ai giorni.
+export const scomposizioneCostiMensile = (anno) => {
+  const mesi = Array.from({ length: 12 }, (_, i) => {
+    const r = { mese: i + 1, label: mese3(i + 1), tot: 0 };
+    for (const { k } of VOCI_COSTO) r[k] = 0;
+    return r;
+  });
+  for (const b of bolletteComplete()) {
+    for (const { k } of VOCI_COSTO) {
+      for (const q of _distribuisciSuiMesi(b, x => x[k])) {
+        if (q.anno === String(anno)) mesi[q.mese - 1][k] += q.quota;
+      }
+    }
+  }
+  for (const m of mesi) {
+    for (const { k } of VOCI_COSTO) m[k] = round2(m[k]);
+    m.tot = round2(VOCI_COSTO.reduce((s, { k }) => s + m[k], 0));
+  }
+  return mesi.filter(m => m.tot > 0);
+};
+
+// Consumo per fasce MESE PER MESE di un anno (per la pagina Riepilogo),
+// con ripartizione a giorni delle bollette a cavallo.
+export const serieFasceMensile = (anno) => {
+  const mesi = Array.from({ length: 12 }, (_, i) => ({ mese: i + 1, label: mese3(i + 1), f1: 0, f2: 0, f3: 0, tot: 0 }));
+  for (const b of bolletteComplete()) {
+    for (const [campo, dest] of [['kwhF1', 'f1'], ['kwhF2', 'f2'], ['kwhF3', 'f3']]) {
+      for (const q of _distribuisciSuiMesi(b, x => x[campo])) {
+        if (q.anno === String(anno)) mesi[q.mese - 1][dest] += q.quota;
+      }
+    }
+  }
+  for (const m of mesi) {
+    m.f1 = Math.round(m.f1); m.f2 = Math.round(m.f2); m.f3 = Math.round(m.f3);
+    m.tot = m.f1 + m.f2 + m.f3;
+  }
+  return mesi.filter(m => m.tot > 0);
+};
+
+// Confronto fornitori: €/kWh medio (tutto compreso), consumo, spesa, periodo.
+// Ordinato dal più economico. Per decidere se il fornitore attuale conviene.
+export const confrontoFornitori = () => {
+  const per = {};
+  for (const b of bolletteComplete()) {
+    const f = b.fornitore || '?';
+    per[f] = per[f] || { fornitore: f, spesa: 0, kwh: 0, n: 0, dal: b.al, al: b.al };
+    per[f].spesa += b.totale; per[f].kwh += b.kwhTot; per[f].n++;
+    if (b.dal < per[f].dal) per[f].dal = b.dal;
+    if (b.al > per[f].al) per[f].al = b.al;
+  }
+  return Object.values(per)
+    .filter(f => f.kwh > 0)
+    .map(f => ({ ...f, spesa: round2(f.spesa), eurKwh: Math.round(f.spesa / f.kwh * 1000) / 1000 }))
+    .sort((a, b) => a.eurKwh - b.eurKwh);
+};

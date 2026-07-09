@@ -207,16 +207,24 @@ export const cercaMovimenti = (query, filtri = {}) => {
   // Senza virgole si comporta come prima: un unico termine.
   const termini = q ? q.split(',').map(t => t.trim()).filter(Boolean) : [];
 
-  // un singolo termine matcha un movimento se compare in uno qualsiasi dei campi
+  // Un termine matcha un movimento se compare nella DESCRIZIONE all'INIZIO di una
+  // parola. Solo descrizione: per categoria/conto/periodo ci sono i Filtri, e cercare
+  // ovunque falsava i risultati (cercando "spesa" arrivava tutta la macro Spese).
+  // Inizio parola: "volo" trova "Volo Ryanair" ma NON "tavolo"; "dm" trova "DM"
+  // ma non le parole che lo contengono in mezzo. Funziona anche con termini di più
+  // parole ("spesa co" trova "Spesa Conad").
+  // Un termine interamente numerico matcha anche l'importo esatto.
   const terminMatch = (m, t) => {
+    if (m.desc) {
+      const d = _norm(m.desc);
+      let i = d.indexOf(t);
+      while (i !== -1) {
+        if (i === 0 || !/[a-z0-9]/.test(d[i - 1])) return true;   // confine di parola prima
+        i = d.indexOf(t, i + 1);
+      }
+    }
     const num = parseFloat(t.replace(',', '.'));
-    if (m.desc && _norm(m.desc).includes(t)) return true;
-    if (m.macro && _norm(m.macro).includes(t)) return true;
-    if (m.cat && _norm(m.cat).includes(t)) return true;
-    if (m.sub && _norm(m.sub).includes(t)) return true;
-    if (m.conto && _norm(m.conto).includes(t)) return true;
-    if (m.tag && m.tag.some(tag => _norm(tag).includes(t))) return true;
-    if (!isNaN(num) && Math.abs(m.imp - num) < 0.005) return true;
+    if (!isNaN(num) && /^[\d.,]+$/.test(t) && Math.abs(m.imp - num) < 0.005) return true;
     return false;
   };
 

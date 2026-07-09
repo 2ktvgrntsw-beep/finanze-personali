@@ -29,7 +29,7 @@ import { renderInvestimenti } from './components/investimenti.js';
 import { renderDettaglioInvestimento } from './components/dettaglioInvestimento.js';
 import { renderCategorie } from './components/categorie.js';
 import { renderImpostazioni } from './components/impostazioni.js';
-import { renderEnergia } from './components/energia.js';
+import { renderEnergia, renderEnergiaAnno } from './components/energia.js';
 import { renderBollettaForm, renderBollettaDettaglio, renderBolletteStorico } from './components/energiaBollette.js';
 
 // Titolo di ogni schermata principale (per l'header)
@@ -62,6 +62,7 @@ const registraRotte = () => {
   registerRoute('categorie', renderCategorie);
   registerRoute('impostazioni', wrap(renderImpostazioni, 'Impostazioni'));
   registerRoute('energia', renderEnergia);
+  registerRoute('energia-anno', renderEnergiaAnno);
   registerRoute('bolletta-nuova', renderBollettaForm);
   registerRoute('bolletta-dettaglio', renderBollettaDettaglio);
   registerRoute('bollette-storico', renderBolletteStorico);

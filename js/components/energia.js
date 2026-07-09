@@ -1,6 +1,8 @@
 // energia.js — Sezione Energia: monitoraggio spesa e consumo di energia elettrica.
-// Home con hero ultima bolletta, KPI, barre fasce per anno, spike-line prezzo,
-// ripartizione fasce e storico recente. Slegata dalle spese (store dedicato).
+// HOME: hero ultima bolletta, KPI per anno (titolo cliccabile -> pagina Riepilogo),
+// fasce anno per anno, ripartizione media, spike-line prezzo, scomposizione costi
+// per anno, heatmap mese x anno, confronto fornitori, storico recente.
+// RIEPILOGO ANNO: stesse card + fasce e scomposizione costi MESE per MESE.
 
 import { state } from '../core/store.js';
 import { fmtEUR, escapeHtml } from '../core/utils.js';
@@ -8,14 +10,21 @@ import { navigate } from '../core/router.js';
 import { costruisciSparkline, agganciaSparkline } from '../core/sparkline.js';
 import {
   ultimaBolletta, kpiBolletta, aggregatoAnno, anniDisponibili, variazioneAnno,
-  seriePrezzo, serieFasce, ripartizioneFasce, bolletteComplete, statisticheGlobali, mese3,
+  seriePrezzo, ripartizioneFasce, bolletteComplete, mese3,
+  serieFasceAnnuale, heatmapConsumi, scomposizioneCostiAnnuale,
+  scomposizioneCostiMensile, serieFasceMensile, confrontoFornitori, VOCI_COSTO,
 } from '../services/energiaService.js';
 
 const FULMINE = '<svg viewBox="0 0 24 24"><path d="M13 2 4.5 13.5H11l-1 8.5L19.5 10H13z"/></svg>';
+const FASCE = [
+  { k: 'f1', nome: 'F1 giorno', colore: '#1C3A6E' },
+  { k: 'f2', nome: 'F2 sera', colore: '#2E9BFF' },
+  { k: 'f3', nome: 'F3 notte', colore: '#7B6CFF' },
+];
 
 // stato modulo
-let _annoFasce = null;         // anno selezionato per le barre fasce
-let _annoKpi = null;           // anno selezionato per le card KPI
+let _annoKpi = null;           // anno selezionato per le card KPI (home)
+let _annoRiep = null;          // anno selezionato nella pagina Riepilogo
 let _tipoPrezzo = 'materia';   // 'materia' | 'totale' per la spike-line
 
 const _fmtPeriodo = (dal, al) => {
@@ -23,20 +32,17 @@ const _fmtPeriodo = (dal, al) => {
   return `${g1}/${m1}–${g2}/${m2}`;
 };
 const _fmtVar = (v) => v == null ? '' : `${v > 0 ? '+' : ''}${v.toFixed(0)}%`;
-const _clsVar = (v, inverti = false) => {
-  if (v == null) return '';
-  const negativoBuono = !inverti;   // per spesa/consumo/prezzo: scendere è positivo (verde)
-  const buono = negativoBuono ? v < 0 : v > 0;
-  return buono ? 'down' : 'up';     // .down=verde .up=rosso (coerente con l'app)
-};
+const _clsVar = (v) => v == null ? '' : (v < 0 ? 'down' : 'up');   // scendere = verde
 
+// ═══════════════════════════════════════════════════════════════════════════
+// HOME
+// ═══════════════════════════════════════════════════════════════════════════
 export const renderEnergia = async (root) => {
   document.getElementById('view-title').textContent = 'Energia';
 
   const boll = bolletteComplete();
   if (!boll.length) {
     root.innerHTML = `<div class="card" style="text-align:center;padding:40px 20px">
-      <div class="big-ic">${FULMINE}</div>
       <p class="meta" style="margin:12px 0 18px">Non hai ancora nessuna bolletta registrata.</p>
       <button class="btn btn-primary" id="add-boll" style="width:auto;display:inline-flex;padding:11px 20px">Aggiungi la prima bolletta</button>
     </div>`;
@@ -45,14 +51,11 @@ export const renderEnergia = async (root) => {
   }
 
   const anni = anniDisponibili();
-  if (_annoFasce == null || !anni.includes(_annoFasce)) _annoFasce = anni[0];
   if (_annoKpi == null || !anni.includes(_annoKpi)) _annoKpi = anni[0];
 
   const u = ultimaBolletta();
   const k = kpiBolletta(u);
-
   const rip = ripartizioneFasce(6);
-  const stats = statisticheGlobali();
 
   root.innerHTML = `
     <!-- HERO ultima bolletta -->
@@ -69,35 +72,31 @@ export const renderEnergia = async (root) => {
       </div>
     </div>
 
-    <!-- SELETTORE ANNO per le card KPI -->
-    <div class="section-lbl" style="margin-top:14px"><span>Riepilogo anno</span>
+    <!-- RIEPILOGO ANNO (titolo cliccabile -> pagina dettaglio mensile) -->
+    <div class="section-lbl" style="margin-top:14px">
+      <span class="lbl-link" id="apri-riepilogo" role="button">Riepilogo anno <span class="lbl-chev">›</span></span>
       <div class="eyear" id="ekpi-year">
         <button id="ekpi-prev" aria-label="Anno precedente">‹</button>
         <span class="num" id="ekpi-lbl">${_annoKpi}</span>
         <button id="ekpi-next" aria-label="Anno successivo">›</button>
       </div>
     </div>
-    <!-- KPI (aggiornate dal selettore, delta vs anno precedente) -->
     <div class="ekpis" id="ekpis"></div>
 
-    <!-- BARRE FASCE per anno -->
-    <div class="section-lbl"><span>Consumo per fasce</span>
-      <div class="eyear" id="eyear">
-        <button id="eyear-prev" aria-label="Anno precedente">‹</button>
-        <span class="num" id="eyear-lbl">${_annoFasce}</span>
-        <button id="eyear-next" aria-label="Anno successivo">›</button>
-      </div>
-    </div>
+    <!-- FASCE ANNO PER ANNO -->
+    <div class="section-lbl"><span>Consumo per fasce · anno per anno</span></div>
     <div class="card">
-      <div class="elegend">
-        <span><i style="background:#1C3A6E"></i>F1 giorno</span>
-        <span><i style="background:#2E9BFF"></i>F2 sera</span>
-        <span><i style="background:#7B6CFF"></i>F3 notte</span>
-      </div>
-      <div class="estack" id="estack"></div>
+      ${_legendaHTML(FASCE)}
+      <div class="estack" id="g-fasce"></div>
     </div>
 
-    <!-- SPIKE-LINE prezzo -->
+    <!-- RIPARTIZIONE media -->
+    <div class="section-lbl"><span>Ripartizione media</span></div>
+    <div class="efasce">
+      ${FASCE.map((f, i) => `<div class="efascia"><div class="dot" style="background:${f.colore}"></div><div class="nm">${f.nome.split(' ')[0]}</div><div class="pc num">${[rip.p1, rip.p2, rip.p3][i]}%</div><div class="kw num">${[rip.f1, rip.f2, rip.f3][i]} kWh</div></div>`).join('')}
+    </div>
+
+    <!-- PREZZO nel tempo -->
     <div class="section-lbl"><span>Prezzo energia nel tempo</span>
       <div class="eprice-toggle" id="eprice-toggle">
         <button data-p="materia" class="${_tipoPrezzo === 'materia' ? 'on' : ''}">Materia</button>
@@ -111,13 +110,22 @@ export const renderEnergia = async (root) => {
         : 'Prezzo <b>totale</b> (€/kWh): tutto compreso, comprese le voci fisse di sistema.'}</div>
     </div>
 
-    <!-- RIPARTIZIONE fasce media -->
-    <div class="section-lbl"><span>Ripartizione media</span></div>
-    <div class="efasce">
-      <div class="efascia"><div class="dot" style="background:#1C3A6E"></div><div class="nm">F1</div><div class="pc num">${rip.p1}%</div><div class="kw num">${rip.f1} kWh</div></div>
-      <div class="efascia"><div class="dot" style="background:#2E9BFF"></div><div class="nm">F2</div><div class="pc num">${rip.p2}%</div><div class="kw num">${rip.f2} kWh</div></div>
-      <div class="efascia"><div class="dot" style="background:#7B6CFF"></div><div class="nm">F3</div><div class="pc num">${rip.p3}%</div><div class="kw num">${rip.f3} kWh</div></div>
+    <!-- SCOMPOSIZIONE COSTI anno per anno -->
+    <div class="section-lbl"><span>Voci di costo · anno per anno</span></div>
+    <div class="card">
+      ${_legendaHTML(VOCI_COSTO)}
+      <div class="estack" id="g-costi"></div>
     </div>
+
+    <!-- HEATMAP consumi -->
+    <div class="section-lbl"><span>Consumi mese × anno</span></div>
+    <div class="card" style="padding:14px 10px">
+      <div id="g-heatmap"></div>
+    </div>
+
+    <!-- CONFRONTO FORNITORI -->
+    <div class="section-lbl"><span>Confronto fornitori</span></div>
+    <div class="card" id="g-fornitori"></div>
 
     <!-- STORICO recente -->
     <div class="section-lbl"><span>Storico bollette</span><span class="act" id="vedi-storico">Tutte (${state.bollette.length}) ›</span></div>
@@ -134,10 +142,19 @@ export const renderEnergia = async (root) => {
   `;
 
   _renderKpi(root);
-  _renderBarreFasce(root);
+  _barreImpilate(root.querySelector('#g-fasce'), serieFasceAnnuale().map(d => ({ label: `'${d.anno.slice(2)}`, valori: d, tot: d.tot })), FASCE, v => `${Math.round(v)} kWh`, v => v.toLocaleString('it-IT'));
   _renderSpike(root);
+  _barreImpilate(root.querySelector('#g-costi'), scomposizioneCostiAnnuale().map(d => ({ label: `'${d.anno.slice(2)}`, valori: d, tot: d.tot })), VOCI_COSTO, v => fmtEUR(v), v => Math.round(v));
+  _renderHeatmap(root.querySelector('#g-heatmap'));
+  _renderFornitori(root.querySelector('#g-fornitori'), u.fornitore);
 
-  // navigazione anno per le card KPI (mutazione locale, niente re-render pagina)
+  // riepilogo anno cliccabile -> pagina mensile
+  root.querySelector('#apri-riepilogo').addEventListener('click', () => {
+    _annoRiep = _annoKpi;
+    navigate('energia-anno');
+  });
+
+  // navigazione anno card KPI (mutazione locale)
   root.querySelector('#ekpi-prev').addEventListener('click', () => {
     const i = anni.indexOf(_annoKpi);
     if (i < anni.length - 1) { _annoKpi = anni[i + 1]; root.querySelector('#ekpi-lbl').textContent = _annoKpi; _renderKpi(root); }
@@ -147,31 +164,72 @@ export const renderEnergia = async (root) => {
     if (i > 0) { _annoKpi = anni[i - 1]; root.querySelector('#ekpi-lbl').textContent = _annoKpi; _renderKpi(root); }
   });
 
-  // navigazione anni (barre)
-  root.querySelector('#eyear-prev').addEventListener('click', () => {
-    const i = anni.indexOf(_annoFasce);
-    if (i < anni.length - 1) { _annoFasce = anni[i + 1]; root.querySelector('#eyear-lbl').textContent = _annoFasce; _renderBarreFasce(root); }
-  });
-  root.querySelector('#eyear-next').addEventListener('click', () => {
-    const i = anni.indexOf(_annoFasce);
-    if (i > 0) { _annoFasce = anni[i - 1]; root.querySelector('#eyear-lbl').textContent = _annoFasce; _renderBarreFasce(root); }
-  });
-
-  // toggle prezzo materia/totale
   root.querySelector('#eprice-toggle').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-p]'); if (!btn) return;
     _tipoPrezzo = btn.dataset.p;
     renderEnergia(root);
   });
 
-  // storico + aggiungi + righe
   root.querySelector('#vedi-storico').addEventListener('click', () => navigate('bollette-storico'));
   root.querySelector('#add-boll').addEventListener('click', () => navigate('bolletta-nuova'));
   root.querySelectorAll('[data-bolletta]').forEach(el =>
     el.addEventListener('click', () => navigate('bolletta-dettaglio', { id: el.dataset.bolletta })));
 };
 
+// ═══════════════════════════════════════════════════════════════════════════
+// PAGINA RIEPILOGO ANNO (da click su "Riepilogo anno")
+// ═══════════════════════════════════════════════════════════════════════════
+export const renderEnergiaAnno = async (root) => {
+  const anni = anniDisponibili();
+  if (_annoRiep == null || !anni.includes(_annoRiep)) _annoRiep = anni[0];
+  document.getElementById('view-title').textContent = `Riepilogo ${_annoRiep}`;
+
+  root.innerHTML = `
+    <div class="section-lbl" style="margin-top:4px"><span>Riepilogo anno</span>
+      <div class="eyear">
+        <button id="er-prev" aria-label="Anno precedente">‹</button>
+        <span class="num" id="er-lbl">${_annoRiep}</span>
+        <button id="er-next" aria-label="Anno successivo">›</button>
+      </div>
+    </div>
+    <div class="ekpis" id="er-kpis"></div>
+
+    <div class="section-lbl"><span>Consumo per fasce · mese per mese</span></div>
+    <div class="card">
+      ${_legendaHTML(FASCE)}
+      <div class="estack" id="er-fasce"></div>
+      <div class="eprice-note" style="margin-top:8px">Le bollette a cavallo di due mesi sono ripartite in proporzione ai giorni.</div>
+    </div>
+
+    <div class="section-lbl"><span>Voci di costo · mese per mese</span></div>
+    <div class="card">
+      ${_legendaHTML(VOCI_COSTO)}
+      <div class="estack" id="er-costi"></div>
+    </div>
+  `;
+
+  const disegna = () => {
+    document.getElementById('view-title').textContent = `Riepilogo ${_annoRiep}`;
+    root.querySelector('#er-lbl').textContent = _annoRiep;
+    _renderKpiIn(root.querySelector('#er-kpis'), _annoRiep);
+    _barreImpilate(root.querySelector('#er-fasce'), serieFasceMensile(_annoRiep).map(d => ({ label: d.label, valori: d, tot: d.tot })), FASCE, v => `${Math.round(v)} kWh`, v => v.toLocaleString('it-IT'));
+    _barreImpilate(root.querySelector('#er-costi'), scomposizioneCostiMensile(_annoRiep).map(d => ({ label: d.label, valori: d, tot: d.tot })), VOCI_COSTO, v => fmtEUR(v), v => Math.round(v));
+  };
+  disegna();
+
+  root.querySelector('#er-prev').addEventListener('click', () => {
+    const i = anni.indexOf(_annoRiep);
+    if (i < anni.length - 1) { _annoRiep = anni[i + 1]; disegna(); }
+  });
+  root.querySelector('#er-next').addEventListener('click', () => {
+    const i = anni.indexOf(_annoRiep);
+    if (i > 0) { _annoRiep = anni[i - 1]; disegna(); }
+  });
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
 // riga bolletta riutilizzabile (home + storico)
+// ═══════════════════════════════════════════════════════════════════════════
 export const _rigaBollettaHTML = (b) => {
   const [y1, m1] = b.dal.split('-'); const [y2, m2] = b.al.split('-');
   const periodo = y1 === y2 ? `${mese3(+m1)} – ${mese3(+m2)} ${y2}` : `${mese3(+m1)} ${y1} – ${mese3(+m2)} ${y2}`;
@@ -185,69 +243,64 @@ export const _rigaBollettaHTML = (b) => {
   </div>`;
 };
 
-// Card KPI dell'anno selezionato, con variazioni rispetto all'anno precedente.
-const _renderKpi = (root) => {
-  const agg = aggregatoAnno(_annoKpi);
-  const cont = root.querySelector('#ekpis');
-  if (!agg) { cont.innerHTML = `<div class="empty" style="grid-column:1/-1;padding:20px 0">Nessuna bolletta nel ${_annoKpi}</div>`; return; }
-  const prec = Number(_annoKpi) - 1;
-  const vGiorno = variazioneAnno(_annoKpi, 'eurGiorno');
-  const vPrezzo = variazioneAnno(_annoKpi, 'eurKwh');
-  const vSpesa = variazioneAnno(_annoKpi, 'spesa');
-  const vCons = variazioneAnno(_annoKpi, 'consumo');
-  cont.innerHTML = `
-    <div class="ekpi"><div class="k">Costo/giorno</div><div class="v num">${fmtEUR(agg.eurGiorno)}</div>${vGiorno != null ? `<div class="d ${_clsVar(vGiorno)}">${_fmtVar(vGiorno)} vs ${prec}</div>` : ''}</div>
-    <div class="ekpi"><div class="k">Prezzo medio</div><div class="v num">${agg.eurKwh.toFixed(3)}<small> €/kWh</small></div>${vPrezzo != null ? `<div class="d ${_clsVar(vPrezzo)}">${_fmtVar(vPrezzo)} vs ${prec}</div>` : ''}</div>
-    <div class="ekpi"><div class="k">Spesa ${_annoKpi}</div><div class="v num">${fmtEUR(agg.spesa)}</div>${vSpesa != null ? `<div class="d ${_clsVar(vSpesa)}">${_fmtVar(vSpesa)} vs ${prec}</div>` : ''}</div>
-    <div class="ekpi"><div class="k">Consumo ${_annoKpi}</div><div class="v num">${agg.consumo.toLocaleString('it-IT')}<small> kWh</small></div>${vCons != null ? `<div class="d ${_clsVar(vCons)}">${_fmtVar(vCons)} vs ${prec}</div>` : ''}</div>`;
-};
+// ═══════════════════════════════════════════════════════════════════════════
+// helper grafici
+// ═══════════════════════════════════════════════════════════════════════════
+const _legendaHTML = (segmenti) => `<div class="elegend">${segmenti.map(s =>
+  `<span><i style="background:${s.colore}"></i>${escapeHtml(s.nome)}</span>`).join('')}</div>`;
 
-const _renderBarreFasce = (root) => {
-  const dati = serieFasce(_annoFasce);
-  const cont = root.querySelector('#estack');
-  if (!dati.length) { cont.innerHTML = '<div class="empty" style="padding:30px 0">Nessun dato per il ' + _annoFasce + '</div>'; return; }
+// Barre impilate GENERICHE con tap -> popup dei valori assoluti.
+// dati: [{ label, valori: {k: v}, tot }] · segmenti: [{ k, nome, colore }]
+// fmtTip: formato valori nel popup · fmtTot: formato totale sopra la barra
+const _barreImpilate = (cont, dati, segmenti, fmtTip, fmtTot) => {
+  if (!dati.length) { cont.innerHTML = '<div class="empty" style="padding:30px 0">Nessun dato</div>'; return; }
   const maxT = Math.max(...dati.map(d => d.tot), 1);
   cont.innerHTML = dati.map((d, i) => {
     const H = (d.tot / maxT * 100).toFixed(1);
-    const h1 = d.tot ? (d.f1 / d.tot * 100).toFixed(1) : 0;
-    const h2 = d.tot ? (d.f2 / d.tot * 100).toFixed(1) : 0;
-    const h3 = d.tot ? (d.f3 / d.tot * 100).toFixed(1) : 0;
-    return `<div class="escol" data-fasce-idx="${i}">
-      <div class="estot num">${d.tot}</div>
+    return `<div class="escol" data-bar-idx="${i}">
+      <div class="estot num">${fmtTot(d.tot)}</div>
       <div class="ebar-wrap" style="height:${H}%">
-        <div class="ebar-seg" style="height:${h1}%;background:#1C3A6E"></div>
-        <div class="ebar-seg" style="height:${h2}%;background:#2E9BFF"></div>
-        <div class="ebar-seg" style="height:${h3}%;background:#7B6CFF"></div>
+        ${segmenti.map(s => `<div class="ebar-seg" style="height:${d.tot ? (d.valori[s.k] / d.tot * 100).toFixed(1) : 0}%;background:${s.colore}"></div>`).join('')}
       </div>
       <div class="eslbl">${escapeHtml(d.label)}</div>
     </div>`;
-  }).join('') + `<div class="efasce-tip" id="efasce-tip"></div>`;
+  }).join('') + `<div class="efasce-tip"></div>`;
 
-  // tap su una barra -> popup con i valori assoluti delle tre fasce
-  const tip = cont.querySelector('#efasce-tip');
-  let tipAperto = -1;
-  cont.querySelectorAll('[data-fasce-idx]').forEach(col => {
+  const tip = cont.querySelector('.efasce-tip');
+  let aperto = -1;
+  cont.querySelectorAll('[data-bar-idx]').forEach(col => {
     col.addEventListener('click', () => {
-      const i = parseInt(col.dataset.fasceIdx);
-      if (tipAperto === i) { tip.classList.remove('on'); tipAperto = -1; return; }  // secondo tap: chiude
-      tipAperto = i;
+      const i = parseInt(col.dataset.barIdx);
+      if (aperto === i) { tip.classList.remove('on'); aperto = -1; return; }
+      aperto = i;
       const d = dati[i];
-      tip.innerHTML = `<div class="et-title">${escapeHtml(d.label)} · <span class="num">${d.tot} kWh</span></div>
-        <div class="et-row"><i style="background:#1C3A6E"></i>F1 giorno <b class="num">${d.f1} kWh</b></div>
-        <div class="et-row"><i style="background:#2E9BFF"></i>F2 sera <b class="num">${d.f2} kWh</b></div>
-        <div class="et-row"><i style="background:#7B6CFF"></i>F3 notte <b class="num">${d.f3} kWh</b></div>`;
-      // posiziono sopra la colonna toccata, con flip se troppo a destra
+      tip.innerHTML = `<div class="et-title">${escapeHtml(d.label)} · <span class="num">${fmtTip(d.tot)}</span></div>` +
+        segmenti.map(s => `<div class="et-row"><i style="background:${s.colore}"></i>${escapeHtml(s.nome)} <b class="num">${fmtTip(d.valori[s.k] || 0)}</b></div>`).join('');
       const colRect = col.getBoundingClientRect();
       const contRect = cont.getBoundingClientRect();
       const centro = colRect.left - contRect.left + colRect.width / 2;
       tip.classList.add('on');
       const tw = tip.offsetWidth;
-      let left = centro - tw / 2;
-      left = Math.max(0, Math.min(contRect.width - tw, left));
+      let left = Math.max(0, Math.min(contRect.width - tw, centro - tw / 2));
       tip.style.left = left + 'px';
     });
   });
 };
+
+// Card KPI di un anno dentro un contenitore.
+const _renderKpiIn = (cont, anno) => {
+  const agg = aggregatoAnno(anno);
+  if (!agg) { cont.innerHTML = `<div class="empty" style="grid-column:1/-1;padding:20px 0">Nessuna bolletta nel ${anno}</div>`; return; }
+  const prec = Number(anno) - 1;
+  const vG = variazioneAnno(anno, 'eurGiorno'), vP = variazioneAnno(anno, 'eurKwh');
+  const vS = variazioneAnno(anno, 'spesa'), vC = variazioneAnno(anno, 'consumo');
+  cont.innerHTML = `
+    <div class="ekpi"><div class="k">Costo/giorno</div><div class="v num">${fmtEUR(agg.eurGiorno)}</div>${vG != null ? `<div class="d ${_clsVar(vG)}">${_fmtVar(vG)} vs ${prec}</div>` : ''}</div>
+    <div class="ekpi"><div class="k">Prezzo medio</div><div class="v num">${agg.eurKwh.toFixed(3)}<small> €/kWh</small></div>${vP != null ? `<div class="d ${_clsVar(vP)}">${_fmtVar(vP)} vs ${prec}</div>` : ''}</div>
+    <div class="ekpi"><div class="k">Spesa ${anno}</div><div class="v num">${fmtEUR(agg.spesa)}</div>${vS != null ? `<div class="d ${_clsVar(vS)}">${_fmtVar(vS)} vs ${prec}</div>` : ''}</div>
+    <div class="ekpi"><div class="k">Consumo ${anno}</div><div class="v num">${agg.consumo.toLocaleString('it-IT')}<small> kWh</small></div>${vC != null ? `<div class="d ${_clsVar(vC)}">${_fmtVar(vC)} vs ${prec}</div>` : ''}</div>`;
+};
+const _renderKpi = (root) => _renderKpiIn(root.querySelector('#ekpis'), _annoKpi);
 
 const _renderSpike = (root) => {
   const serie = seriePrezzo(_tipoPrezzo);
@@ -262,4 +315,43 @@ const _renderSpike = (root) => {
   });
   cont.innerHTML = `<div class="spark spark-energia" ${dataAttr}>${svg}<div class="spark-vline"></div><div class="spark-tip"></div></div>`;
   agganciaSparkline(cont.querySelector('.spark'), (v) => v.toFixed(3) + ' €/kWh');
+};
+
+// Heatmap consumi mese x anno: celle colorate per intensità, valore dentro.
+const _renderHeatmap = (cont) => {
+  const { anni, celle, max } = heatmapConsumi();
+  const testata = `<div class="hm-lbl"></div>` + anni.map(a => `<div class="hm-head num">'${a.slice(2)}</div>`).join('');
+  const righe = Array.from({ length: 12 }, (_, m) => {
+    const mese = m + 1;
+    return `<div class="hm-lbl">${mese3(mese)}</div>` + anni.map(a => {
+      const v = celle[`${a}-${mese}`];
+      if (v == null) return `<div class="hm-cell vuota"></div>`;
+      const t = Math.min(1, v / max);
+      const alpha = 0.10 + t * 0.85;
+      const chiaro = t > 0.55;
+      return `<div class="hm-cell num" style="background:rgba(46,155,255,${alpha.toFixed(2)});color:${chiaro ? '#fff' : 'var(--txt-2)'}">${v}</div>`;
+    }).join('');
+  }).join('');
+  cont.innerHTML = `<div class="hm-grid" style="grid-template-columns:34px repeat(${anni.length},1fr)">${testata}${righe}</div>
+    <div class="eprice-note" style="margin-top:10px;padding:0 4px">kWh mensili · le bollette a cavallo di due mesi sono ripartite in proporzione ai giorni.</div>`;
+};
+
+// Confronto fornitori: €/kWh medio tutto compreso, dal più economico.
+const _renderFornitori = (cont, fornAttuale) => {
+  const forn = confrontoFornitori();
+  if (!forn.length) { cont.innerHTML = '<div class="empty">Nessun dato</div>'; return; }
+  const maxP = Math.max(...forn.map(f => f.eurKwh));
+  cont.innerHTML = forn.map((f, i) => {
+    const w = (f.eurKwh / maxP * 100).toFixed(0);
+    const attuale = f.fornitore === fornAttuale;
+    const migliore = i === 0;
+    return `<div class="fr-row">
+      <div class="fr-head">
+        <span class="fr-nome">${escapeHtml(f.fornitore)}${attuale ? ' <span class="fr-badge">attuale</span>' : ''}</span>
+        <span class="fr-val num">${f.eurKwh.toFixed(3)} €/kWh</span>
+      </div>
+      <div class="fr-bar"><div class="fr-fill" style="width:${w}%;background:${migliore ? 'linear-gradient(90deg,#22E39A,#5FC3FF)' : 'linear-gradient(90deg,#1C7BE0,#2E9BFF)'}"></div></div>
+      <div class="fr-sub">'${f.dal.slice(2, 4)}–'${f.al.slice(2, 4)} · ${f.n} bollette · ${f.kwh.toLocaleString('it-IT')} kWh · ${fmtEUR(f.spesa)}</div>
+    </div>`;
+  }).join('') + `<div class="eprice-note" style="margin-top:6px">Prezzo medio tutto compreso (bolletta ÷ kWh) sull'intero periodo con quel fornitore. Attenzione: epoche diverse hanno prezzi di mercato diversi.</div>`;
 };

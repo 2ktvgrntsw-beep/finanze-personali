@@ -57,7 +57,7 @@ export const renderRicerca = async (root, params = {}) => {
   root.innerHTML = `
     <div class="searchbar">
       <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-      <input id="q" placeholder="Cerca (usa la virgola: hotel, volo, treno)" value="${escapeHtml(_q)}" autocomplete="off">
+      <input id="q" placeholder="Cerca nella descrizione (virgola per più termini)" value="${escapeHtml(_q)}" autocomplete="off">
       <button id="q-clear" class="q-clear" aria-label="Cancella ricerca" style="display:${_q ? 'flex' : 'none'}">
         <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
       </button>

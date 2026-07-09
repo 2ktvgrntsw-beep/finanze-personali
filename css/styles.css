@@ -1400,3 +1400,21 @@ input:focus, input:focus-visible, select:focus, select:focus-visible, textarea:f
 .efasce-tip .et-row{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--txt-2);padding:2px 0}
 .efasce-tip .et-row i{width:8px;height:8px;border-radius:3px;flex:none}
 .efasce-tip .et-row b{margin-left:auto;color:var(--txt);font-weight:600}
+
+/* ═══ Energia dashboard v2: heatmap, fornitori, titolo cliccabile ═══ */
+.lbl-link{cursor:pointer;color:var(--blue-2);display:inline-flex;align-items:center;gap:2px}
+.lbl-link .lbl-chev{font-size:14px;line-height:1}
+.hm-grid{display:grid;gap:3px}
+.hm-head{font-size:9.5px;color:var(--txt-2);text-align:center;font-weight:600;padding-bottom:2px}
+.hm-lbl{font-size:9.5px;color:var(--txt-3);display:flex;align-items:center;font-weight:600}
+.hm-cell{border-radius:5px;font-size:8.5px;font-weight:600;display:flex;align-items:center;justify-content:center;min-height:24px;letter-spacing:-.02em}
+.hm-cell.vuota{background:var(--surface-3);opacity:.35}
+.fr-row{padding:9px 0;border-bottom:1px solid var(--line)}
+.fr-row:last-of-type{border-bottom:0}
+.fr-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
+.fr-nome{font-size:13.5px;font-weight:600}
+.fr-badge{background:rgba(34,227,154,.14);color:var(--up);font-size:10px;font-weight:600;padding:2px 7px;border-radius:7px;margin-left:6px;vertical-align:1px}
+.fr-val{font-size:13.5px;font-weight:700}
+.fr-bar{height:8px;background:var(--surface-3);border-radius:5px;overflow:hidden}
+.fr-fill{height:100%;border-radius:5px}
+.fr-sub{font-size:10.5px;color:var(--txt-3);margin-top:5px}
