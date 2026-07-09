@@ -1301,12 +1301,22 @@ input:focus, input:focus-visible, select:focus, select:focus-visible, textarea:f
 .elegend{display:flex;gap:12px;margin-bottom:14px}
 .elegend span{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--txt-2)}
 .elegend i{width:9px;height:9px;border-radius:3px;display:inline-block}
-.estack{display:flex;align-items:flex-end;gap:8px;height:150px}
-.escol{flex:1;display:flex;flex-direction:column;align-items:center;gap:7px;height:100%}
-.estot{font-size:10px;color:var(--txt-2);font-weight:600}
-.ebar-wrap{flex:1;width:100%;max-width:30px;margin:0 auto;display:flex;flex-direction:column-reverse;border-radius:5px 5px 0 0;overflow:hidden}
+.estack{display:block}
+.ebars-area{display:flex;align-items:flex-end;gap:6px}
+.escol{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:5px;cursor:pointer;transition:opacity .15s}
+.ebars-area.has-sel .escol:not(.sel){opacity:.35}
+.escol.sel .ebar-wrap{outline:1.5px solid var(--blue-2);outline-offset:2px}
+.estot{font-size:9.5px;color:var(--txt-2);font-weight:600;letter-spacing:-.02em}
+.ebar-wrap{width:100%;max-width:30px;margin:0 auto;display:flex;flex-direction:column-reverse;border-radius:5px 5px 0 0;overflow:hidden}
 .ebar-seg{width:100%}
 .eslbl{font-size:10px;color:var(--txt-3);font-weight:600}
+.ebar-detail{margin-top:12px;padding:10px 12px;background:var(--surface-3);border-radius:11px;min-height:40px}
+.ebar-detail .hint{font-size:11.5px;color:var(--txt-3)}
+.ebar-detail .ed-title{font-size:12.5px;font-weight:700;margin-bottom:6px}
+.ebar-detail .ed-rows{display:flex;flex-wrap:wrap;gap:6px 14px}
+.ebar-detail .ed-item{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--txt-2)}
+.ebar-detail .ed-item i{width:8px;height:8px;border-radius:3px;flex:none}
+.ebar-detail .ed-item b{color:var(--txt);font-weight:600}
 
 .eprice-toggle{display:flex;gap:4px;background:var(--surface-3);border-radius:9px;padding:3px}
 .eprice-toggle button{background:none;border:0;color:var(--txt-2);font-size:11px;font-weight:600;padding:5px 10px;border-radius:7px;cursor:pointer;font-family:var(--font)}

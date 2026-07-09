@@ -76,6 +76,7 @@ export const esportaBackup = async () => {
     ConsumoTot_kWh: b.kwhTot, F1_kWh: b.kwhF1, F2_kWh: b.kwhF2, F3_kWh: b.kwhF3,
     Totale: b.totale, MateriaEnergia: b.materia ?? '', Trasporto: b.trasporto ?? '',
     Oneri: b.oneri ?? '', Accise: b.accise ?? '', IVA: b.iva ?? '',
+    CanoneRAI: b.canone ?? '', Bonus: b.bonus ?? '', AltriImporti: b.altri ?? '',
     Completa: b.completa ? 'Sì' : 'No', Note: b.note || '',
   })));
 
@@ -214,6 +215,7 @@ export const importaBackup = async (file) => {
       kwhTot: intO(r.ConsumoTot_kWh), kwhF1: intO(r.F1_kWh), kwhF2: intO(r.F2_kWh), kwhF3: intO(r.F3_kWh),
       totale: numO(r.Totale) ?? 0, materia: numO(r.MateriaEnergia), trasporto: numO(r.Trasporto),
       oneri: numO(r.Oneri), accise: numO(r.Accise), iva: numO(r.IVA),
+      canone: numO(r.CanoneRAI), bonus: numO(r.Bonus), altri: numO(r.AltriImporti),
       completa: String(r.Completa).toLowerCase() !== 'no', note: r.Note || null, origine: 'backup',
     })).filter(b => b.dal && b.al && b.fornitore));
   }

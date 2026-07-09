@@ -74,7 +74,11 @@ export const renderBollettaForm = async (root) => {
         <div class="fld"><label>Oneri (€)</label><input type="text" inputmode="decimal" id="f-oneri" value="${val(b.oneri)}" class="sheet-input"></div>
         <div class="fld"><label>Accise (€)</label><input type="text" inputmode="decimal" id="f-accise" value="${val(b.accise)}" class="sheet-input"></div>
       </div>
-      <div class="fld"><label>IVA (€)</label><input type="text" inputmode="decimal" id="f-iva" value="${val(b.iva)}" class="sheet-input"></div>
+      <div class="frow">
+        <div class="fld"><label>IVA (€)</label><input type="text" inputmode="decimal" id="f-iva" value="${val(b.iva)}" class="sheet-input"></div>
+        <div class="fld"><label>Canone TV (€)</label><input type="text" inputmode="decimal" id="f-canone" value="${val(b.canone)}" class="sheet-input"></div>
+      </div>
+      <div class="fld"><label>Altri importi (€, anche negativi per sconti)</label><input type="text" inputmode="decimal" id="f-altri" value="${val(b.altri)}" class="sheet-input"></div>
     </div>
 
     <div style="margin-top:18px"><button class="btn btn-primary" id="f-salva">${esistente ? 'Salva modifiche' : 'Salva bolletta'}</button></div>
@@ -116,6 +120,7 @@ export const renderBollettaForm = async (root) => {
       totale,
       materia: numF('#f-materia'), trasporto: numF('#f-trasp'),
       oneri: numF('#f-oneri'), accise: numF('#f-accise'), iva: numF('#f-iva'),
+      canone: numF('#f-canone'), altri: numF('#f-altri'),
     };
     if (dati.kwhTot === 0 && dati.kwhF1 + dati.kwhF2 + dati.kwhF3 === 0) { toast('Inserisci il consumo in kWh'); return; }
 

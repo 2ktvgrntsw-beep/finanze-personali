@@ -249,42 +249,51 @@ export const _rigaBollettaHTML = (b) => {
 const _legendaHTML = (segmenti) => `<div class="elegend">${segmenti.map(s =>
   `<span><i style="background:${s.colore}"></i>${escapeHtml(s.nome)}</span>`).join('')}</div>`;
 
-// Barre impilate GENERICHE con tap -> popup dei valori assoluti.
+// Barre impilate GENERICHE, altezze PROPORZIONALI al totale. La selezione di una
+// barra (tap) evidenzia la colonna e mostra il dettaglio in un PANNELLO FISSO
+// sotto il grafico: niente popup che copre le barre.
 // dati: [{ label, valori: {k: v}, tot }] · segmenti: [{ k, nome, colore }]
-// fmtTip: formato valori nel popup · fmtTot: formato totale sopra la barra
 const _barreImpilate = (cont, dati, segmenti, fmtTip, fmtTot) => {
   if (!dati.length) { cont.innerHTML = '<div class="empty" style="padding:30px 0">Nessun dato</div>'; return; }
   const maxT = Math.max(...dati.map(d => d.tot), 1);
-  cont.innerHTML = dati.map((d, i) => {
-    const H = (d.tot / maxT * 100).toFixed(1);
+  const AREA = 118;   // px disponibili per la barra più alta
+  cont.innerHTML = `<div class="ebars-area">` + dati.map((d, i) => {
+    const hPx = Math.max(4, Math.round(d.tot / maxT * AREA));
+    const positivi = segmenti.map(s => Math.max(0, d.valori[s.k] || 0));
+    const sommaPos = positivi.reduce((a, b) => a + b, 0) || 1;
     return `<div class="escol" data-bar-idx="${i}">
       <div class="estot num">${fmtTot(d.tot)}</div>
-      <div class="ebar-wrap" style="height:${H}%">
-        ${segmenti.map(s => `<div class="ebar-seg" style="height:${d.tot ? (d.valori[s.k] / d.tot * 100).toFixed(1) : 0}%;background:${s.colore}"></div>`).join('')}
+      <div class="ebar-wrap" style="height:${hPx}px">
+        ${segmenti.map((s, j) => `<div class="ebar-seg" style="height:${(positivi[j] / sommaPos * 100).toFixed(1)}%;background:${s.colore}"></div>`).join('')}
       </div>
       <div class="eslbl">${escapeHtml(d.label)}</div>
     </div>`;
-  }).join('') + `<div class="efasce-tip"></div>`;
+  }).join('') + `</div><div class="ebar-detail"><span class="hint">Tocca una barra per il dettaglio</span></div>`;
 
-  const tip = cont.querySelector('.efasce-tip');
+  const area = cont.querySelector('.ebars-area');
+  const detail = cont.querySelector('.ebar-detail');
   let aperto = -1;
-  cont.querySelectorAll('[data-bar-idx]').forEach(col => {
-    col.addEventListener('click', () => {
-      const i = parseInt(col.dataset.barIdx);
-      if (aperto === i) { tip.classList.remove('on'); aperto = -1; return; }
-      aperto = i;
-      const d = dati[i];
-      tip.innerHTML = `<div class="et-title">${escapeHtml(d.label)} · <span class="num">${fmtTip(d.tot)}</span></div>` +
-        segmenti.map(s => `<div class="et-row"><i style="background:${s.colore}"></i>${escapeHtml(s.nome)} <b class="num">${fmtTip(d.valori[s.k] || 0)}</b></div>`).join('');
-      const colRect = col.getBoundingClientRect();
-      const contRect = cont.getBoundingClientRect();
-      const centro = colRect.left - contRect.left + colRect.width / 2;
-      tip.classList.add('on');
-      const tw = tip.offsetWidth;
-      let left = Math.max(0, Math.min(contRect.width - tw, centro - tw / 2));
-      tip.style.left = left + 'px';
-    });
-  });
+  const seleziona = (i) => {
+    if (aperto === i) {   // secondo tap: deseleziona
+      aperto = -1;
+      area.classList.remove('has-sel');
+      area.querySelectorAll('.escol').forEach(c => c.classList.remove('sel'));
+      detail.innerHTML = '<span class="hint">Tocca una barra per il dettaglio</span>';
+      return;
+    }
+    aperto = i;
+    area.classList.add('has-sel');
+    area.querySelectorAll('.escol').forEach((c, j) => c.classList.toggle('sel', j === i));
+    const d = dati[i];
+    detail.innerHTML = `<div class="ed-title">${escapeHtml(d.label)} · <b class="num">${fmtTip(d.tot)}</b></div>
+      <div class="ed-rows">${segmenti.map(s => {
+        const v = d.valori[s.k] || 0;
+        if (Math.abs(v) < 0.005) return '';
+        return `<span class="ed-item"><i style="background:${s.colore}"></i>${escapeHtml(s.nome)} <b class="num">${fmtTip(v)}</b></span>`;
+      }).join('')}</div>`;
+  };
+  area.querySelectorAll('[data-bar-idx]').forEach(col =>
+    col.addEventListener('click', () => seleziona(parseInt(col.dataset.barIdx))));
 };
 
 // Card KPI di un anno dentro un contenitore.
@@ -317,9 +326,17 @@ const _renderSpike = (root) => {
   agganciaSparkline(cont.querySelector('.spark'), (v) => v.toFixed(3) + ' €/kWh');
 };
 
-// Heatmap consumi mese x anno: celle colorate per intensità, valore dentro.
+// Heatmap consumi mese x anno: scala TERMICA ambra -> rosso (più caldo = più
+// consumo, come una mappa di calore vera). Fuori palette Cockpit di proposito:
+// qui il colore È l'informazione.
 const _renderHeatmap = (cont) => {
   const { anni, celle, max } = heatmapConsumi();
+  const C1 = [255, 176, 32], C2 = [255, 59, 92];   // ambra -> rosso neon
+  const colore = (t) => {
+    const c = C1.map((a, i) => Math.round(a + (C2[i] - a) * t));
+    const alpha = 0.14 + t * 0.8;
+    return `rgba(${c[0]},${c[1]},${c[2]},${alpha.toFixed(2)})`;
+  };
   const testata = `<div class="hm-lbl"></div>` + anni.map(a => `<div class="hm-head num">'${a.slice(2)}</div>`).join('');
   const righe = Array.from({ length: 12 }, (_, m) => {
     const mese = m + 1;
@@ -327,9 +344,7 @@ const _renderHeatmap = (cont) => {
       const v = celle[`${a}-${mese}`];
       if (v == null) return `<div class="hm-cell vuota"></div>`;
       const t = Math.min(1, v / max);
-      const alpha = 0.10 + t * 0.85;
-      const chiaro = t > 0.55;
-      return `<div class="hm-cell num" style="background:rgba(46,155,255,${alpha.toFixed(2)});color:${chiaro ? '#fff' : 'var(--txt-2)'}">${v}</div>`;
+      return `<div class="hm-cell num" style="background:${colore(t)};color:${t > 0.45 ? '#fff' : 'var(--txt-2)'}">${v}</div>`;
     }).join('');
   }).join('');
   cont.innerHTML = `<div class="hm-grid" style="grid-template-columns:34px repeat(${anni.length},1fr)">${testata}${righe}</div>

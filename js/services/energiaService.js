@@ -110,15 +110,18 @@ export const ripartizioneFasce = (nUltime = 6) => {
 
 // Composizione della spesa di una bolletta (per il dettaglio).
 export const composizioneBolletta = (b) => {
+  const altro = _altroDi(b);
   const voci = [
     { nome: 'Materia energia', val: b.materia, colore: '#2E9BFF' },
     { nome: 'Trasporto/contatore', val: b.trasporto, colore: '#5FC3FF' },
     { nome: 'IVA', val: b.iva, colore: '#7B6CFF' },
     { nome: 'Oneri di sistema', val: b.oneri, colore: '#9D8FFF' },
     { nome: 'Accise', val: b.accise, colore: '#22E39A' },
-  ].filter(v => v.val != null && v.val > 0);
-  const somma = voci.reduce((s, v) => s + v.val, 0) || 1;
-  return voci.map(v => ({ ...v, pct: Math.round(v.val / somma * 100) }));
+    { nome: 'Canone TV', val: b.canone, colore: '#8B96AB' },
+    { nome: 'Altro/sconti', val: Math.abs(altro) >= 0.01 ? altro : null, colore: '#535E72' },
+  ].filter(v => v.val != null && v.val !== 0);
+  const somma = voci.reduce((s, v) => s + Math.max(0, v.val), 0) || 1;
+  return voci.map(v => ({ ...v, pct: Math.round(Math.max(0, v.val) / somma * 100) }));
 };
 
 // Statistiche globali (per eventuali insight).
@@ -162,6 +165,9 @@ export const componiBolletta = (d, idEsistente) => {
     oneri: d.oneri != null ? round2(d.oneri) : null,
     accise: d.accise != null ? round2(d.accise) : null,
     iva: d.iva != null ? round2(d.iva) : null,
+    canone: d.canone != null ? round2(d.canone) : null,
+    bonus: null,
+    altri: d.altri != null ? round2(d.altri) : null,
     completa: true,
     note: d.note || null,
     origine: 'manuale',
@@ -224,23 +230,35 @@ export const heatmapConsumi = () => {
 };
 
 // Voci di costo di una bolletta (chiave, etichetta, colore) — ordine e palette
-// unici per scomposizioni e dettaglio.
+// unici per scomposizioni e dettaglio. 'altro' è DERIVATA: totale − voci note
+// (ingloba bonus/sconti, altri importi e ricalcoli), così la somma dei segmenti
+// coincide SEMPRE con la spesa reale e i totali quadrano con le card.
 export const VOCI_COSTO = [
   { k: 'materia', nome: 'Materia energia', colore: '#2E9BFF' },
   { k: 'trasporto', nome: 'Trasporto', colore: '#5FC3FF' },
   { k: 'oneri', nome: 'Oneri', colore: '#9D8FFF' },
   { k: 'accise', nome: 'Accise', colore: '#22E39A' },
   { k: 'iva', nome: 'IVA', colore: '#7B6CFF' },
+  { k: 'canone', nome: 'Canone TV', colore: '#8B96AB' },
+  { k: 'altro', nome: 'Altro', colore: '#535E72' },
 ];
 
+// 'altro' della singola bolletta = totale − tutte le voci note (canone incluso).
+// Include bonus (negativi), altri importi e residui di arrotondamento.
+const _altroDi = (b) => {
+  const note = (b.materia || 0) + (b.trasporto || 0) + (b.oneri || 0) + (b.accise || 0) + (b.iva || 0) + (b.canone || 0);
+  return round2((b.totale || 0) - note);
+};
+const _voceDi = (b, k) => k === 'altro' ? _altroDi(b) : (b[k] || 0);
+
 // Scomposizione delle voci di costo ANNO PER ANNO (barre impilate in €).
-// Ritorna [{ anno, materia, trasporto, oneri, accise, iva, tot }].
+// tot = SPESA REALE dell'anno (somma bollette): quadra con le card KPI.
 export const scomposizioneCostiAnnuale = () => {
   return anniDisponibili().slice().reverse().map(anno => {
     const boll = bolletteComplete().filter(b => (b.al || '').startsWith(anno));
-    const r = { anno, tot: 0 };
-    for (const { k } of VOCI_COSTO) r[k] = round2(boll.reduce((s, b) => s + (b[k] || 0), 0));
-    r.tot = round2(VOCI_COSTO.reduce((s, { k }) => s + r[k], 0));
+    const r = { anno };
+    for (const { k } of VOCI_COSTO) r[k] = round2(boll.reduce((s, b) => s + _voceDi(b, k), 0));
+    r.tot = round2(boll.reduce((s, b) => s + b.totale, 0));
     return r;
   });
 };
@@ -255,7 +273,7 @@ export const scomposizioneCostiMensile = (anno) => {
   });
   for (const b of bolletteComplete()) {
     for (const { k } of VOCI_COSTO) {
-      for (const q of _distribuisciSuiMesi(b, x => x[k])) {
+      for (const q of _distribuisciSuiMesi(b, x => _voceDi(x, k))) {
         if (q.anno === String(anno)) mesi[q.mese - 1][k] += q.quota;
       }
     }
