@@ -9,13 +9,22 @@ import { dbBulkPut, dbAdd, dbGet, dbCount } from './db.js';
 const FLAG = 'seed_bollette_completato';
 const FLAG_V2 = 'seed_bollette_v2';   // v2: aggiunti canone RAI, bonus, altri importi
 
+// Bolletta campione del seed che HA il canone: se nel DB ne esiste una versione
+// SENZA, i dati sono rimasti alla v1 (es. ripristino di un backup fatto con una
+// versione precedente: il backup non include i flag di migrazione) e vanno riallineati.
+const _campioneV2 = () => BOLLETTE_SEED.find(b => b.canone != null);
+
 export const seedBolletteSeNecessario = async () => {
   const gia = await dbGet('meta', FLAG);
   if (gia && gia.valore === true) {
-    // MIGRAZIONE v2: chi ha già il seed v1 in pancia riceve i campi canone/bonus/altri.
-    // Sovrascrivo SOLO le bollette del seed (stessi id); quelle inserite a mano restano intatte.
+    // MIGRAZIONE v2 basata sui DATI (non solo sul flag): sovrascrivo le bollette
+    // del seed con la versione completa se il campione in DB risulta ancora v1.
+    // Copre anche il caso "backup vecchio ripristinato dopo l'aggiornamento".
     const v2 = await dbGet('meta', FLAG_V2);
-    if (!v2 || v2.valore !== true) {
+    const campione = _campioneV2();
+    const inDb = campione ? await dbGet('bollette', campione.id) : null;
+    const datiVecchi = inDb && inDb.canone == null;
+    if (!v2 || v2.valore !== true || datiVecchi) {
       await dbBulkPut('bollette', BOLLETTE_SEED);
       await dbAdd('meta', { chiave: FLAG_V2, valore: true, data: new Date().toISOString() });
       return true;

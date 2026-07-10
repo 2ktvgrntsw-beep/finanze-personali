@@ -29,6 +29,15 @@ export const renderBollettaForm = async (root) => {
   const val = (v) => v == null ? '' : String(v).replace('.', ',');
 
   root.innerHTML = `
+    ${!esistente ? `
+    <div class="card" style="padding:12px 14px;margin-bottom:12px">
+      <button class="btn btn-secondary" id="pdf-import" style="width:100%;display:flex;align-items:center;justify-content:center;gap:8px">
+        <svg viewBox="0 0 24 24" style="width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.9"><path d="M14 3v5h5M14 3H6a1.5 1.5 0 0 0-1.5 1.5v15A1.5 1.5 0 0 0 6 21h12a1.5 1.5 0 0 0 1.5-1.5V8L14 3z"/><path d="M12 11v6M9.5 14.5 12 17l2.5-2.5"/></svg>
+        Importa da PDF bolletta
+      </button>
+      <input type="file" id="pdf-file" accept="application/pdf" hidden>
+      <div class="eprice-note" style="margin-top:8px;margin-bottom:0">Legge le bollette digitali Dolomiti Energia e precompila i campi: verifica sempre i valori prima di salvare.</div>
+    </div>` : ''}
     <div class="card">
       <div class="fld"><label>Fornitore</label>
         <input id="f-forn" list="forn-list" value="${escapeHtml(b.fornitore || '')}" placeholder="Es. Enel, ENGIE…" class="sheet-input" autocomplete="off">
@@ -98,6 +107,49 @@ export const renderBollettaForm = async (root) => {
     root.querySelectorAll('#f-tariffa button').forEach(x => x.classList.toggle('on', x === btn));
     applicaTariffa();
   });
+
+  // ── IMPORT DA PDF (solo nuova bolletta): estrae i dati e precompila i campi.
+  // L'utente resta l'ultimo controllo: verifica e salva.
+  const pdfBtn = root.querySelector('#pdf-import');
+  if (pdfBtn) {
+    const pdfFile = root.querySelector('#pdf-file');
+    pdfBtn.addEventListener('click', () => pdfFile.click());
+    pdfFile.addEventListener('change', async () => {
+      const file = pdfFile.files && pdfFile.files[0];
+      if (!file) return;
+      pdfBtn.disabled = true;
+      const testoBtn = pdfBtn.innerHTML;
+      pdfBtn.innerHTML = 'Lettura in corso…';
+      try {
+        const { estraiBollettaDaPDF } = await import('../services/pdfBolletta.js');
+        const { dati, campiTrovati } = await estraiBollettaDaPDF(file);
+        const setV = (sel, v) => { const el = root.querySelector(sel); if (el && v != null) el.value = String(v).replace('.', ','); };
+        if (dati.fornitore) root.querySelector('#f-forn').value = dati.fornitore;
+        if (dati.offerta) root.querySelector('#f-off').value = dati.offerta;
+        if (dati.dal) root.querySelector('#f-dal').value = dati.dal;
+        if (dati.al) root.querySelector('#f-al').value = dati.al;
+        // fasce presenti -> vista Bioraria (dati più ricchi); altrimenti Monoraria col totale
+        if (dati.kwhF1 != null) {
+          root.querySelector('#f-tariffa [data-t="Bioraria"]').click();
+          setV('#f-f1', dati.kwhF1); setV('#f-f2', dati.kwhF2); setV('#f-f3', dati.kwhF3);
+        } else if (dati.kwhTot != null) {
+          root.querySelector('#f-tariffa [data-t="Monoraria"]').click();
+          setV('#f-kwhtot', dati.kwhTot);
+        }
+        setV('#f-tot', dati.totale);
+        setV('#f-materia', dati.materia); setV('#f-trasp', dati.trasporto);
+        setV('#f-oneri', dati.oneri); setV('#f-accise', dati.accise);
+        setV('#f-iva', dati.iva); setV('#f-canone', dati.canone);
+        toast(`Letti ${campiTrovati} campi dal PDF: verifica i valori e salva`);
+      } catch (err) {
+        toast(err.message || 'Lettura PDF non riuscita');
+      } finally {
+        pdfBtn.disabled = false;
+        pdfBtn.innerHTML = testoBtn;
+        pdfFile.value = '';
+      }
+    });
+  }
 
   root.querySelector('#f-salva').addEventListener('click', async () => {
     const numF = (id) => { const v = root.querySelector(id).value.trim().replace(',', '.'); return v === '' ? null : parseFloat(v); };
