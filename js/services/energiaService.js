@@ -117,8 +117,8 @@ export const composizioneBolletta = (b) => {
     { nome: 'IVA', val: b.iva, colore: '#7B6CFF' },
     { nome: 'Oneri di sistema', val: b.oneri, colore: '#9D8FFF' },
     { nome: 'Accise', val: b.accise, colore: '#22E39A' },
-    { nome: 'Canone TV', val: b.canone, colore: '#8B96AB' },
-    { nome: 'Altro/sconti', val: Math.abs(altro) >= 0.01 ? altro : null, colore: '#535E72' },
+    { nome: 'Canone TV', val: b.canone, colore: '#FFB020' },
+    { nome: 'Altro/sconti', val: Math.abs(altro) >= 0.01 ? altro : null, colore: '#C9D3E3' },
   ].filter(v => v.val != null && v.val !== 0);
   const somma = voci.reduce((s, v) => s + Math.max(0, v.val), 0) || 1;
   return voci.map(v => ({ ...v, pct: Math.round(Math.max(0, v.val) / somma * 100) }));
@@ -239,8 +239,8 @@ export const VOCI_COSTO = [
   { k: 'oneri', nome: 'Oneri', colore: '#9D8FFF' },
   { k: 'accise', nome: 'Accise', colore: '#22E39A' },
   { k: 'iva', nome: 'IVA', colore: '#7B6CFF' },
-  { k: 'canone', nome: 'Canone TV', colore: '#8B96AB' },
-  { k: 'altro', nome: 'Altro', colore: '#535E72' },
+  { k: 'canone', nome: 'Canone TV', colore: '#FFB020' },
+  { k: 'altro', nome: 'Altro', colore: '#C9D3E3' },
 ];
 
 // 'altro' della singola bolletta = totale − tutte le voci note (canone incluso).

@@ -1298,7 +1298,7 @@ input:focus, input:focus-visible, select:focus, select:focus-visible, textarea:f
 .eyear button{background:none;border:0;color:var(--txt-2);font-size:16px;cursor:pointer;padding:0 6px;line-height:1}
 .eyear .num{font-size:14px;font-weight:600;min-width:38px;text-align:center}
 
-.elegend{display:flex;gap:12px;margin-bottom:14px}
+.elegend{display:flex;flex-wrap:wrap;gap:6px 12px;margin-bottom:14px}
 .elegend span{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--txt-2)}
 .elegend i{width:9px;height:9px;border-radius:3px;display:inline-block}
 .estack{display:block}
