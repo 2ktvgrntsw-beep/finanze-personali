@@ -1428,3 +1428,45 @@ input:focus, input:focus-visible, select:focus, select:focus-visible, textarea:f
 .fr-bar{height:8px;background:var(--surface-3);border-radius:5px;overflow:hidden}
 .fr-fill{height:100%;border-radius:5px}
 .fr-sub{font-size:10.5px;color:var(--txt-3);margin-top:5px}
+
+/* ═══ Patrimonio: storico obiettivi ═══ */
+.ob-storico-riga{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--line);cursor:pointer}
+.ob-storico-riga:last-child{border-bottom:0}
+.ob-anno{font-size:14px;font-weight:700;color:var(--txt-2);min-width:44px}
+.ob-col{display:flex;flex-direction:column;flex:1}
+.ob-col .lbl2{font-size:9.5px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.05em}
+.ob-col b{font-size:13px;font-weight:650}
+.ob-pct{font-size:14px;font-weight:750;min-width:48px;text-align:right}
+.ob-pct.ok{color:var(--up)}
+.ob-pct.ko{color:var(--txt-2)}
+
+/* chip anno nel pannello filtri del Cerca */
+.anno-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.anno-chip{background:var(--surface-3);border:1px solid var(--line);color:var(--txt-2);font-size:12px;font-weight:650;font-family:var(--font-inst);padding:6px 11px;border-radius:9px;cursor:pointer}
+.anno-chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+
+/* ═══ Panieri (analisi) ═══ */
+.paniere-riga{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);cursor:pointer}
+.paniere-riga:last-child{border-bottom:0}
+.paniere-nome{flex:1;font-size:14px;font-weight:650}
+.paniere-voci{display:block;font-size:10.5px;color:var(--txt-3);font-weight:500;margin-top:2px}
+.paniere-tot{text-align:right}
+.paniere-tot .lbl2{display:block;font-size:9.5px;color:var(--txt-3);text-transform:uppercase}
+.paniere-tot b{font-size:14px;font-weight:700}
+.paniere-anno-riga{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.paniere-anno-riga:last-child{border-bottom:0}
+.paniere-anno-riga .anno{color:var(--txt-2);font-weight:700;min-width:48px}
+.paniere-anno-riga b{flex:1;font-size:14px}
+.paniere-anno-riga .delta{font-size:12.5px;font-weight:700;min-width:52px;text-align:right}
+.paniere-anno-riga .delta.ok{color:var(--up)}
+.paniere-anno-riga .delta.ko{color:var(--down)}
+.pv-albero{max-height:290px;overflow-y:auto;background:var(--surface-3);border-radius:11px;padding:6px 10px;margin-top:6px}
+.pv-riga{display:flex;align-items:center;gap:10px;padding:9px 0}
+.pv-riga.liv-1{padding-left:22px}
+.pv-riga.liv-2{padding-left:44px}
+.pv-check{width:20px;height:20px;border-radius:6px;border:2px solid var(--txt-3);flex:none;cursor:pointer;position:relative}
+.pv-check.on{background:var(--accent);border-color:var(--accent)}
+.pv-check.on::after{content:'✓';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700}
+.pv-nome{flex:1;font-size:13.5px;cursor:pointer}
+.pv-exp{padding:4px 8px;color:var(--txt-3);cursor:pointer;font-size:12px}
+.pv-conta{font-size:11.5px;color:var(--blue-2);margin-top:8px;min-height:15px}

@@ -134,3 +134,13 @@ const _serieStoricoCalcolo = (escludiTipi = []) => {
 
   return { punti, primoReale };
 };
+
+// Patrimonio LIQUIDO a fine anno (per lo storico obiettivi): l'ultimo punto
+// disponibile dell'anno nella serie storica senza gli asset. Per l'anno in corso
+// è il valore attuale.
+export const liquidoFineAnno = (anno) => {
+  const { punti } = serieStoricoPatrimonio(['asset']);
+  const dellAnno = punti.filter(p => p.annomese.startsWith(String(anno)));
+  if (!dellAnno.length) return null;
+  return dellAnno[dellAnno.length - 1].valore;
+};

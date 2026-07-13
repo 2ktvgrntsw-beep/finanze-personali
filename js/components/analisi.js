@@ -11,6 +11,7 @@ import { iconaMacro } from '../core/icons.js';
 import { navigate, buildHash } from '../core/router.js';
 import { abilitaSwipeIndietro } from './shared.js';
 import { spesePerAnno, aggregaPerLivello, soloSpese } from '../services/movimentiService.js';
+import { panieriSezioneHTML, bindPanieri } from './panieri.js';
 import { listaMacro, categoriaHaSub } from '../services/categorieService.js';
 
 let _tab = 'categoria';   // 'categoria' | 'anno' | 'tag'
@@ -67,8 +68,10 @@ const _renderCategoriaTempo = (body, root) => {
       <p class="meta" style="margin:14px 4px">Scegli una categoria e guarda come è cambiata negli anni.</p>
       <div class="cat-grid" style="margin-top:6px">
         ${macros.map(m => `<div class="cat-cell" data-macro="${escapeHtml(m)}"><div class="ci">${iconaMacro(m)}</div><span>${escapeHtml(m)}</span></div>`).join('')}
-      </div>`;
+      </div>
+      ${panieriSezioneHTML()}`;
     body.querySelectorAll('[data-macro]').forEach(el => el.addEventListener('click', () => { location.hash = buildHash('analisi', { macro: el.dataset.macro }); }));
+    bindPanieri(body);
     return;
   }
 

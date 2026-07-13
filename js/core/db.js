@@ -4,7 +4,7 @@
 // aggiungere store/indici senza perdere i dati esistenti dell'utente.
 
 const DB_NAME = 'FinanzePersonaliDB';
-const DB_VERSION = 2;   // v2: aggiunto lo store 'bollette' (sezione Energia)
+const DB_VERSION = 3;   // v3: store 'obiettivi' (liquidità per anno) e 'panieri' (analisi)
 
 // Dichiarazione centralizzata degli store. Aggiungere qui una nuova voce è tutto
 // ciò che serve per introdurre una nuova "tabella" in futuro.
@@ -26,6 +26,8 @@ const STORES = {
   finanziamenti:  { keyPath: 'id' },
   eventiMutuo:    { keyPath: 'id' },          // estinzioni, rinegoziazioni ecc.
   suggerimenti:   { keyPath: 'chiave' },      // motore suggerimenti descrizione->classificazione
+  obiettivi:      { keyPath: 'anno' },        // obiettivo liquidità per anno (storicizzato)
+  panieri:        { keyPath: 'id' },          // panieri di voci per l'analisi pluriennale
   meta:           { keyPath: 'chiave' },      // flag di sistema (es. seed completato)
   bollette:       { keyPath: 'id', indexes: [ // bollette energia elettrica (sezione Energia)
                       { name: 'al', keyPath: 'al' },

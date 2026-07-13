@@ -2,7 +2,7 @@
 // Stessa grammatica a barre della home, ma le barre pesano sul patrimonio.
 // I valori (casa, saldi conti) si modificano toccandoli direttamente (no icone matita).
 
-import { state } from '../core/store.js';
+import { state, refreshAll } from '../core/store.js';
 import { dbGet, dbAdd, dbDelete, safeWrite } from '../core/db.js';
 import { contoDiTrasferimento, eInvestimento, strumentoDiTrasferimento } from '../services/attribuzioneInvestimenti.js';
 import { costruisciSparkline, agganciaSparkline } from '../core/sparkline.js';
@@ -13,6 +13,7 @@ import { saldoStimato, saveConto, LABEL_TIPO } from '../services/contiService.js
 import {
   totaleAttivita, totalePassivita, patrimonioNetto, composizioneAttivita, patrimonioLiquido,
   salvaSnapshotMese, snapshotMeseMancante, serieStoricoPatrimonio,
+  liquidoFineAnno,
 } from '../services/patrimonioService.js';
 import { statoPrestito } from '../services/prestitiService.js';
 import { apriSheet } from './shared.js';
@@ -43,12 +44,24 @@ export const renderPatrimonio = async (root) => {
     const rec = await dbGet('meta', CHIAVE_ORDINE);
     if (rec && Array.isArray(rec.valore) && rec.valore.length === 4) _ordineGruppi = rec.valore;
   } catch { /* default */ }
-  // carico l'obiettivo di patrimonio liquido salvato
+  // Obiettivo liquidità: vive nello store 'obiettivi' PER ANNO (storicizzato e
+  // incluso nel backup). MIGRAZIONE una tantum dal vecchio formato in 'meta':
+  // se esiste, lo copio nel suo anno e lo rimuovo per non ripetere.
   try {
-    const rec = await dbGet('meta', CHIAVE_OBIETTIVO);
-    if (rec && typeof rec.valore === 'number') _obiettivoLiquido = rec.valore;
-    if (rec && rec.anno && rec.anno !== new Date().getFullYear()) _obiettivoLiquido = null; // obiettivo di un altro anno: azzero
-  } catch { /* nessun obiettivo */ }
+    const vecchio = await dbGet('meta', CHIAVE_OBIETTIVO);
+    if (vecchio && typeof vecchio.valore === 'number') {
+      const annoV = vecchio.anno || new Date().getFullYear();
+      const giaNuovo = state.obiettivi.find(o => o.anno === annoV);
+      if (!giaNuovo) {
+        await dbAdd('obiettivi', { anno: annoV, target: vecchio.valore });
+        await refreshAll();
+      }
+      await dbDelete('meta', CHIAVE_OBIETTIVO);
+    }
+  } catch { /* nessuna migrazione */ }
+  const annoOggi = new Date().getFullYear();
+  const obOggi = state.obiettivi.find(o => o.anno === annoOggi);
+  _obiettivoLiquido = obOggi ? obOggi.target : null;
   const esclusi = [..._tipiEsclusi];
   const netto = patrimonioNetto(esclusi);
   const att = totaleAttivita(esclusi);
@@ -107,6 +120,7 @@ export const renderPatrimonio = async (root) => {
     </div>
 
     ${cardObiettivo}
+    ${_storicoObiettiviHTML(annoCorrente)}
 
     ${_contiCollassabiliHTML()}
 
@@ -221,6 +235,25 @@ export const renderPatrimonio = async (root) => {
   // obiettivo liquido: apri lo sheet per impostarlo/modificarlo
   const setObBtn = root.querySelector('#set-obiettivo');
   if (setObBtn) setObBtn.addEventListener('click', () => _impostaObiettivo(root));
+
+  // storico obiettivi: tap su una riga per modificare quell'anno
+  root.querySelectorAll('[data-ob-anno]').forEach(el =>
+    el.addEventListener('click', () => _impostaObiettivo(root, parseInt(el.dataset.obAnno))));
+  // "+ anno passato": scegli l'anno e imposta l'obiettivo retroattivo
+  const obPassato = root.querySelector('#ob-passato');
+  if (obPassato) obPassato.addEventListener('click', () => {
+    const annoCorr = new Date().getFullYear();
+    const anni = [];
+    for (let a = annoCorr - 1; a >= annoCorr - 12; a--) anni.push(a);
+    apriSheet('Obiettivo di quale anno?', anni.map(a =>
+      `<button class="btn btn-secondary mm-btn" data-anno-ob="${a}">${a}${state.obiettivi.find(o => o.anno === a) ? ' · già impostato' : ''}</button>`
+    ).join(''), (body, chiudi) => {
+      body.querySelectorAll('[data-anno-ob]').forEach(b => b.addEventListener('click', () => {
+        const a = parseInt(b.dataset.annoOb);
+        chiudi(); _impostaObiettivo(root, a);
+      }));
+    });
+  });
 };
 
 // interattività del grafico patrimonio: delega al modulo condiviso sparkline.js
@@ -293,31 +326,32 @@ const _modificaConto = (root, contoId) => {
 // strumenti (PAC, Crypto, Azioni sciolte) ricavati dai trasferimenti. I conti sono
 // riordinabili (campo 'ordine').
 // Sheet per impostare/modificare l'obiettivo di patrimonio liquido dell'anno.
-const _impostaObiettivo = (root) => {
-  const anno = new Date().getFullYear();
-  const valoreCorrente = _obiettivoLiquido != null ? String(_obiettivoLiquido).replace('.', ',') : '';
+const _impostaObiettivo = (root, annoScelto = null) => {
+  const anno = annoScelto || new Date().getFullYear();
+  const esistente = state.obiettivi.find(o => o.anno === anno);
+  const valoreCorrente = esistente ? String(esistente.target).replace('.', ',') : '';
   apriSheet(`Obiettivo liquido ${anno}`, `
     <p class="meta" style="margin-bottom:10px;line-height:1.5">Quanto vuoi avere in liquidità, risparmio e investimenti entro fine ${anno}? (esclusi i beni come la casa)</p>
     <label class="meta">Obiettivo (€)</label>
     <input type="text" inputmode="decimal" id="ob-val" value="${valoreCorrente}" placeholder="Es. 50000" class="sheet-input">
     <div class="btn-row">
-      ${_obiettivoLiquido != null ? '<button class="btn btn-danger" id="ob-del">Rimuovi</button>' : ''}
+      ${esistente ? '<button class="btn btn-danger" id="ob-del">Rimuovi</button>' : ''}
       <button class="btn btn-primary" id="ob-ok">Salva</button>
     </div>
   `, (body, chiudi) => {
     body.querySelector('#ob-ok').addEventListener('click', async () => {
       const val = parseFloat(String(body.querySelector('#ob-val').value).replace(',', '.'));
       if (!val || val <= 0) { toast('Inserisci un importo valido'); return; }
-      const ok = await safeWrite(() => dbAdd('meta', { chiave: CHIAVE_OBIETTIVO, valore: val, anno }), 'Obiettivo non salvato');
+      const ok = await safeWrite(async () => { await dbAdd('obiettivi', { anno, target: val }); await refreshAll(); }, 'Obiettivo non salvato');
       if (!ok) return;
-      _obiettivoLiquido = val;
+      if (anno === new Date().getFullYear()) _obiettivoLiquido = val;
       chiudi(); toast('Obiettivo salvato'); renderPatrimonio(root);
     });
     const del = body.querySelector('#ob-del');
     if (del) del.addEventListener('click', async () => {
-      const ok = await safeWrite(() => dbDelete('meta', CHIAVE_OBIETTIVO), 'Obiettivo non rimosso');
+      const ok = await safeWrite(async () => { await dbDelete('obiettivi', anno); await refreshAll(); }, 'Obiettivo non rimosso');
       if (!ok) return;
-      _obiettivoLiquido = null;
+      if (anno === new Date().getFullYear()) _obiettivoLiquido = null;
       chiudi(); toast('Obiettivo rimosso'); renderPatrimonio(root);
     });
   });
@@ -325,6 +359,31 @@ const _impostaObiettivo = (root) => {
 
 // Card OBIETTIVO patrimonio liquido per l'anno in corso: confronto tra il liquido
 // attuale (liquidità+risparmio+investimenti) e l'obiettivo impostato dall'utente.
+// Storico obiettivi: per ogni anno passato con obiettivo, confronto tra il
+// traguardo e il liquido raggiunto a fine anno. Rimane in archivio per sempre
+// (e viaggia nel backup, essendo in uno store dati).
+function _storicoObiettiviHTML(annoCorrente) {
+  const passati = state.obiettivi
+    .filter(o => o.anno < annoCorrente)
+    .sort((a, b) => b.anno - a.anno);
+  const righe = passati.map(o => {
+    const raggiunto = liquidoFineAnno(o.anno);
+    const pct = raggiunto != null && o.target > 0 ? Math.round(raggiunto / o.target * 100) : null;
+    const ok = pct != null && pct >= 100;
+    return `<div class="ob-storico-riga" data-ob-anno="${o.anno}">
+      <span class="ob-anno num">${o.anno}</span>
+      <span class="ob-col"><span class="lbl2">Obiettivo</span><b class="num">${fmtEUR(o.target)}</b></span>
+      <span class="ob-col"><span class="lbl2">Raggiunto</span><b class="num">${raggiunto != null ? fmtEUR(raggiunto) : '—'}</b></span>
+      <span class="ob-pct num ${ok ? 'ok' : 'ko'}">${pct != null ? pct + '%' : '—'}</span>
+    </div>`;
+  }).join('');
+  return `
+    <div class="section-lbl"><span>Storico obiettivi</span><span class="act" id="ob-passato">+ anno passato</span></div>
+    <div class="card" style="padding:${passati.length ? '4px 14px' : '14px'}">
+      ${passati.length ? righe : '<div class="empty" style="padding:6px 0">Nessun obiettivo archiviato. Aggiungi quelli degli anni passati per costruire lo storico.</div>'}
+    </div>`;
+}
+
 function _obiettivoLiquidoHTML(liquidoAttuale, anno) {
   if (_obiettivoLiquido == null) {
     // nessun obiettivo: invito a impostarlo

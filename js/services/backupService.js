@@ -9,7 +9,10 @@ import { refreshAll } from '../core/store.js';
 
 const CHIAVE_BACKUP = '_backup_auto';
 const CHIAVE_ULTIMO_EXCEL = '_ultimo_backup_excel';
-const STORE_DATI = ['movimenti', 'conti', 'categorie', 'tag', 'ricorrenti', 'mutuo', 'finanziamenti', 'eventiMutuo', 'bollette'];
+// TUTTI gli store con dati dell'utente ('meta' esclusa: contiene flag interni e il
+// backup automatico stesso). Se manca uno store qui, i suoi dati NON sopravvivono
+// al ripristino: è già successo con l'obiettivo liquidità, non deve ripetersi.
+const STORE_DATI = ['movimenti', 'conti', 'categorie', 'tag', 'ricorrenti', 'regole', 'snapshot', 'mutuo', 'finanziamenti', 'eventiMutuo', 'suggerimenti', 'bollette', 'obiettivi', 'panieri'];
 
 // Salva una copia interna di tutti i dati (chiamata a ogni avvio, dopo il refresh).
 export const salvaBackupAuto = async () => {

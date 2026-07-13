@@ -19,6 +19,8 @@ export const state = {
   eventiMutuo: [],
   suggerimenti: [],
   bollette: [],           // bollette energia elettrica (sezione Energia)
+  obiettivi: [],          // obiettivi liquidità per anno [{anno, target}]
+  panieri: [],            // panieri di voci per analisi [{id, nome, voci}]
   // indici derivati (ricalcolati a ogni refresh)
   _idxMovByMese: {},      // '2026-06' -> [movimenti]
   _idxContoByNome: {},    // nome conto -> conto
@@ -31,11 +33,12 @@ const _notify = () => _subs.forEach(fn => { try { fn(); } catch (e) { console.er
 
 // Ricarica tutto lo stato da IndexedDB e ricostruisce gli indici.
 export const refreshAll = async () => {
-  const [movimenti, conti, categorie, tag, ricorrenti, regole, snapshot, mutuoArr, finanziamenti, eventiMutuo, suggerimenti, bollette] =
+  const [movimenti, conti, categorie, tag, ricorrenti, regole, snapshot, mutuoArr, finanziamenti, eventiMutuo, suggerimenti, bollette, obiettivi, panieri] =
     await Promise.all([
       dbAll('movimenti'), dbAll('conti'), dbAll('categorie'), dbAll('tag'),
       dbAll('ricorrenti'), dbAll('regole'), dbAll('snapshot'), dbAll('mutuo'),
       dbAll('finanziamenti'), dbAll('eventiMutuo'), dbAll('suggerimenti'), dbAll('bollette'),
+      dbAll('obiettivi'), dbAll('panieri'),
     ]);
 
   state.movimenti = movimenti;
@@ -50,6 +53,8 @@ export const refreshAll = async () => {
   state.eventiMutuo = eventiMutuo;
   state.suggerimenti = suggerimenti;
   state.bollette = bollette;
+  state.obiettivi = obiettivi;
+  state.panieri = panieri;
 
   _buildIndexes();
   _notify();

@@ -96,6 +96,13 @@ export const renderRicerca = async (root, params = {}) => {
             ${_filtri.macro && _filtri.cat ? sottocategorieDi(_filtri.macro, _filtri.cat).map(s => `<option ${_filtri.sub === s ? 'selected' : ''}>${escapeHtml(s)}</option>`).join('') : ''}
           </select></div>
       </div>
+      <div class="filtri-riga">
+        <label class="meta">Anno rapido</label>
+        <div class="anno-chips" id="anno-chips">${_anniMovimenti().map(a => {
+          const attivo = _filtri.da === a + '-01-01' && _filtri.a === a + '-12-31';
+          return `<button class="anno-chip ${attivo ? 'on' : ''}" data-chip-anno="${a}">'${String(a).slice(2)}</button>`;
+        }).join('')}</div>
+      </div>
       <div class="filtri-riga filtri-2col">
         <div><label class="meta">Dal</label><input type="date" id="f-da" value="${_filtri.da}" class="sheet-input"></div>
         <div><label class="meta">Al</label><input type="date" id="f-a" value="${_filtri.a}" class="sheet-input"></div>
@@ -230,6 +237,18 @@ export const renderRicerca = async (root, params = {}) => {
   });
   bindFiltro('#f-sub', 'sub'); bindFiltro('#f-conto', 'conto');
   bindFiltro('#f-da', 'da'); bindFiltro('#f-a', 'a');
+
+  // chip anno: un tap imposta l'intero anno (da/a), un secondo tap lo toglie
+  root.querySelectorAll('[data-chip-anno]').forEach(chip => chip.addEventListener('click', () => {
+    const a = chip.dataset.chipAnno;
+    const giaAttivo = _filtri.da === a + '-01-01' && _filtri.a === a + '-12-31';
+    _filtri.da = giaAttivo ? '' : a + '-01-01';
+    _filtri.a = giaAttivo ? '' : a + '-12-31';
+    root.querySelector('#f-da').value = _filtri.da;
+    root.querySelector('#f-a').value = _filtri.a;
+    root.querySelectorAll('[data-chip-anno]').forEach(c => c.classList.toggle('on', !giaAttivo && c === chip));
+    esegui();
+  }));
   bindFiltro('#f-min', 'min'); bindFiltro('#f-max', 'max');
   root.querySelector('#f-reset').addEventListener('click', () => {
     _filtri = { tipo: '', macro: '', cat: '', sub: '', conto: '', da: '', a: '', min: '', max: '' };
@@ -239,4 +258,10 @@ export const renderRicerca = async (root, params = {}) => {
   esegui();
   // il focus solo quando parti da zero: tornando dalla modifica NON ruba la vista dei risultati
   if (!_q && !Object.values(_filtri).some(v => v !== '')) setTimeout(() => inp.focus(), 100);
+};
+
+// anni presenti nei movimenti (per i chip di filtro rapido), dal più recente
+const _anniMovimenti = () => {
+  const anni = new Set(state.movimenti.map(m => m.data.slice(0, 4)));
+  return Array.from(anni).sort().reverse();
 };

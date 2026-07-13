@@ -253,7 +253,7 @@ const _legendaHTML = (segmenti) => `<div class="elegend">${segmenti.map(s =>
 // barra (tap) evidenzia la colonna e mostra il dettaglio in un PANNELLO FISSO
 // sotto il grafico: niente popup che copre le barre.
 // dati: [{ label, valori: {k: v}, tot }] · segmenti: [{ k, nome, colore }]
-const _barreImpilate = (cont, dati, segmenti, fmtTip, fmtTot) => {
+export const _barreImpilate = (cont, dati, segmenti, fmtTip, fmtTot) => {
   if (!dati.length) { cont.innerHTML = '<div class="empty" style="padding:30px 0">Nessun dato</div>'; return; }
   const maxT = Math.max(...dati.map(d => d.tot), 1);
   const AREA = 118;   // px disponibili per la barra più alta
