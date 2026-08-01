@@ -3,7 +3,7 @@
 // l'app dopo un deploy, basta incrementare CACHE_VERSION: il vecchio cache viene
 // eliminato e i file ricaricati.
 
-const CACHE_VERSION = 'finanze-v3.9.0';
+const CACHE_VERSION = 'finanze-v3.10.0';
 
 const ASSETS = [
   './',
@@ -22,6 +22,8 @@ const ASSETS = [
   './js/core/sparkline.js',
   './js/core/seedBollette.js',
   './js/core/bolletteSeedData.js',
+  './js/core/seedStipendi.js',
+  './js/core/stipendiSeedData.js',
   './js/services/energiaService.js',
   './js/services/pdfBolletta.js',
   './js/services/panieriService.js',
@@ -29,6 +31,8 @@ const ASSETS = [
   './js/components/selezioneMultipla.js',
   './js/components/energia.js',
   './js/components/energiaBollette.js',
+  './js/services/stipendiService.js',
+  './js/components/stipendi.js',
   './js/services/attribuzioneInvestimenti.js',
   './js/services/movimentiService.js',
   './js/services/suggerimentiService.js',

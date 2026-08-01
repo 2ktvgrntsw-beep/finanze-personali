@@ -47,6 +47,8 @@ export const renderImpostazioni = async (root) => {
     <div class="section-lbl"><span>Sezioni</span></div>
     <div class="card" style="padding:0">
       <div class="patrow" id="go-energia" style="cursor:pointer"><div class="icon" style="background:var(--surface-2)">${UI_SVG.fulmine}</div><div class="body"><div class="row1"><span class="name">Energia</span><span class="meta num">${state.bollette.length}</span></div></div><div class="chev">›</div></div>
+      <div class="divider"></div>
+      <div class="patrow" id="go-stipendi" style="cursor:pointer"><div class="icon" style="background:var(--surface-2)">${UI_SVG.busta}</div><div class="body"><div class="row1"><span class="name">Stipendi</span><span class="meta num">${state.stipendi.length}</span></div></div><div class="chev">›</div></div>
     </div>
 
     <div class="section-lbl"><span>Gestione</span></div>
@@ -117,6 +119,7 @@ export const renderImpostazioni = async (root) => {
 
   // navigazione
   root.querySelector('#go-energia').addEventListener('click', () => navigate('energia'));
+  root.querySelector('#go-stipendi').addEventListener('click', () => navigate('stipendi'));
   root.querySelector('#go-conti').addEventListener('click', () => navigate('conti'));
   root.querySelector('#go-cat').addEventListener('click', () => navigate('categorie'));
 

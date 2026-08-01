@@ -4,6 +4,7 @@ import { openDB, setWriteErrorHandler } from './core/db.js';
 import { refreshAll } from './core/store.js';
 import { seedStoricoSeNecessario } from './core/seed.js';
 import { seedBolletteSeNecessario } from './core/seedBollette.js';
+import { seedStipendiSeNecessario } from './core/seedStipendi.js';
 import { registerRoute, initRouter, navigate, renderCurrent, currentRoute } from './core/router.js';
 import { NAV_SVG } from './core/icons.js';
 import { ensureContoDefault } from './services/contiService.js';
@@ -30,6 +31,7 @@ import { renderDettaglioInvestimento } from './components/dettaglioInvestimento.
 import { renderCategorie } from './components/categorie.js';
 import { renderImpostazioni } from './components/impostazioni.js';
 import { renderEnergia, renderEnergiaAnno } from './components/energia.js';
+import { renderStipendi, renderStipendiAnno, renderStipendioDettaglio } from './components/stipendi.js';
 import { renderPaniere } from './components/panieri.js';
 import { renderBollettaForm, renderBollettaDettaglio, renderBolletteStorico } from './components/energiaBollette.js';
 
@@ -64,6 +66,9 @@ const registraRotte = () => {
   registerRoute('impostazioni', wrap(renderImpostazioni, 'Impostazioni'));
   registerRoute('energia', renderEnergia);
   registerRoute('energia-anno', renderEnergiaAnno);
+  registerRoute('stipendi', renderStipendi);
+  registerRoute('stipendi-anno', renderStipendiAnno);
+  registerRoute('stipendio-dettaglio', renderStipendioDettaglio);
   registerRoute('paniere', renderPaniere);
   registerRoute('bolletta-nuova', renderBollettaForm);
   registerRoute('bolletta-dettaglio', renderBollettaDettaglio);
@@ -123,6 +128,7 @@ const boot = async () => {
     await openDB();
     await seedStoricoSeNecessario();   // carica lo storico al primo avvio
     await seedBolletteSeNecessario();  // carica le bollette energia (una tantum)
+    await seedStipendiSeNecessario();  // carica le buste paga (una tantum)
     await refreshAll();
 
     // RILEVAMENTO PERDITA DATI: se i dati principali sono vuoti ma esiste un backup

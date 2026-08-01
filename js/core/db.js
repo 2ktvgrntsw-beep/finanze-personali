@@ -4,7 +4,8 @@
 // aggiungere store/indici senza perdere i dati esistenti dell'utente.
 
 const DB_NAME = 'FinanzePersonaliDB';
-const DB_VERSION = 3;   // v3: store 'obiettivi' (liquidità per anno) e 'panieri' (analisi)
+const DB_VERSION = 4;   // v4: store 'stipendi' (buste paga per la sezione Stipendi)
+                        // v3: store 'obiettivi' (liquidità per anno) e 'panieri' (analisi)
 
 // Dichiarazione centralizzata degli store. Aggiungere qui una nuova voce è tutto
 // ciò che serve per introdurre una nuova "tabella" in futuro.
@@ -32,6 +33,10 @@ const STORES = {
   bollette:       { keyPath: 'id', indexes: [ // bollette energia elettrica (sezione Energia)
                       { name: 'al', keyPath: 'al' },
                       { name: 'fornitore', keyPath: 'fornitore' },
+                  ]},
+  stipendi:       { keyPath: 'id', indexes: [ // buste paga (sezione Stipendi)
+                      { name: 'datore', keyPath: 'datore' },
+                      { name: 'anno', keyPath: 'anno' },
                   ]},
 };
 

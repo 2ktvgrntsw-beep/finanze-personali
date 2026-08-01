@@ -55,4 +55,5 @@ export const UI_SVG = {
   excel: _svg('<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9l6 6M15 9l-6 6"/>'),
   ripristina: _svg('<path d="M12 21V9M8 13l4-4 4 4"/><path d="M4 5h16"/>'),
   investimento: _svg('<path d="M4 18V9M9 18V5M14 18v-7M19 18v-4"/>'),
+  busta: _svg('<rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 9h16M8 13h5"/>'),
 };
