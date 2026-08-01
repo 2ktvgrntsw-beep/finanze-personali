@@ -1,15 +1,16 @@
 // stipendiSeedData.js — Storico buste paga precaricato (sezione Stipendi).
-// Generato dagli archivi JSON dei quattro datori (Marposs, SASIB, Bonfiglioli,
-// Schneider). Schema NORMALIZZATO: 'trattenute' = trattenute_totali oppure
-// (lordo - netto) dove l'archivio non la esponeva; 'netto_cassa' = netto se assente.
-// I campi extra (contributi_inps, irpef_netta, cometa_azienda, ...) sono presenti
-// solo dove l'archivio di origine li aveva, e alimentano la pagina di dettaglio.
-// NB: nei mesi con Anticipo/Recupero (Marposs, Schneider) il 'lordo' e' gonfiato:
-// il 'netto' resta esatto ovunque (vedi note archivi).
+// Generato dagli archivi dei quattro datori, ARRICCHITO col dettaglio fiscale estratto
+// dalle buste PDF (INPS, IRPEF, addizionali, Cometa azienda) dove validato.
+// ID UNIVOCO 'AAAA-MM-datore': nei mesi di passaggio esistono DUE buste (datore uscente
+// + entrante) che con la sola chiave 'AAAA-MM' si sovrascrivevano.
+// Flag: 'anticipo' = mese con Anticipo/Recupero (lordo/trattenute gonfiati, netto esatto);
+// 'cessazione' = ultima busta di un datore (liquidazioni: importi atipici).
+// Le viste sul LORDO escludono i mesi anticipo/cessazione; il NETTO li include (denaro reale).
 
 export const STIPENDI_SEED = [
   {
-    "id": "2016-04",
+    "id": "2016-04-Marposs",
+    "periodoId": "2016-04",
     "anno": 2016,
     "mese": 4,
     "periodo": "Aprile 2016",
@@ -20,23 +21,26 @@ export const STIPENDI_SEED = [
     "trattenute": 436.71,
     "tfr_a_fondo_pensione": 151.27,
     "cometa_dipendente": 0.0,
+    "cometa_azienda": 0.0,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Prima busta paga - assunzione 04/04/2016"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 110.08,
     "irpef_netta": 325.77,
     "addizionale_regionale": 0,
     "addizionale_comunale": 0,
     "imponibile_inps": 1885.0,
     "imponibile_irpef": 1775.02,
-    "cometa_azienda": 0,
-    "retribuzione_globale": 2042.19
+    "retribuzione_globale": 2042.19,
+    "voci_notevoli": [
+      "Prima busta paga - assunzione 04/04/2016"
+    ]
   },
   {
-    "id": "2016-05",
+    "id": "2016-05-Marposs",
+    "periodoId": "2016-05",
     "anno": 2016,
     "mese": 5,
     "periodo": "Maggio 2016",
@@ -47,23 +51,26 @@ export const STIPENDI_SEED = [
     "trattenute": 523.58,
     "tfr_a_fondo_pensione": 151.27,
     "cometa_dipendente": 30.44,
+    "cometa_azienda": 30.44,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Iscrizione fondo Cometa"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 123.87,
     "irpef_netta": 362.12,
     "addizionale_regionale": 0,
     "addizionale_comunale": 0,
     "imponibile_inps": 2121.0,
     "imponibile_irpef": 1966.43,
-    "cometa_azienda": 30.44,
-    "retribuzione_globale": 2042.19
+    "retribuzione_globale": 2042.19,
+    "voci_notevoli": [
+      "Iscrizione fondo Cometa"
+    ]
   },
   {
-    "id": "2016-06",
+    "id": "2016-06-Marposs",
+    "periodoId": "2016-06",
     "anno": 2016,
     "mese": 6,
     "periodo": "Giugno 2016",
@@ -74,25 +81,28 @@ export const STIPENDI_SEED = [
     "trattenute": 574.16,
     "tfr_a_fondo_pensione": 186.22,
     "cometa_dipendente": 30.44,
+    "cometa_azienda": 30.44,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Acconto premio P.C.A. 471,75",
-      "Trasferta Italia",
-      "Detassazione produttivita'"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 147.87,
     "irpef_netta": 350.57,
     "addizionale_regionale": 0,
     "addizionale_comunale": 0,
     "imponibile_inps": 2532.0,
     "imponibile_irpef": 1909.48,
-    "cometa_azienda": 30.44,
-    "retribuzione_globale": 2042.19
+    "retribuzione_globale": 2042.19,
+    "voci_notevoli": [
+      "Acconto premio P.C.A. 471,75",
+      "Trasferta Italia",
+      "Detassazione produttivita'"
+    ]
   },
   {
-    "id": "2016-07",
+    "id": "2016-07-Marposs",
+    "periodoId": "2016-07",
     "anno": 2016,
     "mese": 7,
     "periodo": "Luglio 2016",
@@ -103,23 +113,26 @@ export const STIPENDI_SEED = [
     "trattenute": 739.49,
     "tfr_a_fondo_pensione": 203.82,
     "cometa_dipendente": 30.44,
+    "cometa_azienda": 30.44,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Quota produttivita' 709,38"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 160.72,
     "irpef_netta": 547.47,
     "addizionale_regionale": 0,
     "addizionale_comunale": 0,
     "imponibile_inps": 2752.0,
     "imponibile_irpef": 2560.41,
-    "cometa_azienda": 30.44,
-    "retribuzione_globale": 2042.19
+    "retribuzione_globale": 2042.19,
+    "voci_notevoli": [
+      "Quota produttivita' 709,38"
+    ]
   },
   {
-    "id": "2016-08",
+    "id": "2016-08-Marposs",
+    "periodoId": "2016-08",
     "anno": 2016,
     "mese": 8,
     "periodo": "Agosto 2016",
@@ -130,23 +143,26 @@ export const STIPENDI_SEED = [
     "trattenute": 494.83,
     "tfr_a_fondo_pensione": 151.27,
     "cometa_dipendente": 30.44,
+    "cometa_azienda": 30.44,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Ferie godute 9 gg"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 119.25,
     "irpef_netta": 344.6,
     "addizionale_regionale": 0,
     "addizionale_comunale": 0,
     "imponibile_inps": 2042.0,
     "imponibile_irpef": 1892.51,
-    "cometa_azienda": 30.44,
-    "retribuzione_globale": 2042.19
+    "retribuzione_globale": 2042.19,
+    "voci_notevoli": [
+      "Ferie godute 9 gg"
+    ]
   },
   {
-    "id": "2016-09",
+    "id": "2016-09-Marposs",
+    "periodoId": "2016-09",
     "anno": 2016,
     "mese": 9,
     "periodo": "Settembre 2016",
@@ -157,21 +173,24 @@ export const STIPENDI_SEED = [
     "trattenute": 499.11,
     "tfr_a_fondo_pensione": 151.27,
     "cometa_dipendente": 30.44,
+    "cometa_azienda": 30.44,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 119.25,
     "irpef_netta": 348.52,
     "addizionale_regionale": 0,
     "addizionale_comunale": 0,
     "imponibile_inps": 2042.0,
     "imponibile_irpef": 1892.5,
-    "cometa_azienda": 30.44,
-    "retribuzione_globale": 2042.19
+    "retribuzione_globale": 2042.19,
+    "voci_notevoli": []
   },
   {
-    "id": "2016-10",
+    "id": "2016-10-Marposs",
+    "periodoId": "2016-10",
     "anno": 2016,
     "mese": 10,
     "periodo": "Ottobre 2016",
@@ -182,23 +201,26 @@ export const STIPENDI_SEED = [
     "trattenute": 528.22,
     "tfr_a_fondo_pensione": 158.68,
     "cometa_dipendente": 30.44,
+    "cometa_azienda": 30.44,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Aumento retribuzione globale a 2.142,19"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 125.09,
     "irpef_netta": 371.74,
     "addizionale_regionale": 0,
     "addizionale_comunale": 0,
     "imponibile_inps": 2142.0,
     "imponibile_irpef": 1986.66,
-    "cometa_azienda": 30.44,
-    "retribuzione_globale": 2142.19
+    "retribuzione_globale": 2142.19,
+    "voci_notevoli": [
+      "Aumento retribuzione globale a 2.142,19"
+    ]
   },
   {
-    "id": "2016-11",
+    "id": "2016-11-Marposs",
+    "periodoId": "2016-11",
     "anno": 2016,
     "mese": 11,
     "periodo": "Novembre 2016",
@@ -209,23 +231,26 @@ export const STIPENDI_SEED = [
     "trattenute": 557.65,
     "tfr_a_fondo_pensione": 158.68,
     "cometa_dipendente": 30.44,
+    "cometa_azienda": 30.44,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Anticipo 13a 1.090,00 con valuta 23/12/16 (conguaglio a dicembre)"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 129.94,
     "irpef_netta": 396.37,
     "addizionale_regionale": 0,
     "addizionale_comunale": 0,
     "imponibile_inps": 2225.0,
     "imponibile_irpef": 2064.2,
-    "cometa_azienda": 30.44,
-    "retribuzione_globale": 2142.19
+    "retribuzione_globale": 2142.19,
+    "voci_notevoli": [
+      "Anticipo 13a 1.090,00 con valuta 23/12/16 (conguaglio a dicembre)"
+    ]
   },
   {
-    "id": "2016-12",
+    "id": "2016-12-Marposs",
+    "periodoId": "2016-12",
     "anno": 2016,
     "mese": 12,
     "periodo": "Dicembre 2016",
@@ -236,23 +261,26 @@ export const STIPENDI_SEED = [
     "trattenute": 917.83,
     "tfr_a_fondo_pensione": 277.0,
     "cometa_dipendente": 53.14,
+    "cometa_azienda": 53.14,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Tredicesima mensilita' 1.606,64"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 223.2,
     "irpef_netta": 631.57,
     "addizionale_regionale": 0,
     "addizionale_comunale": 0,
     "imponibile_inps": 3822.0,
     "imponibile_irpef": 3545.59,
-    "cometa_azienda": 53.14,
-    "retribuzione_globale": 2142.19
+    "retribuzione_globale": 2142.19,
+    "voci_notevoli": [
+      "Tredicesima mensilita' 1.606,64"
+    ]
   },
   {
-    "id": "2017-01",
+    "id": "2017-01-Marposs",
+    "periodoId": "2017-01",
     "anno": 2017,
     "mese": 1,
     "periodo": "Gennaio 2017",
@@ -263,23 +291,26 @@ export const STIPENDI_SEED = [
     "trattenute": 630.29,
     "tfr_a_fondo_pensione": 158.68,
     "cometa_dipendente": 30.44,
+    "cometa_azienda": 30.44,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Inizio rateizzazione addizionali 2016"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 129.94,
     "irpef_netta": 424.62,
     "addizionale_regionale": 28.81,
     "addizionale_comunale": 15.67,
     "imponibile_inps": 2225.0,
     "imponibile_irpef": 2064.2,
-    "cometa_azienda": 30.44,
-    "retribuzione_globale": 2142.19
+    "retribuzione_globale": 2142.19,
+    "voci_notevoli": [
+      "Inizio rateizzazione addizionali 2016"
+    ]
   },
   {
-    "id": "2017-02",
+    "id": "2017-02-Marposs",
+    "periodoId": "2017-02",
     "anno": 2017,
     "mese": 2,
     "periodo": "Febbraio 2017",
@@ -290,23 +321,26 @@ export const STIPENDI_SEED = [
     "trattenute": 621.46,
     "tfr_a_fondo_pensione": 158.68,
     "cometa_dipendente": 30.44,
+    "cometa_azienda": 30.44,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Acconto addizionale comunale 2017 5,22"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 125.79,
     "irpef_netta": 414.63,
     "addizionale_regionale": 28.81,
     "addizionale_comunale": 20.89,
     "imponibile_inps": 2154.0,
     "imponibile_irpef": 1997.53,
-    "cometa_azienda": 30.44,
-    "retribuzione_globale": 2142.19
+    "retribuzione_globale": 2142.19,
+    "voci_notevoli": [
+      "Acconto addizionale comunale 2017 5,22"
+    ]
   },
   {
-    "id": "2017-03",
+    "id": "2017-03-Marposs",
+    "periodoId": "2017-03",
     "anno": 2017,
     "mese": 3,
     "periodo": "Marzo 2017",
@@ -317,23 +351,26 @@ export const STIPENDI_SEED = [
     "trattenute": 634.88,
     "tfr_a_fondo_pensione": 158.68,
     "cometa_dipendente": 30.44,
+    "cometa_azienda": 30.44,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Una tantum ex accordo 26/11/16: 80,00"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 129.76,
     "irpef_netta": 424.03,
     "addizionale_regionale": 28.81,
     "addizionale_comunale": 20.89,
     "imponibile_inps": 2222.0,
     "imponibile_irpef": 2061.99,
-    "cometa_azienda": 30.44,
-    "retribuzione_globale": 2142.19
+    "retribuzione_globale": 2142.19,
+    "voci_notevoli": [
+      "Una tantum ex accordo 26/11/16: 80,00"
+    ]
   },
   {
-    "id": "2017-04",
+    "id": "2017-04-Marposs",
+    "periodoId": "2017-04",
     "anno": 2017,
     "mese": 4,
     "periodo": "Aprile 2017",
@@ -344,21 +381,24 @@ export const STIPENDI_SEED = [
     "trattenute": 617.0,
     "tfr_a_fondo_pensione": 158.68,
     "cometa_dipendente": 30.44,
+    "cometa_azienda": 30.44,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 125.97,
     "irpef_netta": 410.12,
     "addizionale_regionale": 28.81,
     "addizionale_comunale": 20.89,
     "imponibile_inps": 2157.0,
     "imponibile_irpef": 2000.6,
-    "cometa_azienda": 30.44,
-    "retribuzione_globale": 2142.19
+    "retribuzione_globale": 2142.19,
+    "voci_notevoli": []
   },
   {
-    "id": "2017-05",
+    "id": "2017-05-Marposs",
+    "periodoId": "2017-05",
     "anno": 2017,
     "mese": 5,
     "periodo": "Maggio 2017",
@@ -369,21 +409,24 @@ export const STIPENDI_SEED = [
     "trattenute": 611.04,
     "tfr_a_fondo_pensione": 158.68,
     "cometa_dipendente": 30.44,
+    "cometa_azienda": 30.44,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 125.09,
     "irpef_netta": 404.82,
     "addizionale_regionale": 28.81,
     "addizionale_comunale": 20.89,
     "imponibile_inps": 2142.0,
     "imponibile_irpef": 1986.66,
-    "cometa_azienda": 30.44,
-    "retribuzione_globale": 2142.19
+    "retribuzione_globale": 2142.19,
+    "voci_notevoli": []
   },
   {
-    "id": "2017-06",
+    "id": "2017-06-Marposs",
+    "periodoId": "2017-06",
     "anno": 2017,
     "mese": 6,
     "periodo": "Giugno 2017",
@@ -394,26 +437,29 @@ export const STIPENDI_SEED = [
     "trattenute": 1533.55,
     "tfr_a_fondo_pensione": 326.32,
     "cometa_dipendente": 30.47,
+    "cometa_azienda": 30.47,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Premio P.C.A. 2.200,50",
-      "Premio qualita' 532,50",
-      "Flexible welfare maturato 100,00",
-      "Detassazione IRPEF 162,78"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 257.25,
     "irpef_netta": 560.7,
     "addizionale_regionale": 28.81,
     "addizionale_comunale": 20.89,
     "imponibile_inps": 4405.0,
     "imponibile_irpef": 2489.78,
-    "cometa_azienda": 30.47,
-    "retribuzione_globale": 2144.09
+    "retribuzione_globale": 2144.09,
+    "voci_notevoli": [
+      "Premio P.C.A. 2.200,50",
+      "Premio qualita' 532,50",
+      "Flexible welfare maturato 100,00",
+      "Detassazione IRPEF 162,78"
+    ]
   },
   {
-    "id": "2017-07",
+    "id": "2017-07-Marposs",
+    "periodoId": "2017-07",
     "anno": 2017,
     "mese": 7,
     "periodo": "Luglio 2017",
@@ -424,24 +470,27 @@ export const STIPENDI_SEED = [
     "trattenute": 960.86,
     "tfr_a_fondo_pensione": 229.23,
     "cometa_dipendente": 30.47,
+    "cometa_azienda": 45.71,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 122.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Quota produttivita' 950,57",
-      "Rimborso 730: 122,00"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 180.75,
     "irpef_netta": 699.04,
     "addizionale_regionale": 28.81,
     "addizionale_comunale": 20.89,
     "imponibile_inps": 3095.0,
     "imponibile_irpef": 2883.45,
-    "cometa_azienda": 45.71,
-    "retribuzione_globale": 2144.09
+    "retribuzione_globale": 2144.09,
+    "voci_notevoli": [
+      "Quota produttivita' 950,57",
+      "Rimborso 730: 122,00"
+    ]
   },
   {
-    "id": "2017-08",
+    "id": "2017-08-Marposs",
+    "periodoId": "2017-08",
     "anno": 2017,
     "mese": 8,
     "periodo": "Agosto 2017",
@@ -452,23 +501,26 @@ export const STIPENDI_SEED = [
     "trattenute": 606.17,
     "tfr_a_fondo_pensione": 158.82,
     "cometa_dipendente": 30.47,
+    "cometa_azienda": 38.09,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Ferie godute 14 gg"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 125.21,
     "irpef_netta": 400.47,
     "addizionale_regionale": 28.81,
     "addizionale_comunale": 20.89,
     "imponibile_inps": 2144.0,
     "imponibile_irpef": 1988.42,
-    "cometa_azienda": 38.09,
-    "retribuzione_globale": 2144.09
+    "retribuzione_globale": 2144.09,
+    "voci_notevoli": [
+      "Ferie godute 14 gg"
+    ]
   },
   {
-    "id": "2017-09",
+    "id": "2017-09-Marposs",
+    "periodoId": "2017-09",
     "anno": 2017,
     "mese": 9,
     "periodo": "Settembre 2017",
@@ -479,24 +531,27 @@ export const STIPENDI_SEED = [
     "trattenute": 708.07,
     "tfr_a_fondo_pensione": 180.75,
     "cometa_dipendente": 30.47,
+    "cometa_azienda": 38.09,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Acconto quota qualita' 296,00",
-      "Trasferta Italia"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 143.61,
     "irpef_netta": 483.39,
     "addizionale_regionale": 28.81,
     "addizionale_comunale": 20.89,
     "imponibile_inps": 2459.0,
     "imponibile_irpef": 2284.54,
-    "cometa_azienda": 38.09,
-    "retribuzione_globale": 2144.09
+    "retribuzione_globale": 2144.09,
+    "voci_notevoli": [
+      "Acconto quota qualita' 296,00",
+      "Trasferta Italia"
+    ]
   },
   {
-    "id": "2017-10",
+    "id": "2017-10-Marposs",
+    "periodoId": "2017-10",
     "anno": 2017,
     "mese": 10,
     "periodo": "Ottobre 2017",
@@ -507,24 +562,27 @@ export const STIPENDI_SEED = [
     "trattenute": 650.78,
     "tfr_a_fondo_pensione": 168.45,
     "cometa_dipendente": 30.47,
+    "cometa_azienda": 38.09,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Superminimo individuale 130,00 - retribuzione globale a 2.274,09",
-      "Inizio F.do MetaSalute"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 132.8,
     "irpef_netta": 436.83,
     "addizionale_regionale": 28.85,
     "addizionale_comunale": 20.97,
     "imponibile_inps": 2274.0,
     "imponibile_irpef": 2110.82,
-    "cometa_azienda": 38.09,
-    "retribuzione_globale": 2274.09
+    "retribuzione_globale": 2274.09,
+    "voci_notevoli": [
+      "Superminimo individuale 130,00 - retribuzione globale a 2.274,09",
+      "Inizio F.do MetaSalute"
+    ]
   },
   {
-    "id": "2017-11",
+    "id": "2017-11-Marposs",
+    "periodoId": "2017-11",
     "anno": 2017,
     "mese": 11,
     "periodo": "Novembre 2017",
@@ -535,24 +593,27 @@ export const STIPENDI_SEED = [
     "trattenute": 637.15,
     "tfr_a_fondo_pensione": 168.45,
     "cometa_dipendente": 30.47,
+    "cometa_azienda": 38.09,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Anticipo 13a 1.310,00 con valuta 22/12/17",
-      "Flexible welfare 50,00"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 139.05,
     "irpef_netta": 466.77,
     "addizionale_regionale": 0,
     "addizionale_comunale": 0,
     "imponibile_inps": 2381.0,
     "imponibile_irpef": 2211.22,
-    "cometa_azienda": 38.09,
-    "retribuzione_globale": 2274.09
+    "retribuzione_globale": 2274.09,
+    "voci_notevoli": [
+      "Anticipo 13a 1.310,00 con valuta 22/12/17",
+      "Flexible welfare 50,00"
+    ]
   },
   {
-    "id": "2017-12",
+    "id": "2017-12-Marposs",
+    "periodoId": "2017-12",
     "anno": 2017,
     "mese": 12,
     "periodo": "Dicembre 2017",
@@ -563,24 +624,27 @@ export const STIPENDI_SEED = [
     "trattenute": 1318.73,
     "tfr_a_fondo_pensione": 338.9,
     "cometa_dipendente": 65.38,
+    "cometa_azienda": 81.72,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Tredicesima mensilita' 2.287,56",
-      "Superminimo di livello 3,73"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 267.18,
     "irpef_netta": 985.58,
     "addizionale_regionale": 0,
     "addizionale_comunale": 0,
     "imponibile_inps": 4575.0,
     "imponibile_irpef": 4242.56,
-    "cometa_azienda": 81.72,
-    "retribuzione_globale": 2287.56
+    "retribuzione_globale": 2287.56,
+    "voci_notevoli": [
+      "Tredicesima mensilita' 2.287,56",
+      "Superminimo di livello 3,73"
+    ]
   },
   {
-    "id": "2018-01",
+    "id": "2018-01-Marposs",
+    "periodoId": "2018-01",
     "anno": 2018,
     "mese": 1,
     "periodo": "Gennaio 2018",
@@ -591,24 +655,27 @@ export const STIPENDI_SEED = [
     "trattenute": 698.24,
     "tfr_a_fondo_pensione": 169.45,
     "cometa_dipendente": 32.69,
+    "cometa_azienda": 40.86,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Cambio IBAN",
-      "Trasferta estera"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 137.65,
     "irpef_netta": 463.44,
     "addizionale_regionale": 45.69,
     "addizionale_comunale": 17.96,
     "imponibile_inps": 2357.0,
     "imponibile_irpef": 2186.22,
-    "cometa_azienda": 40.86,
-    "retribuzione_globale": 2287.56
+    "retribuzione_globale": 2287.56,
+    "voci_notevoli": [
+      "Cambio IBAN",
+      "Trasferta estera"
+    ]
   },
   {
-    "id": "2018-02",
+    "id": "2018-02-Marposs",
+    "periodoId": "2018-02",
     "anno": 2018,
     "mese": 2,
     "periodo": "Febbraio 2018",
@@ -619,21 +686,24 @@ export const STIPENDI_SEED = [
     "trattenute": 691.7,
     "tfr_a_fondo_pensione": 169.45,
     "cometa_dipendente": 32.69,
+    "cometa_azienda": 40.86,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 133.62,
     "irpef_netta": 453.33,
     "addizionale_regionale": 45.69,
     "addizionale_comunale": 25.51,
     "imponibile_inps": 2288.0,
     "imponibile_irpef": 2121.25,
-    "cometa_azienda": 40.86,
-    "retribuzione_globale": 2287.56
+    "retribuzione_globale": 2287.56,
+    "voci_notevoli": []
   },
   {
-    "id": "2018-03",
+    "id": "2018-03-Marposs",
+    "periodoId": "2018-03",
     "anno": 2018,
     "mese": 3,
     "periodo": "Marzo 2018",
@@ -644,23 +714,26 @@ export const STIPENDI_SEED = [
     "trattenute": 683.73,
     "tfr_a_fondo_pensione": 169.45,
     "cometa_dipendente": 32.69,
+    "cometa_azienda": 40.86,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Welfare art.51 c.3 esente 35,00"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 133.62,
     "irpef_netta": 445.9,
     "addizionale_regionale": 45.69,
     "addizionale_comunale": 25.51,
     "imponibile_inps": 2288.0,
     "imponibile_irpef": 2121.25,
-    "cometa_azienda": 40.86,
-    "retribuzione_globale": 2287.56
+    "retribuzione_globale": 2287.56,
+    "voci_notevoli": [
+      "Welfare art.51 c.3 esente 35,00"
+    ]
   },
   {
-    "id": "2018-04",
+    "id": "2018-04-Marposs",
+    "periodoId": "2018-04",
     "anno": 2018,
     "mese": 4,
     "periodo": "Aprile 2018",
@@ -671,23 +744,26 @@ export const STIPENDI_SEED = [
     "trattenute": 686.34,
     "tfr_a_fondo_pensione": 169.45,
     "cometa_dipendente": 32.69,
+    "cometa_azienda": 40.86,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Quota CREI a welfare 317,20"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 133.62,
     "irpef_netta": 448.38,
     "addizionale_regionale": 45.69,
     "addizionale_comunale": 25.51,
     "imponibile_inps": 2288.0,
     "imponibile_irpef": 2121.25,
-    "cometa_azienda": 40.86,
-    "retribuzione_globale": 2287.56
+    "retribuzione_globale": 2287.56,
+    "voci_notevoli": [
+      "Quota CREI a welfare 317,20"
+    ]
   },
   {
-    "id": "2018-05",
+    "id": "2018-05-Marposs",
+    "periodoId": "2018-05",
     "anno": 2018,
     "mese": 5,
     "periodo": "Maggio 2018",
@@ -698,21 +774,24 @@ export const STIPENDI_SEED = [
     "trattenute": 686.19,
     "tfr_a_fondo_pensione": 169.45,
     "cometa_dipendente": 32.69,
+    "cometa_azienda": 40.86,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 133.62,
     "irpef_netta": 446.73,
     "addizionale_regionale": 45.69,
     "addizionale_comunale": 25.51,
     "imponibile_inps": 2288.0,
     "imponibile_irpef": 2121.25,
-    "cometa_azienda": 40.86,
-    "retribuzione_globale": 2287.56
+    "retribuzione_globale": 2287.56,
+    "voci_notevoli": []
   },
   {
-    "id": "2018-06",
+    "id": "2018-06-Marposs",
+    "periodoId": "2018-06",
     "anno": 2018,
     "mese": 6,
     "periodo": "Giugno 2018",
@@ -723,26 +802,29 @@ export const STIPENDI_SEED = [
     "trattenute": 1741.85,
     "tfr_a_fondo_pensione": 444.37,
     "cometa_dipendente": 32.98,
+    "cometa_azienda": 41.23,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Premio ris.to P.C.A. 2017: 2.983,00",
-      "Quota qualita' 2017: 710,00",
-      "Acc.to quota qualita' 2018: 296,00",
-      "Detassazione IRPEF 274,00"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 350.81,
     "irpef_netta": 716.0,
     "addizionale_regionale": 45.69,
     "addizionale_comunale": 25.51,
     "imponibile_inps": 6007.0,
     "imponibile_irpef": 2883.17,
-    "cometa_azienda": 41.23,
-    "retribuzione_globale": 2305.95
+    "retribuzione_globale": 2305.95,
+    "voci_notevoli": [
+      "Premio ris.to P.C.A. 2017: 2.983,00",
+      "Quota qualita' 2017: 710,00",
+      "Acc.to quota qualita' 2018: 296,00",
+      "Detassazione IRPEF 274,00"
+    ]
   },
   {
-    "id": "2018-07",
+    "id": "2018-07-Marposs",
+    "periodoId": "2018-07",
     "anno": 2018,
     "mese": 7,
     "periodo": "Luglio 2018",
@@ -753,24 +835,27 @@ export const STIPENDI_SEED = [
     "trattenute": 1062.36,
     "tfr_a_fondo_pensione": 241.86,
     "cometa_dipendente": 32.98,
+    "cometa_azienda": 41.23,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 1857.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Quota produttivita' 959,13",
-      "Rimborso 730: 1.857,00"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 190.68,
     "irpef_netta": 766.51,
     "addizionale_regionale": 45.69,
     "addizionale_comunale": 25.51,
     "imponibile_inps": 3265.0,
     "imponibile_irpef": 3041.42,
-    "cometa_azienda": 41.23,
-    "retribuzione_globale": 2305.95
+    "retribuzione_globale": 2305.95,
+    "voci_notevoli": [
+      "Quota produttivita' 959,13",
+      "Rimborso 730: 1.857,00"
+    ]
   },
   {
-    "id": "2018-08",
+    "id": "2018-08-Marposs",
+    "periodoId": "2018-08",
     "anno": 2018,
     "mese": 8,
     "periodo": "Agosto 2018",
@@ -781,24 +866,27 @@ export const STIPENDI_SEED = [
     "trattenute": 715.51,
     "tfr_a_fondo_pensione": 170.81,
     "cometa_dipendente": 32.98,
+    "cometa_azienda": 41.23,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Ferie godute 14 gg",
-      "Welfare art.51 c.2 F: 530,00"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 140.04,
     "irpef_netta": 471.11,
     "addizionale_regionale": 45.69,
     "addizionale_comunale": 25.51,
     "imponibile_inps": 2398.0,
     "imponibile_irpef": 2224.93,
-    "cometa_azienda": 41.23,
-    "retribuzione_globale": 2305.95
+    "retribuzione_globale": 2305.95,
+    "voci_notevoli": [
+      "Ferie godute 14 gg",
+      "Welfare art.51 c.2 F: 530,00"
+    ]
   },
   {
-    "id": "2018-09",
+    "id": "2018-09-Marposs",
+    "periodoId": "2018-09",
     "anno": 2018,
     "mese": 9,
     "periodo": "Settembre 2018",
@@ -809,24 +897,27 @@ export const STIPENDI_SEED = [
     "trattenute": 697.55,
     "tfr_a_fondo_pensione": 170.81,
     "cometa_dipendente": 32.98,
+    "cometa_azienda": 41.23,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Welfare art.51 c.3 esente 32,00",
-      "Ultimo mese come Apprendista"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 136.01,
     "irpef_netta": 456.55,
     "addizionale_regionale": 45.69,
     "addizionale_comunale": 25.51,
     "imponibile_inps": 2329.0,
     "imponibile_irpef": 2159.96,
-    "cometa_azienda": 41.23,
-    "retribuzione_globale": 2305.95
+    "retribuzione_globale": 2305.95,
+    "voci_notevoli": [
+      "Welfare art.51 c.3 esente 32,00",
+      "Ultimo mese come Apprendista"
+    ]
   },
   {
-    "id": "2018-10",
+    "id": "2018-10-Marposs",
+    "periodoId": "2018-10",
     "anno": 2018,
     "mese": 10,
     "periodo": "Ottobre 2018",
@@ -837,23 +928,26 @@ export const STIPENDI_SEED = [
     "trattenute": 694.46,
     "tfr_a_fondo_pensione": 171.08,
     "cometa_dipendente": 32.98,
+    "cometa_azienda": 41.23,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "PASSAGGIO A IMPIEGATO livello 6 - fine apprendistato"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 141.83,
     "irpef_netta": 447.46,
     "addizionale_regionale": 45.72,
     "addizionale_comunale": 25.48,
     "imponibile_inps": 2310.0,
     "imponibile_irpef": 2134.76,
-    "cometa_azienda": 41.23,
-    "retribuzione_globale": 2309.57
+    "retribuzione_globale": 2309.57,
+    "voci_notevoli": [
+      "PASSAGGIO A IMPIEGATO livello 6 - fine apprendistato"
+    ]
   },
   {
-    "id": "2018-11",
+    "id": "2018-11-Marposs",
+    "periodoId": "2018-11",
     "anno": 2018,
     "mese": 11,
     "periodo": "Novembre 2018",
@@ -864,24 +958,27 @@ export const STIPENDI_SEED = [
     "trattenute": 681.53,
     "tfr_a_fondo_pensione": 171.08,
     "cometa_dipendente": 32.98,
+    "cometa_azienda": 41.23,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Anticipo 13a 1.320,00 con valuta 21/12/18",
-      "Trasferte Italia ed estero"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 152.7,
     "irpef_netta": 495.04,
     "addizionale_regionale": 0,
     "addizionale_comunale": 0,
     "imponibile_inps": 2487.0,
     "imponibile_irpef": 2301.07,
-    "cometa_azienda": 41.23,
-    "retribuzione_globale": 2309.57
+    "retribuzione_globale": 2309.57,
+    "voci_notevoli": [
+      "Anticipo 13a 1.320,00 con valuta 21/12/18",
+      "Trasferte Italia ed estero"
+    ]
   },
   {
-    "id": "2018-12",
+    "id": "2018-12-Marposs",
+    "periodoId": "2018-12",
     "anno": 2018,
     "mese": 12,
     "periodo": "Dicembre 2018",
@@ -892,24 +989,27 @@ export const STIPENDI_SEED = [
     "trattenute": 1437.8,
     "tfr_a_fondo_pensione": 343.94,
     "cometa_dipendente": 65.97,
+    "cometa_azienda": 82.46,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Tredicesima mensilita' 2.309,57",
-      "Acc.to quota qualita' 2018: 24,00"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 285.88,
     "irpef_netta": 1085.36,
     "addizionale_regionale": 0,
     "addizionale_comunale": 0,
     "imponibile_inps": 4656.0,
     "imponibile_irpef": 4304.09,
-    "cometa_azienda": 82.46,
-    "retribuzione_globale": 2309.57
+    "retribuzione_globale": 2309.57,
+    "voci_notevoli": [
+      "Tredicesima mensilita' 2.309,57",
+      "Acc.to quota qualita' 2018: 24,00"
+    ]
   },
   {
-    "id": "2019-01",
+    "id": "2019-01-Marposs",
+    "periodoId": "2019-01",
     "anno": 2019,
     "mese": 1,
     "periodo": "Gennaio 2019",
@@ -920,23 +1020,26 @@ export const STIPENDI_SEED = [
     "trattenute": 721.71,
     "tfr_a_fondo_pensione": 171.08,
     "cometa_dipendente": 32.98,
+    "cometa_azienda": 41.23,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Indennita' sostitutiva conto ore"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 147.67,
     "irpef_netta": 474.65,
     "addizionale_regionale": 48.53,
     "addizionale_comunale": 16.98,
     "imponibile_inps": 2405.0,
     "imponibile_irpef": 2224.43,
-    "cometa_azienda": 41.23,
-    "retribuzione_globale": 2309.57
+    "retribuzione_globale": 2309.57,
+    "voci_notevoli": [
+      "Indennita' sostitutiva conto ore"
+    ]
   },
   {
-    "id": "2019-02",
+    "id": "2019-02-Marposs",
+    "periodoId": "2019-02",
     "anno": 2019,
     "mese": 2,
     "periodo": "Febbraio 2019",
@@ -947,21 +1050,24 @@ export const STIPENDI_SEED = [
     "trattenute": 703.55,
     "tfr_a_fondo_pensione": 171.08,
     "cometa_dipendente": 32.98,
+    "cometa_azienda": 41.23,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 141.83,
     "irpef_netta": 457.79,
     "addizionale_regionale": 48.53,
     "addizionale_comunale": 21.52,
     "imponibile_inps": 2310.0,
     "imponibile_irpef": 2134.76,
-    "cometa_azienda": 41.23,
-    "retribuzione_globale": 2309.57
+    "retribuzione_globale": 2309.57,
+    "voci_notevoli": []
   },
   {
-    "id": "2019-03",
+    "id": "2019-03-Marposs",
+    "periodoId": "2019-03",
     "anno": 2019,
     "mese": 3,
     "periodo": "Marzo 2019",
@@ -972,23 +1078,26 @@ export const STIPENDI_SEED = [
     "trattenute": 709.51,
     "tfr_a_fondo_pensione": 173.78,
     "cometa_dipendente": 32.98,
+    "cometa_azienda": 41.23,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Primo scatto di anzianita' 36,41"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 144.04,
     "irpef_netta": 461.49,
     "addizionale_regionale": 48.53,
     "addizionale_comunale": 21.52,
     "imponibile_inps": 2346.0,
     "imponibile_irpef": 2168.96,
-    "cometa_azienda": 41.23,
-    "retribuzione_globale": 2345.98
+    "retribuzione_globale": 2345.98,
+    "voci_notevoli": [
+      "Primo scatto di anzianita' 36,41"
+    ]
   },
   {
-    "id": "2019-04",
+    "id": "2019-04-Marposs",
+    "periodoId": "2019-04",
     "anno": 2019,
     "mese": 4,
     "periodo": "Aprile 2019",
@@ -999,24 +1108,27 @@ export const STIPENDI_SEED = [
     "trattenute": 727.92,
     "tfr_a_fondo_pensione": 173.78,
     "cometa_dipendente": 32.98,
+    "cometa_azienda": 41.23,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Quota CREI a welfare 340,38",
-      "Trasferte Italia"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 147.24,
     "irpef_netta": 477.06,
     "addizionale_regionale": 48.53,
     "addizionale_comunale": 21.52,
     "imponibile_inps": 2398.0,
     "imponibile_irpef": 2217.29,
-    "cometa_azienda": 41.23,
-    "retribuzione_globale": 2345.98
+    "retribuzione_globale": 2345.98,
+    "voci_notevoli": [
+      "Quota CREI a welfare 340,38",
+      "Trasferte Italia"
+    ]
   },
   {
-    "id": "2019-05",
+    "id": "2019-05-Marposs",
+    "periodoId": "2019-05",
     "anno": 2019,
     "mese": 5,
     "periodo": "Maggio 2019",
@@ -1027,24 +1139,27 @@ export const STIPENDI_SEED = [
     "trattenute": 710.76,
     "tfr_a_fondo_pensione": 173.78,
     "cometa_dipendente": 32.98,
+    "cometa_azienda": 41.23,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Welfare art.51 c.2 F: 300,00",
-      "Cambio IBAN"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 144.04,
     "irpef_netta": 461.72,
     "addizionale_regionale": 48.53,
     "addizionale_comunale": 21.52,
     "imponibile_inps": 2346.0,
     "imponibile_irpef": 2168.96,
-    "cometa_azienda": 41.23,
-    "retribuzione_globale": 2345.98
+    "retribuzione_globale": 2345.98,
+    "voci_notevoli": [
+      "Welfare art.51 c.2 F: 300,00",
+      "Cambio IBAN"
+    ]
   },
   {
-    "id": "2019-06",
+    "id": "2019-06-Marposs",
+    "periodoId": "2019-06",
     "anno": 2019,
     "mese": 6,
     "periodo": "Giugno 2019",
@@ -1055,9 +1170,19 @@ export const STIPENDI_SEED = [
     "trattenute": 2513.48,
     "tfr_a_fondo_pensione": 493.15,
     "cometa_dipendente": 13.85,
+    "cometa_azienda": 17.32,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": true,
+    "contributi_inps": 529.88,
+    "irpef_netta": 1027.21,
+    "addizionale_regionale": 242.68,
+    "addizionale_comunale": 107.58,
+    "imponibile_inps": 8630.0,
+    "imponibile_irpef": 5365.4,
+    "retribuzione_globale": 2362.47,
     "voci_notevoli": [
       "ULTIMA BUSTA PAGA - cessazione 14/06/2019",
       "Tredicesima ratei 984,36",
@@ -1067,18 +1192,11 @@ export const STIPENDI_SEED = [
       "Quota qualita' 2018: 769,00",
       "Quota qual. dimessi 2019: 320,42",
       "Detassazione IRPEF 272,10"
-    ],
-    "contributi_inps": 529.88,
-    "irpef_netta": 1027.21,
-    "addizionale_regionale": 242.68,
-    "addizionale_comunale": 107.58,
-    "imponibile_inps": 8630.0,
-    "imponibile_irpef": 5365.4,
-    "cometa_azienda": 17.32,
-    "retribuzione_globale": 2362.47
+    ]
   },
   {
-    "id": "2019-06",
+    "id": "2019-06-SASIB",
+    "periodoId": "2019-06",
     "anno": 2019,
     "mese": 6,
     "periodo": "Giugno 2019",
@@ -1089,25 +1207,27 @@ export const STIPENDI_SEED = [
     "trattenute": 743.43,
     "tfr_a_fondo_pensione": 63.57,
     "cometa_dipendente": 40.62,
+    "cometa_azienda": 41.56,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Prima busta SASIB - assunzione 17/06/2019",
-      "Premio feriale 1.015,50",
-      "Ticket spesa CCNL 200,00"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 221.03,
     "irpef_netta": 480.49,
     "addizionale_regionale": 0,
     "addizionale_comunale": 0,
     "imponibile_inps": 2329.0,
     "imponibile_irpef": 2067.7,
-    "cometa_azienda": 41.56,
-    "recupero_acconto_gratifica": 0
+    "voci_notevoli": [
+      "Prima busta SASIB - assunzione 17/06/2019",
+      "Premio feriale 1.015,50",
+      "Ticket spesa CCNL 200,00"
+    ]
   },
   {
-    "id": "2019-07",
+    "id": "2019-07-SASIB",
+    "periodoId": "2019-07",
     "anno": 2019,
     "mese": 7,
     "periodo": "Luglio 2019",
@@ -1118,23 +1238,25 @@ export const STIPENDI_SEED = [
     "trattenute": 875.31,
     "tfr_a_fondo_pensione": 174.44,
     "cometa_dipendente": 101.44,
+    "cometa_azienda": 41.56,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 3202.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Rimborso 730: 3.202,00 (escluso)"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 254.62,
     "irpef_netta": 516.67,
     "addizionale_regionale": 0,
     "addizionale_comunale": 0,
     "imponibile_inps": 2683.0,
     "imponibile_irpef": 2326.62,
-    "cometa_azienda": 41.56,
-    "recupero_acconto_gratifica": 0
+    "voci_notevoli": [
+      "Rimborso 730: 3.202,00 (escluso)"
+    ]
   },
   {
-    "id": "2019-08",
+    "id": "2019-08-SASIB",
+    "periodoId": "2019-08",
     "anno": 2019,
     "mese": 8,
     "periodo": "Agosto 2019",
@@ -1145,23 +1267,25 @@ export const STIPENDI_SEED = [
     "trattenute": 850.13,
     "tfr_a_fondo_pensione": 174.81,
     "cometa_dipendente": 101.44,
+    "cometa_azienda": 41.56,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Ferie collettive"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 247.6,
     "irpef_netta": 498.77,
     "addizionale_regionale": 0,
     "addizionale_comunale": 0,
     "imponibile_inps": 2609.0,
     "imponibile_irpef": 2260.34,
-    "cometa_azienda": 41.56,
-    "recupero_acconto_gratifica": 0
+    "voci_notevoli": [
+      "Ferie collettive"
+    ]
   },
   {
-    "id": "2019-09",
+    "id": "2019-09-SASIB",
+    "periodoId": "2019-09",
     "anno": 2019,
     "mese": 9,
     "periodo": "Settembre 2019",
@@ -1172,24 +1296,26 @@ export const STIPENDI_SEED = [
     "trattenute": 1053.92,
     "tfr_a_fondo_pensione": 193.19,
     "cometa_dipendente": 112.62,
+    "cometa_azienda": 41.56,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Trasferta estero zona C",
-      "Ore viaggio 85%"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 291.63,
     "irpef_netta": 647.86,
     "addizionale_regionale": 0,
     "addizionale_comunale": 0,
     "imponibile_inps": 3073.0,
     "imponibile_irpef": 2668.6,
-    "cometa_azienda": 41.56,
-    "recupero_acconto_gratifica": 0
+    "voci_notevoli": [
+      "Trasferta estero zona C",
+      "Ore viaggio 85%"
+    ]
   },
   {
-    "id": "2019-10",
+    "id": "2019-10-SASIB",
+    "periodoId": "2019-10",
     "anno": 2019,
     "mese": 10,
     "periodo": "Ottobre 2019",
@@ -1200,23 +1326,25 @@ export const STIPENDI_SEED = [
     "trattenute": 1233.24,
     "tfr_a_fondo_pensione": 196.37,
     "cometa_dipendente": 115.44,
+    "cometa_azienda": 41.56,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "PDR acconto premio risultato 350,00"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 330.45,
     "irpef_netta": 785.54,
     "addizionale_regionale": 0,
     "addizionale_comunale": 0,
     "imponibile_inps": 3482.0,
     "imponibile_irpef": 3036.12,
-    "cometa_azienda": 41.56,
-    "recupero_acconto_gratifica": 0
+    "voci_notevoli": [
+      "PDR acconto premio risultato 350,00"
+    ]
   },
   {
-    "id": "2019-11",
+    "id": "2019-11-SASIB",
+    "periodoId": "2019-11",
     "anno": 2019,
     "mese": 11,
     "periodo": "Novembre 2019",
@@ -1227,24 +1355,26 @@ export const STIPENDI_SEED = [
     "trattenute": 2197.72,
     "tfr_a_fondo_pensione": 339.58,
     "cometa_dipendente": 198.29,
+    "cometa_azienda": 62.34,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Gratifica natalizia 1.268,04",
-      "Trasferte estero zona C e D"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 540.18,
     "irpef_netta": 1458.48,
     "addizionale_regionale": 0,
     "addizionale_comunale": 0,
     "imponibile_inps": 7119.0,
     "imponibile_irpef": 4785.83,
-    "cometa_azienda": 62.34,
-    "recupero_acconto_gratifica": 0
+    "voci_notevoli": [
+      "Gratifica natalizia 1.268,04",
+      "Trasferte estero zona C e D"
+    ]
   },
   {
-    "id": "2019-12",
+    "id": "2019-12-SASIB",
+    "periodoId": "2019-12",
     "anno": 2019,
     "mese": 12,
     "periodo": "Dicembre 2019",
@@ -1255,24 +1385,26 @@ export const STIPENDI_SEED = [
     "trattenute": 350.91,
     "tfr_a_fondo_pensione": 181.39,
     "cometa_dipendente": 105.35,
+    "cometa_azienda": 41.56,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Gratifica nat./tredicesima",
-      "Conguaglio IRPEF a credito"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 244.27,
     "irpef_netta": -450.54,
     "addizionale_regionale": 287.08,
     "addizionale_comunale": 82.69,
     "imponibile_inps": 1147.0,
     "imponibile_irpef": 2392.36,
-    "cometa_azienda": 41.56,
-    "recupero_acconto_gratifica": 1268.04
+    "voci_notevoli": [
+      "Gratifica nat./tredicesima",
+      "Conguaglio IRPEF a credito"
+    ]
   },
   {
-    "id": "2020-01",
+    "id": "2020-01-SASIB",
+    "periodoId": "2020-01",
     "anno": 2020,
     "mese": 1,
     "periodo": "Gennaio 2020",
@@ -1283,23 +1415,25 @@ export const STIPENDI_SEED = [
     "trattenute": 1190.25,
     "tfr_a_fondo_pensione": 208.65,
     "cometa_dipendente": 121.57,
+    "cometa_azienda": 41.56,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Trasferta estero zona C"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 312.51,
     "irpef_netta": 718.16,
     "addizionale_regionale": 28.71,
     "addizionale_comunale": 8.27,
     "imponibile_inps": 3293.0,
     "imponibile_irpef": 2858.8,
-    "cometa_azienda": 41.56,
-    "recupero_acconto_gratifica": 0
+    "voci_notevoli": [
+      "Trasferta estero zona C"
+    ]
   },
   {
-    "id": "2020-02",
+    "id": "2020-02-SASIB",
+    "periodoId": "2020-02",
     "anno": 2020,
     "mese": 2,
     "periodo": "Febbraio 2020",
@@ -1310,23 +1444,25 @@ export const STIPENDI_SEED = [
     "trattenute": 1339.18,
     "tfr_a_fondo_pensione": 207.03,
     "cometa_dipendente": 121.57,
+    "cometa_azienda": 41.56,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Trasferte e straordinari"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 343.34,
     "irpef_netta": 834.01,
     "addizionale_regionale": 28.71,
     "addizionale_comunale": 11.03,
     "imponibile_inps": 3618.0,
     "imponibile_irpef": 3153.25,
-    "cometa_azienda": 41.56,
-    "recupero_acconto_gratifica": 0
+    "voci_notevoli": [
+      "Trasferte e straordinari"
+    ]
   },
   {
-    "id": "2020-03",
+    "id": "2020-03-SASIB",
+    "periodoId": "2020-03",
     "anno": 2020,
     "mese": 3,
     "periodo": "Marzo 2020",
@@ -1337,23 +1473,25 @@ export const STIPENDI_SEED = [
     "trattenute": 880.67,
     "tfr_a_fondo_pensione": 174.93,
     "cometa_dipendente": 101.44,
+    "cometa_azienda": 41.56,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Una tantum D.L. 18/3/2020: 31,82"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 245.41,
     "irpef_netta": 493.18,
     "addizionale_regionale": 28.71,
     "addizionale_comunale": 11.03,
     "imponibile_inps": 2586.0,
     "imponibile_irpef": 2239.62,
-    "cometa_azienda": 41.56,
-    "recupero_acconto_gratifica": 0
+    "voci_notevoli": [
+      "Una tantum D.L. 18/3/2020: 31,82"
+    ]
   },
   {
-    "id": "2020-04",
+    "id": "2020-04-SASIB",
+    "periodoId": "2020-04",
     "anno": 2020,
     "mese": 4,
     "periodo": "Aprile 2020",
@@ -1364,23 +1502,25 @@ export const STIPENDI_SEED = [
     "trattenute": 864.68,
     "tfr_a_fondo_pensione": 175.18,
     "cometa_dipendente": 101.44,
+    "cometa_azienda": 41.56,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Mese senza trasferte (lockdown)"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 240.67,
     "irpef_netta": 482.83,
     "addizionale_regionale": 28.71,
     "addizionale_comunale": 11.03,
     "imponibile_inps": 2536.0,
     "imponibile_irpef": 2193.97,
-    "cometa_azienda": 41.56,
-    "recupero_acconto_gratifica": 0
+    "voci_notevoli": [
+      "Mese senza trasferte (lockdown)"
+    ]
   },
   {
-    "id": "2020-05",
+    "id": "2020-05-SASIB",
+    "periodoId": "2020-05",
     "anno": 2020,
     "mese": 5,
     "periodo": "Maggio 2020",
@@ -1391,24 +1531,26 @@ export const STIPENDI_SEED = [
     "trattenute": 912.71,
     "tfr_a_fondo_pensione": 191.27,
     "cometa_dipendente": 110.76,
+    "cometa_azienda": 41.56,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "PDR saldo premio risultato AP 232,99",
-      "Imposta sostitutiva 10% su 210,88"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 262.78,
     "irpef_netta": 478.34,
     "addizionale_regionale": 28.71,
     "addizionale_comunale": 11.03,
     "imponibile_inps": 2769.0,
     "imponibile_irpef": 2184.65,
-    "cometa_azienda": 41.56,
-    "recupero_acconto_gratifica": 0
+    "voci_notevoli": [
+      "PDR saldo premio risultato AP 232,99",
+      "Imposta sostitutiva 10% su 210,88"
+    ]
   },
   {
-    "id": "2020-06",
+    "id": "2020-06-SASIB",
+    "periodoId": "2020-06",
     "anno": 2020,
     "mese": 6,
     "periodo": "Giugno 2020",
@@ -1419,23 +1561,25 @@ export const STIPENDI_SEED = [
     "trattenute": 1794.84,
     "tfr_a_fondo_pensione": 315.46,
     "cometa_dipendente": 182.68,
+    "cometa_azienda": 41.84,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Premio feriale 2.031,00"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 439.6,
     "irpef_netta": 1132.82,
     "addizionale_regionale": 28.71,
     "addizionale_comunale": 11.03,
     "imponibile_inps": 5186.0,
     "imponibile_irpef": 3944.8,
-    "cometa_azienda": 41.84,
-    "recupero_acconto_gratifica": 0
+    "voci_notevoli": [
+      "Premio feriale 2.031,00"
+    ]
   },
   {
-    "id": "2020-07",
+    "id": "2020-07-SASIB",
+    "periodoId": "2020-07",
     "anno": 2020,
     "mese": 7,
     "periodo": "Luglio 2020",
@@ -1446,23 +1590,25 @@ export const STIPENDI_SEED = [
     "trattenute": 788.93,
     "tfr_a_fondo_pensione": 175.09,
     "cometa_dipendente": 101.44,
+    "cometa_azienda": 41.84,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Detrazione ulteriore art.2: 80,86"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 242.37,
     "irpef_netta": 404.48,
     "addizionale_regionale": 28.71,
     "addizionale_comunale": 11.03,
     "imponibile_inps": 2554.0,
     "imponibile_irpef": 2210.6,
-    "cometa_azienda": 41.84,
-    "recupero_acconto_gratifica": 0
+    "voci_notevoli": [
+      "Detrazione ulteriore art.2: 80,86"
+    ]
   },
   {
-    "id": "2020-08",
+    "id": "2020-08-SASIB",
+    "periodoId": "2020-08",
     "anno": 2020,
     "mese": 8,
     "periodo": "Agosto 2020",
@@ -1473,23 +1619,25 @@ export const STIPENDI_SEED = [
     "trattenute": 794.26,
     "tfr_a_fondo_pensione": 175.02,
     "cometa_dipendente": 101.44,
+    "cometa_azienda": 41.84,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Ferie collettive"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 243.7,
     "irpef_netta": 407.83,
     "addizionale_regionale": 28.71,
     "addizionale_comunale": 11.03,
     "imponibile_inps": 2568.0,
     "imponibile_irpef": 2223.01,
-    "cometa_azienda": 41.84,
-    "recupero_acconto_gratifica": 0
+    "voci_notevoli": [
+      "Ferie collettive"
+    ]
   },
   {
-    "id": "2020-09",
+    "id": "2020-09-SASIB",
+    "periodoId": "2020-09",
     "anno": 2020,
     "mese": 9,
     "periodo": "Settembre 2020",
@@ -1500,24 +1648,26 @@ export const STIPENDI_SEED = [
     "trattenute": 995.61,
     "tfr_a_fondo_pensione": 181.05,
     "cometa_dipendente": 105.97,
+    "cometa_azienda": 41.56,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 124.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Conguaglio 730 misto: rimborso 276,00 e trattenuta 152,00 (effetto netto +124, neutralizzato)",
-      "Trasferta estero zona B, straordinari trasferta, ore viaggio 85%"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 288.4,
     "irpef_netta": 600.08,
     "addizionale_regionale": 0,
     "addizionale_comunale": 0,
     "imponibile_inps": 3039.0,
     "imponibile_irpef": 2644.21,
-    "cometa_azienda": 41.56,
-    "recupero_acconto_gratifica": 0
+    "voci_notevoli": [
+      "Conguaglio 730 misto: rimborso 276,00 e trattenuta 152,00 (effetto netto +124, neutralizzato)",
+      "Trasferta estero zona B, straordinari trasferta, ore viaggio 85%"
+    ]
   },
   {
-    "id": "2020-10",
+    "id": "2020-10-SASIB",
+    "periodoId": "2020-10",
     "anno": 2020,
     "mese": 10,
     "periodo": "Ottobre 2020",
@@ -1528,24 +1678,26 @@ export const STIPENDI_SEED = [
     "trattenute": 1251.86,
     "tfr_a_fondo_pensione": 221.71,
     "cometa_dipendente": 129.44,
+    "cometa_azienda": 41.84,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "PDR acconto premio risultato 700,00",
-      "Molti straordinari e arretrati"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 341.55,
     "irpef_netta": 739.64,
     "addizionale_regionale": 28.69,
     "addizionale_comunale": 10.99,
     "imponibile_inps": 3599.0,
     "imponibile_irpef": 3128.12,
-    "cometa_azienda": 41.84,
-    "recupero_acconto_gratifica": 0
+    "voci_notevoli": [
+      "PDR acconto premio risultato 700,00",
+      "Molti straordinari e arretrati"
+    ]
   },
   {
-    "id": "2020-11",
+    "id": "2020-11-SASIB",
+    "periodoId": "2020-11",
     "anno": 2020,
     "mese": 11,
     "periodo": "Novembre 2020",
@@ -1556,23 +1708,25 @@ export const STIPENDI_SEED = [
     "trattenute": 1966.18,
     "tfr_a_fondo_pensione": 349.78,
     "cometa_dipendente": 202.89,
+    "cometa_azienda": 83.7,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Gratifica natalizia 2.536,08"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 504.64,
     "irpef_netta": 1257.62,
     "addizionale_regionale": 0,
     "addizionale_comunale": 0,
     "imponibile_inps": 6426.0,
     "imponibile_irpef": 4479.16,
-    "cometa_azienda": 83.7,
-    "recupero_acconto_gratifica": 0
+    "voci_notevoli": [
+      "Gratifica natalizia 2.536,08"
+    ]
   },
   {
-    "id": "2020-12",
+    "id": "2020-12-SASIB",
+    "periodoId": "2020-12",
     "anno": 2020,
     "mese": 12,
     "periodo": "Dicembre 2020",
@@ -1583,24 +1737,26 @@ export const STIPENDI_SEED = [
     "trattenute": 645.88,
     "tfr_a_fondo_pensione": 183.1,
     "cometa_dipendente": 106.13,
+    "cometa_azienda": 41.84,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Gratifica nat./tredicesima",
-      "Smonetizzazione ferie non godute"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 236.7,
     "irpef_netta": 302.53,
     "addizionale_regionale": 564.23,
     "addizionale_comunale": 136.64,
     "imponibile_inps": 832.0,
     "imponibile_irpef": 2347.18,
-    "cometa_azienda": 41.84,
-    "recupero_acconto_gratifica": 2536.08
+    "voci_notevoli": [
+      "Gratifica nat./tredicesima",
+      "Smonetizzazione ferie non godute"
+    ]
   },
   {
-    "id": "2021-01",
+    "id": "2021-01-SASIB",
+    "periodoId": "2021-01",
     "anno": 2021,
     "mese": 1,
     "periodo": "Gennaio 2021",
@@ -1611,23 +1767,25 @@ export const STIPENDI_SEED = [
     "trattenute": 836.88,
     "tfr_a_fondo_pensione": 174.81,
     "cometa_dipendente": 101.44,
+    "cometa_azienda": 41.84,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Acconto 30% addizionale comunale"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 247.6,
     "irpef_netta": 417.24,
     "addizionale_regionale": 56.42,
     "addizionale_comunale": 13.66,
     "imponibile_inps": 2609.0,
     "imponibile_irpef": 2260.34,
-    "cometa_azienda": 41.84,
-    "recupero_acconto_gratifica": 0
+    "voci_notevoli": [
+      "Acconto 30% addizionale comunale"
+    ]
   },
   {
-    "id": "2021-02",
+    "id": "2021-02-SASIB",
+    "periodoId": "2021-02",
     "anno": 2021,
     "mese": 2,
     "periodo": "Febbraio 2021",
@@ -1638,21 +1796,23 @@ export const STIPENDI_SEED = [
     "trattenute": 868.94,
     "tfr_a_fondo_pensione": 174.63,
     "cometa_dipendente": 101.44,
+    "cometa_azienda": 41.84,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 251.11,
     "irpef_netta": 440.03,
     "addizionale_regionale": 56.42,
     "addizionale_comunale": 19.04,
     "imponibile_inps": 2646.0,
     "imponibile_irpef": 2293.48,
-    "cometa_azienda": 41.84,
-    "recupero_acconto_gratifica": 0
+    "voci_notevoli": []
   },
   {
-    "id": "2021-03",
+    "id": "2021-03-SASIB",
+    "periodoId": "2021-03",
     "anno": 2021,
     "mese": 3,
     "periodo": "Marzo 2021",
@@ -1663,23 +1823,25 @@ export const STIPENDI_SEED = [
     "trattenute": 889.56,
     "tfr_a_fondo_pensione": 174.19,
     "cometa_dipendente": 101.44,
+    "cometa_azienda": 41.84,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Straordinari 10,75 h"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 259.36,
     "irpef_netta": 451.75,
     "addizionale_regionale": 56.42,
     "addizionale_comunale": 19.04,
     "imponibile_inps": 2733.0,
     "imponibile_irpef": 2372.27,
-    "cometa_azienda": 41.84,
-    "recupero_acconto_gratifica": 0
+    "voci_notevoli": [
+      "Straordinari 10,75 h"
+    ]
   },
   {
-    "id": "2021-04",
+    "id": "2021-04-SASIB",
+    "periodoId": "2021-04",
     "anno": 2021,
     "mese": 4,
     "periodo": "Aprile 2021",
@@ -1690,23 +1852,25 @@ export const STIPENDI_SEED = [
     "trattenute": 912.83,
     "tfr_a_fondo_pensione": 176.22,
     "cometa_dipendente": 102.65,
+    "cometa_azienda": 41.84,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Trasferta estero zona A"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 263.35,
     "irpef_netta": 470.21,
     "addizionale_regionale": 56.42,
     "addizionale_comunale": 19.04,
     "imponibile_inps": 2775.0,
     "imponibile_irpef": 2408.72,
-    "cometa_azienda": 41.84,
-    "recupero_acconto_gratifica": 0
+    "voci_notevoli": [
+      "Trasferta estero zona A"
+    ]
   },
   {
-    "id": "2021-05",
+    "id": "2021-05-SASIB",
+    "periodoId": "2021-05",
     "anno": 2021,
     "mese": 5,
     "periodo": "Maggio 2021",
@@ -1717,24 +1881,26 @@ export const STIPENDI_SEED = [
     "trattenute": 1081.93,
     "tfr_a_fondo_pensione": 224.55,
     "cometa_dipendente": 130.86,
+    "cometa_azienda": 41.84,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "PDR saldo premio risultato AP 735,39",
-      "Imposta sostitutiva 10% su 665,60"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 337.47,
     "irpef_netta": 470.55,
     "addizionale_regionale": 56.42,
     "addizionale_comunale": 19.04,
     "imponibile_inps": 3556.0,
     "imponibile_irpef": 2421.76,
-    "cometa_azienda": 41.84,
-    "recupero_acconto_gratifica": 0
+    "voci_notevoli": [
+      "PDR saldo premio risultato AP 735,39",
+      "Imposta sostitutiva 10% su 665,60"
+    ]
   },
   {
-    "id": "2021-06",
+    "id": "2021-06-SASIB",
+    "periodoId": "2021-06",
     "anno": 2021,
     "mese": 6,
     "periodo": "Giugno 2021",
@@ -1745,24 +1911,26 @@ export const STIPENDI_SEED = [
     "trattenute": 2049.38,
     "tfr_a_fondo_pensione": 342.79,
     "cometa_dipendente": 198.7,
+    "cometa_azienda": 42.42,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "PASSAGGIO A LIVELLO B2",
-      "Premio feriale 2.031,00"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 488.8,
     "irpef_netta": 1250.65,
     "addizionale_regionale": 56.42,
     "addizionale_comunale": 19.04,
     "imponibile_inps": 6124.0,
     "imponibile_irpef": 4348.98,
-    "cometa_azienda": 42.42,
-    "recupero_acconto_gratifica": 0
+    "voci_notevoli": [
+      "PASSAGGIO A LIVELLO B2",
+      "Premio feriale 2.031,00"
+    ]
   },
   {
-    "id": "2021-07",
+    "id": "2021-07-SASIB",
+    "periodoId": "2021-07",
     "anno": 2021,
     "mese": 7,
     "periodo": "Luglio 2021",
@@ -1773,23 +1941,25 @@ export const STIPENDI_SEED = [
     "trattenute": 1109.34,
     "tfr_a_fondo_pensione": 188.16,
     "cometa_dipendente": 109.98,
+    "cometa_azienda": 42.42,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Primo scatto biennale 36,41"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 294.19,
     "irpef_netta": 628.38,
     "addizionale_regionale": 56.42,
     "addizionale_comunale": 19.04,
     "imponibile_inps": 3100.0,
     "imponibile_irpef": 2695.41,
-    "cometa_azienda": 42.42,
-    "recupero_acconto_gratifica": 0
+    "voci_notevoli": [
+      "Primo scatto biennale 36,41"
+    ]
   },
   {
-    "id": "2021-08",
+    "id": "2021-08-SASIB",
+    "periodoId": "2021-08",
     "anno": 2021,
     "mese": 8,
     "periodo": "Agosto 2021",
@@ -1800,23 +1970,25 @@ export const STIPENDI_SEED = [
     "trattenute": 1128.48,
     "tfr_a_fondo_pensione": 187.93,
     "cometa_dipendente": 109.98,
+    "cometa_azienda": 42.42,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 2388.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Rimborso 730: 2.388,00 (escluso)"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 298.47,
     "irpef_netta": 643.8,
     "addizionale_regionale": 56.42,
     "addizionale_comunale": 19.04,
     "imponibile_inps": 3145.0,
     "imponibile_irpef": 2736.23,
-    "cometa_azienda": 42.42,
-    "recupero_acconto_gratifica": 0
+    "voci_notevoli": [
+      "Rimborso 730: 2.388,00 (escluso)"
+    ]
   },
   {
-    "id": "2021-09",
+    "id": "2021-09-SASIB",
+    "periodoId": "2021-09",
     "anno": 2021,
     "mese": 9,
     "periodo": "Settembre 2021",
@@ -1827,23 +1999,25 @@ export const STIPENDI_SEED = [
     "trattenute": 1617.12,
     "tfr_a_fondo_pensione": 211.52,
     "cometa_dipendente": 125.63,
+    "cometa_azienda": 42.42,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Trasferte estero zona C"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 403.73,
     "irpef_netta": 1011.14,
     "addizionale_regionale": 56.42,
     "addizionale_comunale": 19.04,
     "imponibile_inps": 4502.0,
     "imponibile_irpef": 3695.34,
-    "cometa_azienda": 42.42,
-    "recupero_acconto_gratifica": 0
+    "voci_notevoli": [
+      "Trasferte estero zona C"
+    ]
   },
   {
-    "id": "2021-10",
+    "id": "2021-10-SASIB",
+    "periodoId": "2021-10",
     "anno": 2021,
     "mese": 10,
     "periodo": "Ottobre 2021",
@@ -1854,23 +2028,25 @@ export const STIPENDI_SEED = [
     "trattenute": 1712.85,
     "tfr_a_fondo_pensione": 254.15,
     "cometa_dipendente": 149.16,
+    "cometa_azienda": 42.42,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "PDR acconto premio risultato 700,00"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 423.55,
     "irpef_netta": 1063.7,
     "addizionale_regionale": 56.45,
     "addizionale_comunale": 19.09,
     "imponibile_inps": 4880.0,
     "imponibile_irpef": 3841.22,
-    "cometa_azienda": 42.42,
-    "recupero_acconto_gratifica": 0
+    "voci_notevoli": [
+      "PDR acconto premio risultato 700,00"
+    ]
   },
   {
-    "id": "2021-11",
+    "id": "2021-11-SASIB",
+    "periodoId": "2021-11",
     "anno": 2021,
     "mese": 11,
     "periodo": "Novembre 2021",
@@ -1881,23 +2057,25 @@ export const STIPENDI_SEED = [
     "trattenute": 2506.32,
     "tfr_a_fondo_pensione": 388.74,
     "cometa_dipendente": 226.66,
+    "cometa_azienda": 84.84,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "Gratifica natalizia 2.749,41"
-    ],
+    "anticipo": false,
+    "cessazione": false,
     "contributi_inps": 610.8,
     "irpef_netta": 1667.83,
     "addizionale_regionale": 0,
     "addizionale_comunale": 0,
     "imponibile_inps": 8450.0,
     "imponibile_irpef": 5361.99,
-    "cometa_azienda": 84.84,
-    "recupero_acconto_gratifica": 0
+    "voci_notevoli": [
+      "Gratifica natalizia 2.749,41"
+    ]
   },
   {
-    "id": "2021-12",
+    "id": "2021-12-SASIB",
+    "periodoId": "2021-12",
     "anno": 2021,
     "mese": 12,
     "periodo": "Dicembre 2021",
@@ -1908,26 +2086,28 @@ export const STIPENDI_SEED = [
     "trattenute": 3138.41,
     "tfr_a_fondo_pensione": 181.92,
     "cometa_dipendente": 111.68,
+    "cometa_azienda": 42.42,
     "premi_detassati": 0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
-    "voci_notevoli": [
-      "ULTIMA BUSTA SASIB - cessazione 30/12/2021",
-      "Gratifica nat./tredicesima",
-      "PAR non goduti 2.165,01",
-      "Rimborsi spese 102,12"
-    ],
+    "anticipo": false,
+    "cessazione": true,
     "contributi_inps": 431.5,
     "irpef_netta": 1775.8,
     "addizionale_regionale": 671.05,
     "addizionale_comunale": 147.22,
     "imponibile_inps": 895.0,
     "imponibile_irpef": 4433.69,
-    "cometa_azienda": 42.42,
-    "recupero_acconto_gratifica": 2749.41
+    "voci_notevoli": [
+      "ULTIMA BUSTA SASIB - cessazione 30/12/2021",
+      "Gratifica nat./tredicesima",
+      "PAR non goduti 2.165,01",
+      "Rimborsi spese 102,12"
+    ]
   },
   {
-    "id": "2022-01",
+    "id": "2022-01-Bonfiglioli",
+    "periodoId": "2022-01",
     "anno": 2022,
     "mese": 1,
     "periodo": "Gennaio 2022",
@@ -1938,13 +2118,19 @@ export const STIPENDI_SEED = [
     "trattenute": 1462.87,
     "tfr_a_fondo_pensione": 168.93,
     "cometa_dipendente": 97.83,
+    "cometa_azienda": 32.62,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 224.79,
+    "irpef_netta": 393.37,
     "voci_notevoli": []
   },
   {
-    "id": "2022-02",
+    "id": "2022-02-Bonfiglioli",
+    "periodoId": "2022-02",
     "anno": 2022,
     "mese": 2,
     "periodo": "Febbraio 2022",
@@ -1955,13 +2141,18 @@ export const STIPENDI_SEED = [
     "trattenute": 1103.02,
     "tfr_a_fondo_pensione": 225.95,
     "cometa_dipendente": 130.85,
+    "cometa_azienda": 42.42,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "irpef_netta": 658.26,
     "voci_notevoli": []
   },
   {
-    "id": "2022-03",
+    "id": "2022-03-Bonfiglioli",
+    "periodoId": "2022-03",
     "anno": 2022,
     "mese": 3,
     "periodo": "Marzo 2022",
@@ -1972,13 +2163,19 @@ export const STIPENDI_SEED = [
     "trattenute": 1257.1,
     "tfr_a_fondo_pensione": 247.72,
     "cometa_dipendente": 143.45,
+    "cometa_azienda": 42.42,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 340.31,
+    "irpef_netta": 769.84,
     "voci_notevoli": []
   },
   {
-    "id": "2022-04",
+    "id": "2022-04-Bonfiglioli",
+    "periodoId": "2022-04",
     "anno": 2022,
     "mese": 4,
     "periodo": "Aprile 2022",
@@ -1989,13 +2186,19 @@ export const STIPENDI_SEED = [
     "trattenute": 1257.71,
     "tfr_a_fondo_pensione": 247.71,
     "cometa_dipendente": 143.45,
+    "cometa_azienda": 42.42,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 340.31,
+    "irpef_netta": 771.7,
     "voci_notevoli": []
   },
   {
-    "id": "2022-05",
+    "id": "2022-05-Bonfiglioli",
+    "periodoId": "2022-05",
     "anno": 2022,
     "mese": 5,
     "periodo": "Maggio 2022",
@@ -2006,13 +2209,18 @@ export const STIPENDI_SEED = [
     "trattenute": 1241.83,
     "tfr_a_fondo_pensione": 244.6,
     "cometa_dipendente": 141.65,
+    "cometa_azienda": 42.42,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "irpef_netta": 761.64,
     "voci_notevoli": []
   },
   {
-    "id": "2022-06",
+    "id": "2022-06-Bonfiglioli",
+    "periodoId": "2022-06",
     "anno": 2022,
     "mese": 6,
     "periodo": "Giugno 2022",
@@ -2023,13 +2231,19 @@ export const STIPENDI_SEED = [
     "trattenute": 1466.75,
     "tfr_a_fondo_pensione": 299.32,
     "cometa_dipendente": 173.33,
+    "cometa_azienda": 47.3,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 414.31,
+    "irpef_netta": 693.19,
     "voci_notevoli": []
   },
   {
-    "id": "2022-07",
+    "id": "2022-07-Bonfiglioli",
+    "periodoId": "2022-07",
     "anno": 2022,
     "mese": 7,
     "periodo": "Luglio 2022",
@@ -2040,13 +2254,19 @@ export const STIPENDI_SEED = [
     "trattenute": 1066.18,
     "tfr_a_fondo_pensione": 222.85,
     "cometa_dipendente": 129.05,
+    "cometa_azienda": 47.3,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 306.15,
+    "irpef_netta": 626.48,
     "voci_notevoli": []
   },
   {
-    "id": "2022-08",
+    "id": "2022-08-Bonfiglioli",
+    "periodoId": "2022-08",
     "anno": 2022,
     "mese": 8,
     "periodo": "Agosto 2022",
@@ -2057,15 +2277,21 @@ export const STIPENDI_SEED = [
     "trattenute": 1063.49,
     "tfr_a_fondo_pensione": 222.86,
     "cometa_dipendente": 129.05,
+    "cometa_azienda": 47.3,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 2423.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 306.15,
+    "irpef_netta": 626.54,
     "voci_notevoli": [
       "rimborso 730 escluso da lordo/netto: 2423.00"
     ]
   },
   {
-    "id": "2022-09",
+    "id": "2022-09-Bonfiglioli",
+    "periodoId": "2022-09",
     "anno": 2022,
     "mese": 9,
     "periodo": "Settembre 2022",
@@ -2076,13 +2302,19 @@ export const STIPENDI_SEED = [
     "trattenute": 1299.8,
     "tfr_a_fondo_pensione": 253.93,
     "cometa_dipendente": 147.05,
+    "cometa_azienda": 47.3,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 348.85,
+    "irpef_netta": 779.6,
     "voci_notevoli": []
   },
   {
-    "id": "2022-10",
+    "id": "2022-10-Bonfiglioli",
+    "periodoId": "2022-10",
     "anno": 2022,
     "mese": 10,
     "periodo": "Ottobre 2022",
@@ -2093,13 +2325,19 @@ export const STIPENDI_SEED = [
     "trattenute": 1109.25,
     "tfr_a_fondo_pensione": 229.07,
     "cometa_dipendente": 132.65,
+    "cometa_azienda": 47.3,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 314.69,
+    "irpef_netta": 658.91,
     "voci_notevoli": []
   },
   {
-    "id": "2022-11",
+    "id": "2022-11-Bonfiglioli",
+    "periodoId": "2022-11",
     "anno": 2022,
     "mese": 11,
     "periodo": "Novembre 2022",
@@ -2110,13 +2348,19 @@ export const STIPENDI_SEED = [
     "trattenute": 1193.65,
     "tfr_a_fondo_pensione": 241.5,
     "cometa_dipendente": 139.85,
+    "cometa_azienda": 47.3,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 331.77,
+    "irpef_netta": 719.53,
     "voci_notevoli": []
   },
   {
-    "id": "2022-12",
+    "id": "2022-12-Bonfiglioli",
+    "periodoId": "2022-12",
     "anno": 2022,
     "mese": 12,
     "periodo": "Dicembre 2022",
@@ -2127,15 +2371,21 @@ export const STIPENDI_SEED = [
     "trattenute": 2598.92,
     "tfr_a_fondo_pensione": 458.12,
     "cometa_dipendente": 265.3,
+    "cometa_azienda": 47.3,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": true,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 330.7,
+    "irpef_netta": 702.03,
     "voci_notevoli": [
       "include 13ma (gratifica natalizia) accorpata"
     ]
   },
   {
-    "id": "2023-01",
+    "id": "2023-01-Bonfiglioli",
+    "periodoId": "2023-01",
     "anno": 2023,
     "mese": 1,
     "periodo": "Gennaio 2023",
@@ -2146,13 +2396,21 @@ export const STIPENDI_SEED = [
     "trattenute": 1394.76,
     "tfr_a_fondo_pensione": 235.28,
     "cometa_dipendente": 136.25,
+    "cometa_azienda": 47.3,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 323.23,
+    "irpef_netta": 708.56,
+    "addizionale_regionale": 66.1,
+    "addizionale_comunale": 25.02,
     "voci_notevoli": []
   },
   {
-    "id": "2023-02",
+    "id": "2023-02-Bonfiglioli",
+    "periodoId": "2023-02",
     "anno": 2023,
     "mese": 2,
     "periodo": "Febbraio 2023",
@@ -2163,13 +2421,21 @@ export const STIPENDI_SEED = [
     "trattenute": 1323.12,
     "tfr_a_fondo_pensione": 241.5,
     "cometa_dipendente": 139.85,
+    "cometa_azienda": 47.3,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 331.77,
+    "irpef_netta": 748.77,
+    "addizionale_regionale": 66.11,
+    "addizionale_comunale": 33.37,
     "voci_notevoli": []
   },
   {
-    "id": "2023-03",
+    "id": "2023-03-Bonfiglioli",
+    "periodoId": "2023-03",
     "anno": 2023,
     "mese": 3,
     "periodo": "Marzo 2023",
@@ -2180,13 +2446,21 @@ export const STIPENDI_SEED = [
     "trattenute": 1576.01,
     "tfr_a_fondo_pensione": 272.93,
     "cometa_dipendente": 158.05,
+    "cometa_azienda": 47.3,
     "premi_detassati": 452.55,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 374.95,
+    "irpef_netta": 717.42,
+    "addizionale_regionale": 66.1,
+    "addizionale_comunale": 33.36,
     "voci_notevoli": []
   },
   {
-    "id": "2023-04",
+    "id": "2023-04-Bonfiglioli",
+    "periodoId": "2023-04",
     "anno": 2023,
     "mese": 4,
     "periodo": "Aprile 2023",
@@ -2197,13 +2471,21 @@ export const STIPENDI_SEED = [
     "trattenute": 1362.78,
     "tfr_a_fondo_pensione": 247.71,
     "cometa_dipendente": 143.45,
+    "cometa_azienda": 47.3,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 340.31,
+    "irpef_netta": 778.05,
+    "addizionale_regionale": 66.11,
+    "addizionale_comunale": 33.36,
     "voci_notevoli": []
   },
   {
-    "id": "2023-05",
+    "id": "2023-05-Bonfiglioli",
+    "periodoId": "2023-05",
     "anno": 2023,
     "mese": 5,
     "periodo": "Maggio 2023",
@@ -2214,13 +2496,21 @@ export const STIPENDI_SEED = [
     "trattenute": 3639.29,
     "tfr_a_fondo_pensione": 569.69,
     "cometa_dipendente": 329.49,
+    "cometa_azienda": 47.3,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 805.78,
+    "irpef_netta": 2401.55,
+    "addizionale_regionale": 66.1,
+    "addizionale_comunale": 33.37,
     "voci_notevoli": []
   },
   {
-    "id": "2023-06",
+    "id": "2023-06-Bonfiglioli",
+    "periodoId": "2023-06",
     "anno": 2023,
     "mese": 6,
     "periodo": "Giugno 2023",
@@ -2231,13 +2521,21 @@ export const STIPENDI_SEED = [
     "trattenute": 2195.27,
     "tfr_a_fondo_pensione": 388.23,
     "cometa_dipendente": 225.38,
+    "cometa_azienda": 50.42,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 567.55,
+    "irpef_netta": 918.28,
+    "addizionale_regionale": 66.1,
+    "addizionale_comunale": 33.37,
     "voci_notevoli": []
   },
   {
-    "id": "2023-07",
+    "id": "2023-07-Bonfiglioli",
+    "periodoId": "2023-07",
     "anno": 2023,
     "mese": 7,
     "periodo": "Luglio 2023",
@@ -2248,13 +2546,21 @@ export const STIPENDI_SEED = [
     "trattenute": 1430.67,
     "tfr_a_fondo_pensione": 254.55,
     "cometa_dipendente": 147.41,
+    "cometa_azienda": 50.42,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 349.71,
+    "irpef_netta": 830.58,
+    "addizionale_regionale": 66.11,
+    "addizionale_comunale": 33.36,
     "voci_notevoli": []
   },
   {
-    "id": "2023-08",
+    "id": "2023-08-Bonfiglioli",
+    "periodoId": "2023-08",
     "anno": 2023,
     "mese": 8,
     "periodo": "Agosto 2023",
@@ -2265,15 +2571,23 @@ export const STIPENDI_SEED = [
     "trattenute": 1385.13,
     "tfr_a_fondo_pensione": 248.34,
     "cometa_dipendente": 143.81,
+    "cometa_azienda": 50.42,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 2592.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 341.17,
+    "irpef_netta": 799.94,
+    "addizionale_regionale": 66.1,
+    "addizionale_comunale": 33.36,
     "voci_notevoli": [
       "rimborso 730 escluso da lordo/netto: 2592.00"
     ]
   },
   {
-    "id": "2023-09",
+    "id": "2023-09-Bonfiglioli",
+    "periodoId": "2023-09",
     "anno": 2023,
     "mese": 9,
     "periodo": "Settembre 2023",
@@ -2284,13 +2598,21 @@ export const STIPENDI_SEED = [
     "trattenute": 1493.26,
     "tfr_a_fondo_pensione": 263.88,
     "cometa_dipendente": 152.81,
+    "cometa_azienda": 50.42,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 362.52,
+    "irpef_netta": 875.95,
+    "addizionale_regionale": 66.11,
+    "addizionale_comunale": 33.37,
     "voci_notevoli": []
   },
   {
-    "id": "2023-10",
+    "id": "2023-10-Bonfiglioli",
+    "periodoId": "2023-10",
     "anno": 2023,
     "mese": 10,
     "periodo": "Ottobre 2023",
@@ -2301,13 +2623,21 @@ export const STIPENDI_SEED = [
     "trattenute": 1678.53,
     "tfr_a_fondo_pensione": 328.78,
     "cometa_dipendente": 190.39,
+    "cometa_azienda": 50.42,
     "premi_detassati": 764.84,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 455.84,
+    "irpef_netta": 891.85,
+    "addizionale_regionale": 66.1,
+    "addizionale_comunale": 33.36,
     "voci_notevoli": []
   },
   {
-    "id": "2023-11",
+    "id": "2023-11-Bonfiglioli",
+    "periodoId": "2023-11",
     "anno": 2023,
     "mese": 11,
     "periodo": "Novembre 2023",
@@ -2318,13 +2648,19 @@ export const STIPENDI_SEED = [
     "trattenute": 1413.37,
     "tfr_a_fondo_pensione": 266.99,
     "cometa_dipendente": 154.61,
+    "cometa_azienda": 50.42,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 366.79,
+    "irpef_netta": 890.72,
     "voci_notevoli": []
   },
   {
-    "id": "2023-12",
+    "id": "2023-12-Bonfiglioli",
+    "periodoId": "2023-12",
     "anno": 2023,
     "mese": 12,
     "periodo": "Dicembre 2023",
@@ -2335,15 +2671,21 @@ export const STIPENDI_SEED = [
     "trattenute": 2898.38,
     "tfr_a_fondo_pensione": 487.19,
     "cometa_dipendente": 282.13,
+    "cometa_azienda": 50.42,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": true,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 410.32,
+    "irpef_netta": 854.41,
     "voci_notevoli": [
       "include 13ma (gratifica natalizia) accorpata"
     ]
   },
   {
-    "id": "2024-01",
+    "id": "2024-01-Bonfiglioli",
+    "periodoId": "2024-01",
     "anno": 2024,
     "mese": 1,
     "periodo": "Gennaio 2024",
@@ -2354,13 +2696,21 @@ export const STIPENDI_SEED = [
     "trattenute": 1434.42,
     "tfr_a_fondo_pensione": 258.77,
     "cometa_dipendente": 149.85,
+    "cometa_azienda": 50.42,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 355.5,
+    "irpef_netta": 820.24,
+    "addizionale_regionale": 82.51,
+    "addizionale_comunale": 23.82,
     "voci_notevoli": []
   },
   {
-    "id": "2024-02",
+    "id": "2024-02-Bonfiglioli",
+    "periodoId": "2024-02",
     "anno": 2024,
     "mese": 2,
     "periodo": "Febbraio 2024",
@@ -2371,13 +2721,21 @@ export const STIPENDI_SEED = [
     "trattenute": 1558.33,
     "tfr_a_fondo_pensione": 273.72,
     "cometa_dipendente": 158.51,
+    "cometa_azienda": 50.42,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 376.09,
+    "irpef_netta": 904.71,
+    "addizionale_regionale": 82.51,
+    "addizionale_comunale": 34.26,
     "voci_notevoli": []
   },
   {
-    "id": "2024-03",
+    "id": "2024-03-Bonfiglioli",
+    "periodoId": "2024-03",
     "anno": 2024,
     "mese": 3,
     "periodo": "Marzo 2024",
@@ -2388,13 +2746,21 @@ export const STIPENDI_SEED = [
     "trattenute": 1547.79,
     "tfr_a_fondo_pensione": 295.81,
     "cometa_dipendente": 171.31,
+    "cometa_azienda": 50.42,
     "premi_detassati": 452.55,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 406.46,
+    "irpef_netta": 826.62,
+    "addizionale_regionale": 82.51,
+    "addizionale_comunale": 34.26,
     "voci_notevoli": []
   },
   {
-    "id": "2024-04",
+    "id": "2024-04-Bonfiglioli",
+    "periodoId": "2024-04",
     "anno": 2024,
     "mese": 4,
     "periodo": "Aprile 2024",
@@ -2405,13 +2771,21 @@ export const STIPENDI_SEED = [
     "trattenute": 1444.55,
     "tfr_a_fondo_pensione": 258.18,
     "cometa_dipendente": 149.51,
+    "cometa_azienda": 50.42,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 354.73,
+    "irpef_netta": 819.53,
+    "addizionale_regionale": 82.51,
+    "addizionale_comunale": 34.27,
     "voci_notevoli": []
   },
   {
-    "id": "2024-05",
+    "id": "2024-05-Bonfiglioli",
+    "periodoId": "2024-05",
     "anno": 2024,
     "mese": 5,
     "periodo": "Maggio 2024",
@@ -2422,9 +2796,12 @@ export const STIPENDI_SEED = [
     "trattenute": 3609.54,
     "tfr_a_fondo_pensione": 606.35,
     "cometa_dipendente": 348.48,
+    "cometa_azienda": 0,
     "premi_detassati": 1075.25,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": true,
     "voci_notevoli": [
       "ULTIMA BUSTA BONFIGLIOLI - cessazione 19/05/2024",
       "Conguaglio di cessazione: ferie non godute 1.158,68, PAR non goduti 841,50, gratifica natalizia ratei 1.399,80, premio feriale 1.708,90",
@@ -2433,7 +2810,8 @@ export const STIPENDI_SEED = [
     ]
   },
   {
-    "id": "2024-05",
+    "id": "2024-05-Schneider",
+    "periodoId": "2024-05",
     "anno": 2024,
     "mese": 5,
     "periodo": "Maggio 2024",
@@ -2444,13 +2822,18 @@ export const STIPENDI_SEED = [
     "trattenute": 2770.05,
     "tfr_a_fondo_pensione": 0.0,
     "cometa_dipendente": 0.0,
+    "cometa_azienda": 0,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": true,
+    "cessazione": false,
+    "irpef_netta": 283.76,
     "voci_notevoli": []
   },
   {
-    "id": "2024-06",
+    "id": "2024-06-Schneider",
+    "periodoId": "2024-06",
     "anno": 2024,
     "mese": 6,
     "periodo": "Giugno 2024",
@@ -2461,13 +2844,19 @@ export const STIPENDI_SEED = [
     "trattenute": 8875.84,
     "tfr_a_fondo_pensione": 439.91,
     "cometa_dipendente": 0.0,
+    "cometa_azienda": 0,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": true,
+    "cessazione": false,
+    "contributi_inps": 634.01,
+    "irpef_netta": 1997.44,
     "voci_notevoli": []
   },
   {
-    "id": "2024-07",
+    "id": "2024-07-Schneider",
+    "periodoId": "2024-07",
     "anno": 2024,
     "mese": 7,
     "periodo": "Luglio 2024",
@@ -2478,13 +2867,19 @@ export const STIPENDI_SEED = [
     "trattenute": 2141.69,
     "tfr_a_fondo_pensione": 279.67,
     "cometa_dipendente": 259.24,
+    "cometa_azienda": 29.54,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 384.25,
+    "irpef_netta": 750.77,
     "voci_notevoli": []
   },
   {
-    "id": "2024-08",
+    "id": "2024-08-Schneider",
+    "periodoId": "2024-08",
     "anno": 2024,
     "mese": 8,
     "periodo": "Agosto 2024",
@@ -2495,13 +2890,19 @@ export const STIPENDI_SEED = [
     "trattenute": 1844.97,
     "tfr_a_fondo_pensione": 279.67,
     "cometa_dipendente": 161.96,
+    "cometa_azienda": 59.0,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 384.25,
+    "irpef_netta": 1076.32,
     "voci_notevoli": []
   },
   {
-    "id": "2024-09",
+    "id": "2024-09-Schneider",
+    "periodoId": "2024-09",
     "anno": 2024,
     "mese": 9,
     "periodo": "Settembre 2024",
@@ -2512,15 +2913,21 @@ export const STIPENDI_SEED = [
     "trattenute": 5014.94,
     "tfr_a_fondo_pensione": 273.51,
     "cometa_dipendente": 161.96,
+    "cometa_azienda": 59.0,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 2470.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 508.35,
+    "irpef_netta": 1511.81,
     "voci_notevoli": [
       "rimborso 730 escluso da lordo/netto: 2470.00"
     ]
   },
   {
-    "id": "2024-10",
+    "id": "2024-10-Schneider",
+    "periodoId": "2024-10",
     "anno": 2024,
     "mese": 10,
     "periodo": "Ottobre 2024",
@@ -2531,13 +2938,18 @@ export const STIPENDI_SEED = [
     "trattenute": 1850.56,
     "tfr_a_fondo_pensione": 279.67,
     "cometa_dipendente": 161.96,
+    "cometa_azienda": 59.0,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "irpef_netta": 1084.51,
     "voci_notevoli": []
   },
   {
-    "id": "2024-11",
+    "id": "2024-11-Schneider",
+    "periodoId": "2024-11",
     "anno": 2024,
     "mese": 11,
     "periodo": "Novembre 2024",
@@ -2548,13 +2960,19 @@ export const STIPENDI_SEED = [
     "trattenute": 1939.1,
     "tfr_a_fondo_pensione": 292.61,
     "cometa_dipendente": 169.45,
+    "cometa_azienda": 59.0,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 402.0,
+    "irpef_netta": 1148.85,
     "voci_notevoli": []
   },
   {
-    "id": "2024-12",
+    "id": "2024-12-Schneider",
+    "periodoId": "2024-12",
     "anno": 2024,
     "mese": 12,
     "periodo": "Dicembre 2024",
@@ -2565,15 +2983,21 @@ export const STIPENDI_SEED = [
     "trattenute": 2871.62,
     "tfr_a_fondo_pensione": 442.82,
     "cometa_dipendente": 256.44,
+    "cometa_azienda": 59.0,
     "premi_detassati": 799.86,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": true,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 410.21,
+    "irpef_netta": 806.97,
     "voci_notevoli": [
       "include 13ma (gratifica natalizia) accorpata"
     ]
   },
   {
-    "id": "2025-01",
+    "id": "2025-01-Schneider",
+    "periodoId": "2025-01",
     "anno": 2025,
     "mese": 1,
     "periodo": "Gennaio 2025",
@@ -2584,13 +3008,21 @@ export const STIPENDI_SEED = [
     "trattenute": 3351.37,
     "tfr_a_fondo_pensione": 279.67,
     "cometa_dipendente": 161.96,
+    "cometa_azienda": 59.0,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 384.25,
+    "irpef_netta": 1218.9,
+    "addizionale_regionale": 45.85,
+    "addizionale_comunale": 17.16,
     "voci_notevoli": []
   },
   {
-    "id": "2025-02",
+    "id": "2025-02-Schneider",
+    "periodoId": "2025-02",
     "anno": 2025,
     "mese": 2,
     "periodo": "Febbraio 2025",
@@ -2601,13 +3033,21 @@ export const STIPENDI_SEED = [
     "trattenute": 2416.39,
     "tfr_a_fondo_pensione": 279.68,
     "cometa_dipendente": 161.96,
+    "cometa_azienda": 59.0,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 384.25,
+    "irpef_netta": 1219.58,
+    "addizionale_regionale": 45.85,
+    "addizionale_comunale": 17.16,
     "voci_notevoli": []
   },
   {
-    "id": "2025-03",
+    "id": "2025-03-Schneider",
+    "periodoId": "2025-03",
     "anno": 2025,
     "mese": 3,
     "periodo": "Marzo 2025",
@@ -2618,13 +3058,21 @@ export const STIPENDI_SEED = [
     "trattenute": 3506.03,
     "tfr_a_fondo_pensione": 465.34,
     "cometa_dipendente": 272.36,
+    "cometa_azienda": 59.0,
     "premi_detassati": 633.42,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 772.53,
+    "irpef_netta": 2144.45,
+    "addizionale_regionale": 45.86,
+    "addizionale_comunale": 23.44,
     "voci_notevoli": []
   },
   {
-    "id": "2025-04",
+    "id": "2025-04-Schneider",
+    "periodoId": "2025-04",
     "anno": 2025,
     "mese": 4,
     "periodo": "Aprile 2025",
@@ -2635,13 +3083,21 @@ export const STIPENDI_SEED = [
     "trattenute": 2089.65,
     "tfr_a_fondo_pensione": 279.27,
     "cometa_dipendente": 161.96,
+    "cometa_azienda": 59.0,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 391.85,
+    "irpef_netta": 1251.34,
+    "addizionale_regionale": 45.85,
+    "addizionale_comunale": 23.45,
     "voci_notevoli": []
   },
   {
-    "id": "2025-05",
+    "id": "2025-05-Schneider",
+    "periodoId": "2025-05",
     "anno": 2025,
     "mese": 5,
     "periodo": "Maggio 2025",
@@ -2652,13 +3108,21 @@ export const STIPENDI_SEED = [
     "trattenute": 2803.02,
     "tfr_a_fondo_pensione": 279.67,
     "cometa_dipendente": 161.96,
+    "cometa_azienda": 59.0,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 384.25,
+    "irpef_netta": 1225.97,
+    "addizionale_regionale": 45.85,
+    "addizionale_comunale": 23.45,
     "voci_notevoli": []
   },
   {
-    "id": "2025-06",
+    "id": "2025-06-Schneider",
+    "periodoId": "2025-06",
     "anno": 2025,
     "mese": 6,
     "periodo": "Giugno 2025",
@@ -2669,13 +3133,20 @@ export const STIPENDI_SEED = [
     "trattenute": 8797.8,
     "tfr_a_fondo_pensione": 569.87,
     "cometa_dipendente": 330.0,
+    "cometa_azienda": 59.64,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": true,
+    "cessazione": false,
+    "contributi_inps": 819.22,
+    "irpef_netta": 2485.29,
+    "addizionale_regionale": 45.85,
     "voci_notevoli": []
   },
   {
-    "id": "2025-07",
+    "id": "2025-07-Schneider",
+    "periodoId": "2025-07",
     "anno": 2025,
     "mese": 7,
     "periodo": "Luglio 2025",
@@ -2686,13 +3157,21 @@ export const STIPENDI_SEED = [
     "trattenute": 2268.58,
     "tfr_a_fondo_pensione": 281.75,
     "cometa_dipendente": 163.23,
+    "cometa_azienda": 59.64,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 389.66,
+    "irpef_netta": 1243.51,
+    "addizionale_regionale": 45.85,
+    "addizionale_comunale": 23.46,
     "voci_notevoli": []
   },
   {
-    "id": "2025-08",
+    "id": "2025-08-Schneider",
+    "periodoId": "2025-08",
     "anno": 2025,
     "mese": 8,
     "periodo": "Agosto 2025",
@@ -2703,13 +3182,21 @@ export const STIPENDI_SEED = [
     "trattenute": 2087.26,
     "tfr_a_fondo_pensione": 281.87,
     "cometa_dipendente": 163.23,
+    "cometa_azienda": 59.64,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 387.28,
+    "irpef_netta": 1235.61,
+    "addizionale_regionale": 45.85,
+    "addizionale_comunale": 23.45,
     "voci_notevoli": []
   },
   {
-    "id": "2025-09",
+    "id": "2025-09-Schneider",
+    "periodoId": "2025-09",
     "anno": 2025,
     "mese": 9,
     "periodo": "Settembre 2025",
@@ -2720,13 +3207,21 @@ export const STIPENDI_SEED = [
     "trattenute": 4833.98,
     "tfr_a_fondo_pensione": 271.31,
     "cometa_dipendente": 163.23,
+    "cometa_azienda": 59.64,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 603.75,
+    "irpef_netta": 1900.1,
+    "addizionale_regionale": 45.86,
+    "addizionale_comunale": 23.44,
     "voci_notevoli": []
   },
   {
-    "id": "2025-10",
+    "id": "2025-10-Schneider",
+    "periodoId": "2025-10",
     "anno": 2025,
     "mese": 10,
     "periodo": "Ottobre 2025",
@@ -2737,15 +3232,23 @@ export const STIPENDI_SEED = [
     "trattenute": 3096.2,
     "tfr_a_fondo_pensione": 281.87,
     "cometa_dipendente": 163.23,
+    "cometa_azienda": 59.64,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 1269.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 387.28,
+    "irpef_netta": 1235.61,
+    "addizionale_regionale": 45.85,
+    "addizionale_comunale": 23.45,
     "voci_notevoli": [
       "rimborso 730 escluso da lordo/netto: 1269.00"
     ]
   },
   {
-    "id": "2025-11",
+    "id": "2025-11-Schneider",
+    "periodoId": "2025-11",
     "anno": 2025,
     "mese": 11,
     "periodo": "Novembre 2025",
@@ -2756,13 +3259,21 @@ export const STIPENDI_SEED = [
     "trattenute": 2153.76,
     "tfr_a_fondo_pensione": 294.91,
     "cometa_dipendente": 170.78,
+    "cometa_azienda": 59.64,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 405.22,
+    "irpef_netta": 1292.74,
+    "addizionale_regionale": 45.85,
+    "addizionale_comunale": 23.45,
     "voci_notevoli": []
   },
   {
-    "id": "2025-12",
+    "id": "2025-12-Schneider",
+    "periodoId": "2025-12",
     "anno": 2025,
     "mese": 12,
     "periodo": "Dicembre 2025",
@@ -2773,15 +3284,21 @@ export const STIPENDI_SEED = [
     "trattenute": 3476.33,
     "tfr_a_fondo_pensione": 563.68,
     "cometa_dipendente": 326.46,
+    "cometa_azienda": 49.64,
     "premi_detassati": 1356.07,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": true,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 387.28,
+    "irpef_netta": 1235.61,
     "voci_notevoli": [
       "include 13ma (gratifica natalizia) accorpata"
     ]
   },
   {
-    "id": "2026-01",
+    "id": "2026-01-Schneider",
+    "periodoId": "2026-01",
     "anno": 2026,
     "mese": 1,
     "periodo": "Gennaio 2026",
@@ -2792,13 +3309,21 @@ export const STIPENDI_SEED = [
     "trattenute": 3450.74,
     "tfr_a_fondo_pensione": 281.91,
     "cometa_dipendente": 163.25,
+    "cometa_azienda": 59.64,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 387.28,
+    "irpef_netta": 1231.57,
+    "addizionale_regionale": 107.93,
+    "addizionale_comunale": 27.74,
     "voci_notevoli": []
   },
   {
-    "id": "2026-02",
+    "id": "2026-02-Schneider",
+    "periodoId": "2026-02",
     "anno": 2026,
     "mese": 2,
     "periodo": "Febbraio 2026",
@@ -2809,13 +3334,21 @@ export const STIPENDI_SEED = [
     "trattenute": 2272.68,
     "tfr_a_fondo_pensione": 281.9,
     "cometa_dipendente": 163.25,
+    "cometa_azienda": 59.64,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 387.28,
+    "irpef_netta": 994.44,
+    "addizionale_regionale": 107.94,
+    "addizionale_comunale": 27.74,
     "voci_notevoli": []
   },
   {
-    "id": "2026-03",
+    "id": "2026-03-Schneider",
+    "periodoId": "2026-03",
     "anno": 2026,
     "mese": 3,
     "periodo": "Marzo 2026",
@@ -2826,13 +3359,21 @@ export const STIPENDI_SEED = [
     "trattenute": 3879.71,
     "tfr_a_fondo_pensione": 477.4,
     "cometa_dipendente": 277.24,
+    "cometa_azienda": 59.64,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 709.49,
+    "irpef_netta": 2153.22,
+    "addizionale_regionale": 107.93,
+    "addizionale_comunale": 39.8,
     "voci_notevoli": []
   },
   {
-    "id": "2026-04",
+    "id": "2026-04-Schneider",
+    "periodoId": "2026-04",
     "anno": 2026,
     "mese": 4,
     "periodo": "Aprile 2026",
@@ -2843,13 +3384,21 @@ export const STIPENDI_SEED = [
     "trattenute": 2007.01,
     "tfr_a_fondo_pensione": 281.9,
     "cometa_dipendente": 163.25,
+    "cometa_azienda": 59.64,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 387.28,
+    "irpef_netta": 998.22,
+    "addizionale_regionale": 107.94,
+    "addizionale_comunale": 39.8,
     "voci_notevoli": []
   },
   {
-    "id": "2026-05",
+    "id": "2026-05-Schneider",
+    "periodoId": "2026-05",
     "anno": 2026,
     "mese": 5,
     "periodo": "Maggio 2026",
@@ -2860,13 +3409,21 @@ export const STIPENDI_SEED = [
     "trattenute": 2288.51,
     "tfr_a_fondo_pensione": 281.91,
     "cometa_dipendente": 163.25,
+    "cometa_azienda": 59.64,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 387.28,
+    "irpef_netta": 998.22,
+    "addizionale_regionale": 107.93,
+    "addizionale_comunale": 39.8,
     "voci_notevoli": []
   },
   {
-    "id": "2026-06",
+    "id": "2026-06-Schneider",
+    "periodoId": "2026-06",
     "anno": 2026,
     "mese": 6,
     "periodo": "Giugno 2026",
@@ -2877,13 +3434,19 @@ export const STIPENDI_SEED = [
     "trattenute": 8230.02,
     "tfr_a_fondo_pensione": 576.38,
     "cometa_dipendente": 333.92,
+    "cometa_azienda": 60.86,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": true,
+    "cessazione": false,
+    "contributi_inps": 833.99,
+    "addizionale_comunale": 39.81,
     "voci_notevoli": []
   },
   {
-    "id": "2026-07",
+    "id": "2026-07-Schneider",
+    "periodoId": "2026-07",
     "anno": 2026,
     "mese": 7,
     "periodo": "Luglio 2026",
@@ -2894,9 +3457,16 @@ export const STIPENDI_SEED = [
     "trattenute": 2738.69,
     "tfr_a_fondo_pensione": 288.59,
     "cometa_dipendente": 167.15,
+    "cometa_azienda": 60.86,
     "premi_detassati": 0.0,
     "rimborso_fiscale_escluso": 0.0,
     "tredicesima_inclusa": false,
+    "anticipo": false,
+    "cessazione": false,
+    "contributi_inps": 397.73,
+    "irpef_netta": 1039.12,
+    "addizionale_regionale": 107.93,
+    "addizionale_comunale": 39.79,
     "voci_notevoli": []
   }
 ];

@@ -44,29 +44,36 @@ export const anniDisponibili = () => {
 export const stipendiAnno = (anno) =>
   state.stipendi.filter(s => String(s.anno) === String(anno)).sort((a, b) => a.mese - b.mese);
 
+// Un mese è "ordinario" se non è di anticipo/recupero né di cessazione: solo questi
+// entrano nelle viste sul LORDO (composizione, aliquota), perché nei mesi speciali
+// competenze e trattenute sono gonfiate da partite che si compensano nel netto.
+export const eMesePieno = (b) => !b.anticipo && !b.cessazione;
+
 // Aggregato per un anno: totali + netto per datore.
 export const aggregatoAnno = (anno) => {
   const buste = stipendiAnno(anno);
   if (!buste.length) return null;
-  const somma = (campo) => round2(buste.reduce((s, b) => s + (b[campo] || 0), 0));
-  const netto = somma('netto');
-  const lordo = somma('lordo');
-  const trattenute = somma('trattenute');
+  const ordinari = buste.filter(eMesePieno);
+  const somma = (arr, campo) => round2(arr.reduce((s, b) => s + (b[campo] || 0), 0));
+  const netto = somma(buste, 'netto');                 // NETTO: tutti i mesi (denaro reale)
+  const lordo = somma(ordinari, 'lordo');              // LORDO: solo mesi ordinari
+  const trattenute = somma(ordinari, 'trattenute');
   // netto per datore (per barre impilate e transizioni di lavoro)
   const perDatore = {};
   for (const b of buste) perDatore[b.datore] = round2((perDatore[b.datore] || 0) + (b.netto || 0));
-  // datore prevalente dell'anno (per la pastiglia colore)
   const datorePrevalente = Object.entries(perDatore).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
   return {
-    anno: String(anno), mesi: buste.length,
+    anno: String(anno), mesi: buste.length, mesiOrdinari: ordinari.length,
     netto, lordo, trattenute,
-    tfr: somma('tfr_a_fondo_pensione'),
-    cometa: somma('cometa_dipendente'),
-    premi: somma('premi_detassati'),
-    rimborso: somma('rimborso_fiscale_escluso'),
+    tfr: somma(buste, 'tfr_a_fondo_pensione'),
+    cometaDip: somma(buste, 'cometa_dipendente'),
+    cometaAz: somma(buste, 'cometa_azienda'),
+    premi: somma(buste, 'premi_detassati'),
+    rimborso: somma(buste, 'rimborso_fiscale_escluso'),
     nettoMedio: round2(netto / buste.length),
-    aliquotaEff: lordo ? round2(trattenute / lordo * 100) : 0,   // % trattenute sul lordo
+    aliquotaEff: lordo ? round2(trattenute / lordo * 100) : 0,   // % trattenute sul lordo (mesi ordinari)
     perDatore, datorePrevalente,
+    haSpeciali: ordinari.length < buste.length,
   };
 };
 
@@ -97,7 +104,7 @@ export const nettoPerAnnoPerDatore = () => {
 // + Cometa dipendente). Vista secondaria: nei mesi 'anticipo' il lordo è gonfiato.
 export const composizioneLordoAnnuale = () => {
   return anniDisponibili().slice().reverse().map(anno => {
-    const buste = stipendiAnno(anno);
+    const buste = stipendiAnno(anno).filter(eMesePieno);
     const netto = round2(buste.reduce((s, b) => s + (b.netto || 0), 0));
     const cometa = round2(buste.reduce((s, b) => s + (b.cometa_dipendente || 0), 0));
     const trattenute = round2(buste.reduce((s, b) => s + (b.trattenute || 0), 0));
@@ -119,7 +126,7 @@ export const nettoMensile = (anno) => {
 
 // Scomposizione del lordo MESE PER MESE di un anno.
 export const composizioneLordoMensile = (anno) => {
-  return stipendiAnno(anno).map(b => {
+  return stipendiAnno(anno).filter(eMesePieno).map(b => {
     const netto = round2(b.netto || 0);
     const cometa = round2(b.cometa_dipendente || 0);
     const trattenute = round2(b.trattenute || 0);
@@ -187,6 +194,33 @@ export const statisticheGlobali = () => {
     datori: [...new Set(st.map(b => b.datore))],
   };
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FONDO PENSIONE — versato: TFR devoluto + Cometa dipendente (mio) + Cometa azienda.
+// Sono versamenti reali al fondo: inclusi TUTTI i mesi (anche speciali).
+// ─────────────────────────────────────────────────────────────────────────────
+export const versamentoFondoAnnuale = () => {
+  return anniDisponibili().slice().reverse().map(anno => {
+    const b = stipendiAnno(anno);
+    const s = (c) => round2(b.reduce((x, r) => x + (r[c] || 0), 0));
+    const tfr = s('tfr_a_fondo_pensione'), dip = s('cometa_dipendente'), az = s('cometa_azienda');
+    return { anno, valori: { tfr, dip, az }, tot: round2(tfr + dip + az) };
+  });
+};
+
+export const versamentoFondoTotale = () => {
+  const st = state.stipendi;
+  const s = (c) => round2(st.reduce((x, r) => x + (r[c] || 0), 0));
+  const tfr = s('tfr_a_fondo_pensione'), dip = s('cometa_dipendente'), az = s('cometa_azienda');
+  return { tfr, dip, az, tot: round2(tfr + dip + az) };
+};
+
+// Segmenti (con colori) per le barre del fondo pensione.
+export const SEG_FONDO = [
+  { k: 'tfr', nome: 'TFR devoluto', colore: '#5FC3FF' },
+  { k: 'dip', nome: 'Cometa — mio', colore: '#22E39A' },
+  { k: 'az', nome: 'Cometa — datore', colore: '#FFB020' },
+];
 
 export const MESI3 = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
 export const mese3 = (m) => MESI3[m - 1] || '';

@@ -31,7 +31,7 @@ import { renderDettaglioInvestimento } from './components/dettaglioInvestimento.
 import { renderCategorie } from './components/categorie.js';
 import { renderImpostazioni } from './components/impostazioni.js';
 import { renderEnergia, renderEnergiaAnno } from './components/energia.js';
-import { renderStipendi, renderStipendiAnno, renderStipendioDettaglio } from './components/stipendi.js';
+import { renderStipendi, renderStipendiAnno, renderStipendioDettaglio, renderStipendiStorico } from './components/stipendi.js';
 import { renderPaniere } from './components/panieri.js';
 import { renderBollettaForm, renderBollettaDettaglio, renderBolletteStorico } from './components/energiaBollette.js';
 
@@ -69,6 +69,7 @@ const registraRotte = () => {
   registerRoute('stipendi', renderStipendi);
   registerRoute('stipendi-anno', renderStipendiAnno);
   registerRoute('stipendio-dettaglio', renderStipendioDettaglio);
+  registerRoute('stipendi-storico', renderStipendiStorico);
   registerRoute('paniere', renderPaniere);
   registerRoute('bolletta-nuova', renderBollettaForm);
   registerRoute('bolletta-dettaglio', renderBollettaDettaglio);

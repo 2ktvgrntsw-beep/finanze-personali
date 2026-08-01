@@ -11,12 +11,12 @@
 import { state } from '../core/store.js';
 import { fmtEUR, escapeHtml } from '../core/utils.js';
 import { navigate } from '../core/router.js';
-import { costruisciSparkline, agganciaSparkline } from '../core/sparkline.js';
 import { _barreImpilate } from './energia.js';
 import {
   DATORI, coloreDatore, ultimoStipendio, stipendioById, anniDisponibili,
   aggregatoAnno, variazioneAnno, nettoPerAnnoPerDatore, composizioneLordoAnnuale,
-  nettoMensile, composizioneLordoMensile, serieNetto, confrontoDatori, heatmapNetto,
+  nettoMensile, composizioneLordoMensile, confrontoDatori, heatmapNetto,
+  versamentoFondoAnnuale, versamentoFondoTotale, SEG_FONDO,
   mese3, MESI3,
 } from '../services/stipendiService.js';
 
@@ -93,11 +93,12 @@ export const renderStipendi = async (root) => {
       <div class="estack" id="g-netto"></div>
     </div>
 
-    <!-- NETTO NEL TEMPO -->
-    <div class="section-lbl"><span>Netto mensile nel tempo</span></div>
+    <!-- FONDO PENSIONE versato -->
+    <div class="section-lbl"><span>Fondo pensione · versato per anno</span></div>
     <div class="card">
-      <div id="s-spike"></div>
-      <div class="eprice-note">Netto realmente incassato ogni mese. I picchi sono tredicesime e conguagli; i mesi di passaggio tra due datori possono avere importi anomali.</div>
+      ${_leg(SEG_FONDO)}
+      <div class="estack" id="g-fondo"></div>
+      <div class="eprice-note" style="margin-top:8px">${_fondoTotHTML()}</div>
     </div>
 
     <!-- SCOMPOSIZIONE LORDO anno per anno -->
@@ -105,7 +106,7 @@ export const renderStipendi = async (root) => {
     <div class="card">
       ${_leg(SEG_LORDO)}
       <div class="estack" id="g-lordo"></div>
-      <div class="eprice-note" style="margin-top:8px">Netto + fisco/contributi + Cometa = lordo. Nei mesi con anticipo/recupero (alcuni mesi Marposs e Schneider) il lordo è gonfiato: il netto resta esatto.</div>
+      <div class="eprice-note" style="margin-top:8px">Netto + fisco/contributi + Cometa = lordo. Sono esclusi i mesi di anticipo/recupero e le buste di cessazione, dove competenze e trattenute sono gonfiate da partite che si compensano: falserebbero il quadro. Il netto invece li include sempre.</div>
     </div>
 
     <!-- HEATMAP netto -->
@@ -118,10 +119,10 @@ export const renderStipendi = async (root) => {
     <div class="section-lbl"><span>Confronto datori</span></div>
     <div class="card" id="s-datori"></div>
 
-    <!-- STORICO recente -->
-    <div class="section-lbl"><span>Ultime buste</span></div>
+    <!-- STORICO -->
+    <div class="section-lbl"><span>Storico buste</span><span class="act" id="vedi-tutte">Tutte (${state.stipendi.length}) ›</span></div>
     <div class="card" style="padding:0" id="s-storico">
-      ${stipendiRecenti(6).map(b => _rigaStipendioHTML(b)).join('<div class="divider"></div>')}
+      ${stipendiRecenti(4).map(b => _rigaStipendioHTML(b)).join('<div class="divider"></div>')}
     </div>
   `;
 
@@ -131,7 +132,11 @@ export const renderStipendi = async (root) => {
     nettoPerAnnoPerDatore().map(d => ({ label: `'${d.anno.slice(2)}`, valori: d.valori, tot: d.tot })),
     SEG_DATORI, v => fmtEUR(v), v => Math.round(v).toLocaleString('it-IT'),
   );
-  _renderSpike(root);
+  _barreImpilate(
+    root.querySelector('#g-fondo'),
+    versamentoFondoAnnuale().map(d => ({ label: `'${d.anno.slice(2)}`, valori: d.valori, tot: d.tot })),
+    SEG_FONDO, v => fmtEUR(v), v => Math.round(v).toLocaleString('it-IT'),
+  );
   _barreImpilate(
     root.querySelector('#g-lordo'),
     composizioneLordoAnnuale().map(d => ({ label: `'${d.anno.slice(2)}`, valori: d.valori, tot: d.tot })),
@@ -153,6 +158,31 @@ export const renderStipendi = async (root) => {
     if (i > 0) { _annoKpi = anni[i - 1]; root.querySelector('#skpi-lbl').textContent = _annoKpi; _renderKpi(root); }
   });
 
+  const vt = root.querySelector('#vedi-tutte');
+  if (vt) vt.addEventListener('click', () => navigate('stipendi-storico'));
+
+  root.querySelectorAll('[data-stip]').forEach(el =>
+    el.addEventListener('click', () => navigate('stipendio-dettaglio', { id: el.dataset.stip })));
+};
+
+// riga riepilogo totale versato al fondo (sotto le barre)
+const _fondoTotHTML = () => {
+  const t = versamentoFondoTotale();
+  return `Totale versato al fondo: <b class="num">${fmtEUR(t.tot)}</b> — TFR ${fmtEUR(t.tfr)} · mio ${fmtEUR(t.dip)} · datore ${fmtEUR(t.az)}. Sono versamenti reali: inclusi tutti i mesi.`;
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PAGINA STORICO (tutte le buste, per anno)
+// ═══════════════════════════════════════════════════════════════════════════
+export const renderStipendiStorico = async (root) => {
+  document.getElementById('view-title').textContent = 'Storico buste';
+  const anni = anniDisponibili();
+  root.innerHTML = anni.map(anno => {
+    const buste = state.stipendi.filter(s => String(s.anno) === anno).sort((a, b) => b.mese - a.mese);
+    const tot = buste.reduce((s, b) => s + (b.netto || 0), 0);
+    return `<div class="section-lbl"><span>${anno}</span><span class="meta num">${fmtEUR(tot)}</span></div>
+      <div class="card" style="padding:0">${buste.map(b => _rigaStipendioHTML(b)).join('<div class="divider"></div>')}</div>`;
+  }).join('');
   root.querySelectorAll('[data-stip]').forEach(el =>
     el.addEventListener('click', () => navigate('stipendio-dettaglio', { id: el.dataset.stip })));
 };
@@ -264,6 +294,12 @@ export const renderStipendioDettaglio = async (root, params) => {
       <div class="meta" style="margin-top:2px">netto incassato</div>
     </div>
 
+    ${(b.anticipo || b.cessazione) ? `<div class="card" style="border-left:3px solid var(--warn)">
+      <div class="meta">${b.anticipo
+        ? 'Mese con <b>anticipo/recupero</b>: lordo e trattenute sono gonfiati da partite che si compensano nel netto. Il netto è quello reale; questo mese è escluso dai grafici sul lordo.'
+        : 'Busta di <b>cessazione</b>: include liquidazione ferie/PAR e conguagli. Importi atipici; esclusa dai grafici sul lordo, ma il netto è reale.'}</div>
+    </div>` : ''}
+
     <div class="section-lbl"><span>Composizione del lordo</span></div>
     <div class="card">
       <div class="stip-compbar">${comp.map(v => `<div style="width:${(v.val / somma * 100).toFixed(1)}%;background:${v.colore}"></div>`).join('')}</div>
@@ -316,21 +352,6 @@ const _renderKpiIn = (cont, anno) => {
 };
 const _renderKpi = (root) => _renderKpiIn(root.querySelector('#skpis'), _annoKpi);
 
-const _renderSpike = (root) => {
-  const serie = serieNetto();
-  const cont = root.querySelector('#s-spike');
-  if (serie.length < 2) { cont.innerHTML = '<div class="empty" style="padding:20px 0">Storico insufficiente</div>'; return; }
-  const punti = serie.map(s => ({ label: s.label, valore: s.valore }));
-  const { svg, dataAttr } = costruisciSparkline(punti, {
-    vw: 320, vh: 130, padX: 10, padTop: 14, padBot: 26,
-    idLinea: 'stnetto', idArea: 'stnettoa',
-    coloreLinea0: '#22E39A', coloreLinea1: '#5FC3FF',
-    larghezzaLinea: 2.2, mostraEtichette: true, mostraUltimoPunto: true,
-  });
-  cont.innerHTML = `<div class="spark spark-energia" ${dataAttr}>${svg}<div class="spark-vline"></div><div class="spark-tip"></div></div>`;
-  agganciaSparkline(cont.querySelector('.spark'), (v) => fmtEUR(v));
-};
-
 // Heatmap netto mese × anno: colore = datore, intensità = netto (0.14 → 0.95).
 const _renderHeatmap = (cont) => {
   const { anni, celle, max } = heatmapNetto();
@@ -367,7 +388,7 @@ const _renderDatori = (cont, datoreAttuale) => {
         <span class="fr-val num">${fmtEUR(f.nettoMedio)}/mese</span>
       </div>
       <div class="fr-bar"><div class="fr-fill" style="width:${w}%;background:${f.colore}"></div></div>
-      <div class="fr-sub">${mese3(+m1)} '${y1.slice(2)} – ${mese3(+m2)} '${y2.slice(2)} · ${f.mesi} buste · netto ${fmtEUR(f.nettoTot)}</div>
+      <div class="fr-sub">${mese3(+m1)} '${y1.slice(2)} – ${mese3(+m2)} '${y2.slice(2)} · ${f.mesi} buste · netto totale ${fmtEUR(f.nettoTot)}</div>
     </div>`;
-  }).join('') + `<div class="eprice-note" style="margin-top:6px">Netto medio mensile per datore. Le buste dei mesi di passaggio e i conguagli possono alzare la media di un datore.</div>`;
+  }).join('') + `<div class="eprice-note" style="margin-top:6px">La barra è il <b>netto medio mensile</b>; "netto totale" è tutto il netto realmente incassato con quel datore nell'intero periodo (mesi di passaggio, conguagli e tredicesime inclusi, perché sono denaro reale).</div>`;
 };
