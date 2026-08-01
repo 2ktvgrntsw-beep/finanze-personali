@@ -9,7 +9,7 @@ import { fmtEUR, escapeHtml, toast, uid } from '../core/utils.js';
 import { navigate, currentRoute } from '../core/router.js';
 import { apriSheet, conferma } from './shared.js';
 import { safeWrite, dbAdd, dbDelete } from '../core/db.js';
-import { categorieDi, sottocategorieDi, listaMacro } from '../services/categorieService.js';
+import { categorieDiUsate, sottocategorieDiUsate, listaMacroUsate } from '../services/categorieService.js';
 import { sommaPaniere, seriePaniereAnnuale, segmentiPaniere, etichettaVoce } from '../services/panieriService.js';
 import { _barreImpilate } from './energia.js';
 
@@ -103,11 +103,11 @@ const _sheetPaniere = (esistente, onDone) => {
   const sel = new Set((esistente ? esistente.voci : []).map(chiave));
   const daChiave = (k) => { const [macro, cat, sub] = k.split('|'); return { macro, ...(cat && { cat }), ...(sub && { sub }) }; };
 
-  const macros = listaMacro().filter(m => m !== 'Entrate');
+  const macros = listaMacroUsate(true).filter(m => m !== 'Entrate');
 
   const vociHTML = () => macros.map(m => {
     const kM = chiave({ macro: m });
-    const cats = categorieDi(m);
+    const cats = categorieDiUsate(m, true);
     return `<div class="pv-blocco">
       <div class="pv-riga liv-0">
         <span class="pv-check ${sel.has(kM) ? 'on' : ''}" data-sel="${escapeHtml(kM)}"></span>
@@ -117,7 +117,7 @@ const _sheetPaniere = (esistente, onDone) => {
       <div class="pv-figli" data-figli="${escapeHtml(m)}" style="display:none">
         ${cats.map(c => {
           const kC = chiave({ macro: m, cat: c });
-          const subs = sottocategorieDi(m, c);
+          const subs = sottocategorieDiUsate(m, c, true);
           return `<div class="pv-riga liv-1">
             <span class="pv-check ${sel.has(kC) ? 'on' : ''}" data-sel="${escapeHtml(kC)}"></span>
             <span class="pv-nome" data-sel="${escapeHtml(kC)}">${escapeHtml(c)}</span>

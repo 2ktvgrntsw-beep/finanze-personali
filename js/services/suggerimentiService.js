@@ -15,7 +15,7 @@ export const apprendiDaMovimento = async (m) => {
   const classificazione = { macro: m.macro, cat: m.cat, sub: m.sub, conto: m.conto, tipo: m.tipo };
 
   if (!esistente) {
-    await dbAdd('suggerimenti', { chiave, desc: m.desc, classificazione, occorrenze: 1 });
+    await dbAdd('suggerimenti', { chiave, desc: m.desc, classificazione, occorrenze: 1, ultimoUso: new Date().toISOString() });
   } else {
     // rinforza: se la classificazione coincide aumenta il contatore, altrimenti
     // aggiorna verso l'ultima usata (l'utente potrebbe aver cambiato abitudine)
@@ -25,6 +25,7 @@ export const apprendiDaMovimento = async (m) => {
       desc: m.desc,
       classificazione: stessa ? esistente.classificazione : classificazione,
       occorrenze: (esistente.occorrenze || 1) + 1,
+      ultimoUso: new Date().toISOString(),
     });
   }
 };
@@ -34,14 +35,24 @@ export const apprendiDaMovimento = async (m) => {
 export const suggerisciPerTesto = (testo, limite = 5) => {
   const q = _normDesc(testo);
   if (q.length < 2) return [];
+  // Punteggio = frequenza + bonus di RECENZA: le descrizioni che hai usato di recente
+  // emergono sopra le migliaia di voci dello storico (che hanno occorrenze altissime e
+  // altrimenti riempirebbero da sole la tendina, facendola sembrare "solo vecchio archivio").
+  const ORA = Date.now();
+  const _giorni = (iso) => iso ? (ORA - new Date(iso).getTime()) / 86400000 : Infinity;
+  const _score = (s) => {
+    const g = _giorni(s.ultimoUso);
+    const bonus = g <= 45 ? 80 : g <= 180 ? 25 : 0;
+    return (s.occorrenze || 0) + bonus;
+  };
   const out = state.suggerimenti
     .filter(s => s.chiave.includes(q))
     .sort((a, b) => {
-      // priorità: chi inizia col testo, poi più frequente
+      // priorità: chi inizia col testo, poi punteggio (frequenza + recenza)
       const aStart = a.chiave.startsWith(q) ? 0 : 1;
       const bStart = b.chiave.startsWith(q) ? 0 : 1;
       if (aStart !== bStart) return aStart - bStart;
-      return (b.occorrenze || 0) - (a.occorrenze || 0);
+      return _score(b) - _score(a);
     })
     .slice(0, limite);
   return out;

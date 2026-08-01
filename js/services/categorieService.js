@@ -37,6 +37,30 @@ export const sottocategorieDi = (macro, cat) => {
 export const macroHaCategorie = (macro) => categorieDi(macro).length > 0;
 export const categoriaHaSub = (macro, cat) => sottocategorieDi(macro, cat).length > 0;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// UNIONE anagrafica + categorie REALMENTE USATE nei movimenti.
+// I movimenti portano le etichette scritte dentro (denormalizzate): possono usare
+// nodi che non sono (o non sono più) in anagrafica — es. categorie di spesa create
+// al volo. Dove l'utente deve poter selezionare QUALSIASI voce presente nei suoi
+// movimenti (i panieri), si parte da qui e non dalla sola anagrafica.
+const _movFiltro = (soloSpese) => soloSpese ? state.movimenti.filter(m => m.tipo === 'spesa') : state.movimenti;
+
+export const listaMacroUsate = (soloSpese = false) => {
+  const set = new Set(state.categorie.filter(c => c.attiva !== false && c.macro).map(c => c.macro));
+  for (const m of _movFiltro(soloSpese)) if (m.macro) set.add(m.macro);
+  return Array.from(set).sort();
+};
+export const categorieDiUsate = (macro, soloSpese = false) => {
+  const set = new Set(categorieDi(macro));
+  for (const m of _movFiltro(soloSpese)) if (m.macro === macro && m.cat) set.add(m.cat);
+  return Array.from(set).sort();
+};
+export const sottocategorieDiUsate = (macro, cat, soloSpese = false) => {
+  const set = new Set(sottocategorieDi(macro, cat));
+  for (const m of _movFiltro(soloSpese)) if (m.macro === macro && m.cat === cat && m.sub) set.add(m.sub);
+  return Array.from(set).sort();
+};
+
 // ═══════════════════════════════════════════════════════════════════════════
 // GESTIONE COMPLETA: rinomina e cancellazione con PROPAGAZIONE.
 // Principio: i movimenti portano le etichette scritte dentro (denormalizzate),
