@@ -115,6 +115,15 @@ export const composizioneLordoAnnuale = () => {
   });
 };
 
+
+// Netto mese per mese di un anno, colorato per datore (barre del riepilogo anno).
+export const nettoMensile = (anno) => {
+  return stipendiAnno(anno).map(b => ({
+    mese: b.mese, label: MESI3[b.mese - 1], netto: round2(b.netto), datore: b.datore,
+    valori: { [b.datore]: round2(b.netto) }, tot: round2(b.netto),
+  }));
+};
+
 // Scomposizione del lordo MESE PER MESE di un anno (stessa struttura della barra annuale).
 export const composizioneLordoMensile = (anno) => {
   return stipendiAnno(anno).map(b => ({
