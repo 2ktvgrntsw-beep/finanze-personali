@@ -56,7 +56,9 @@ export const STIPENDI_SEED = [
     "voci_notevoli": [
       "Prima busta paga - assunzione 04/04/2016"
     ],
-    "addebiti_netti": 0
+    "addebiti_netti": 0,
+    "giorni_rapporto": 27,
+    "frazione_mensilita": 0.9
   },
   {
     "id": "2016-05-Marposs",
@@ -1630,7 +1632,9 @@ export const STIPENDI_SEED = [
       "Quota qual. dimessi 2019: 320,42",
       "Detassazione IRPEF 272,10"
     ],
-    "addebiti_netti": 0
+    "addebiti_netti": 0,
+    "giorni_rapporto": 15,
+    "frazione_mensilita": 0.5
   },
   {
     "id": "2019-06-SASIB",
@@ -1673,7 +1677,9 @@ export const STIPENDI_SEED = [
       "Premio feriale 1.015,50",
       "Ticket spesa CCNL 200,00"
     ],
-    "addebiti_netti": 0
+    "addebiti_netti": 0,
+    "giorni_rapporto": 15,
+    "frazione_mensilita": 0.5
   },
   {
     "id": "2019-07-SASIB",
@@ -2952,7 +2958,9 @@ export const STIPENDI_SEED = [
     "trattenute_dettagliate": 719.99,
     "trattenute_residuo": 7.34,
     "voci_notevoli": [],
-    "addebiti_netti": 4.0
+    "addebiti_netti": 4.0,
+    "giorni_rapporto": 22,
+    "frazione_mensilita": 0.71
   },
   {
     "id": "2022-02-Bonfiglioli",
@@ -4055,7 +4063,9 @@ export const STIPENDI_SEED = [
       "premi_detassati = Saldo PDR AP Detassato 1.075,25 (competenza lorda). Imponibile fiscale detassato F03300 = 973,23 (5% sost. = 48,66). DA VERIFICARE quale convenzione usi negli altri mesi.",
       "TFR quota mese 606,35; TFR a fondi progressivo anno 1.692,83"
     ],
-    "addebiti_netti": 2.75
+    "addebiti_netti": 2.75,
+    "giorni_rapporto": 19,
+    "frazione_mensilita": 0.613
   },
   {
     "id": "2024-05-Schneider",
@@ -4094,7 +4104,9 @@ export const STIPENDI_SEED = [
     "trattenute_dettagliate": 431.05,
     "trattenute_residuo": 0.0,
     "voci_notevoli": [],
-    "addebiti_netti": 0
+    "addebiti_netti": 0,
+    "giorni_rapporto": 12,
+    "frazione_mensilita": 0.387
   },
   {
     "id": "2024-06-Schneider",

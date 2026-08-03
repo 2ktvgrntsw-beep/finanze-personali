@@ -19,7 +19,7 @@ import {
   nettoMensile, composizioneLordoMensile, confrontoDatori, heatmapNetto,
   versamentoFondoAnnuale, versamentoFondoTotale, SEG_FONDO,
   dettaglioFondoAnnuale, dettaglioFondoPerDatore,
-  fiscoAnnuale, fiscoTotale, elencoRimborsi, SEG_FISCO, dettaglioTrattenute, verificaFiscale,
+  fiscoAnnuale, fiscoTotale, elencoRimborsi, SEG_FISCO, dettaglioTrattenute, verificaFiscale, SEG_LORDO,
   mese3, MESI3,
 } from '../services/stipendiService.js';
 
@@ -27,11 +27,6 @@ const BUSTA = '<svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14"
 
 // segmenti per le barre impilate
 const SEG_DATORI = DATORI.map(d => ({ k: d.nome, nome: d.nome, colore: d.colore }));
-const SEG_LORDO = [
-  { k: 'netto', nome: 'Netto in tasca', colore: '#22E39A' },
-  { k: 'fisco', nome: 'Fisco e contributi', colore: '#FF3B5C' },
-  { k: 'cometa', nome: 'Cometa (previdenza)', colore: '#7B6CFF' },
-];
 
 // stato modulo
 let _annoKpi = null;    // anno selezionato per le card KPI (home)
@@ -90,30 +85,15 @@ export const renderStipendi = async (root) => {
     <div class="ekpis" id="skpis"></div>
 
     <!-- NETTO ANNO PER ANNO (ripartito per datore) -->
-    <div class="section-lbl"><span>Netto percepito · anno per anno</span></div>
-    <div class="card">
-      ${_leg(SEG_DATORI)}
-      <div class="estack" id="g-netto"></div>
-    </div>
-
-    <!-- FONDO PENSIONE versato -->
-    <div class="section-lbl"><span>Fondo pensione</span></div>
-    <div class="card eboll" id="vedi-fondo" style="cursor:pointer">
+    <!-- FISCO: pagato vs restituito -->
+    <div class="section-lbl"><span>Fisco</span></div>
+    <div class="card eboll" id="vedi-fisco" style="cursor:pointer">
       <div class="body" style="flex:1">
-        <div class="lbl2">Totale versato a Cometa</div>
-        <div class="num" style="font-size:24px;font-weight:750">${fmtEUR(versamentoFondoTotale().tot)}</div>
-        <div class="meta" style="margin-top:4px">${(() => { const t = versamentoFondoTotale();
-          return `TFR ${fmtEUR(t.tfr)} · tuo ${fmtEUR(t.dip)} · datore ${fmtEUR(t.az)}`; })()}</div>
+        <div class="lbl2">Imposte pagate sul lavoro</div>
+        <div class="num" style="font-size:24px;font-weight:750">${fmtEUR(fiscoTotale().pagato)}</div>
+        <div class="meta" style="margin-top:4px">di cui <b style="color:var(--up)">${fmtEUR(fiscoTotale().rimborso)}</b> restituiti col 730 (${fiscoTotale().quotaRestituita}%)</div>
       </div>
       <div class="eboll-chev">›</div>
-    </div>
-
-    <!-- FISCO: pagato vs restituito -->
-    <div class="section-lbl"><span>Fisco · IRPEF e addizionali</span><span class="act" id="vedi-fisco">Dettaglio ›</span></div>
-    <div class="card">
-      ${_leg(SEG_FISCO)}
-      <div class="estack" id="g-fisco"></div>
-      <div class="eprice-note" style="margin-top:8px">${_fiscoTotHTML()}</div>
     </div>
 
     <!-- SCOMPOSIZIONE LORDO anno per anno -->
@@ -135,23 +115,15 @@ export const renderStipendi = async (root) => {
     <div class="card" id="s-datori"></div>
 
     <!-- STORICO -->
-    <div class="section-lbl"><span>Storico buste</span><span class="act" id="nuova-busta">+ Aggiungi</span><span class="act" id="vedi-tutte">Tutte (${state.stipendi.length}) ›</span></div>
+    <div class="section-lbl"><span>Storico buste</span><span class="act" id="vedi-tutte">Tutte (${state.stipendi.length}) ›</span></div>
     <div class="card" style="padding:0" id="s-storico">
       ${stipendiRecenti(4).map(b => _rigaStipendioHTML(b)).join('<div class="divider"></div>')}
     </div>
+
+    <button class="btn btn-primary btn-lg" id="nuova-busta" style="margin:18px auto 8px;display:block">+ Aggiungi busta paga</button>
   `;
 
   _renderKpi(root);
-  _barreImpilate(
-    root.querySelector('#g-netto'),
-    nettoPerAnnoPerDatore().map(d => ({ label: `'${d.anno.slice(2)}`, valori: d.valori, tot: d.tot })),
-    SEG_DATORI, v => fmtEUR(v), v => Math.round(v).toLocaleString('it-IT'),
-  );
-  _barreImpilate(
-    root.querySelector('#g-fisco'),
-    fiscoAnnuale().map(d => ({ label: `'${String(d.anno).slice(2)}`, valori: d.valori, tot: d.tot })),
-    SEG_FISCO, v => fmtEUR(v), v => Math.round(v).toLocaleString('it-IT'),
-  );
   _barreImpilate(
     root.querySelector('#g-lordo'),
     composizioneLordoAnnuale().map(d => ({ label: `'${d.anno.slice(2)}`, valori: d.valori, tot: d.tot })),
@@ -256,14 +228,8 @@ export const renderStipendiFisco = async (root) => {
       `).join('') : '<div class="empty">Nessun rimborso registrato</div>'}
     </div>
 
-    <div class="section-lbl"><span>Versato anno per anno</span></div>
-    <div class="card">
-      ${_leg(SEG_FONDO)}
-      <div class="estack" id="g-fondo-anno"></div>
-    </div>
-
-    <div class="section-lbl"><span>Dettaglio per anno</span></div>
-    <div class="card" style="padding:4px 14px">
+    <div class="section-lbl"><span>Anno per anno</span></div>
+    <div class="card" style="padding:4px 14px" data-noline>
       ${perAnno.map(a => `
         <div class="paniere-anno-riga">
           <span class="num anno">${a.anno}</span>
@@ -326,7 +292,7 @@ export const renderStipendiFondo = async (root) => {
     </div>
 
     <div class="section-lbl"><span>Chi ha versato</span></div>
-    <div class="card" style="padding:4px 14px">
+    <div class="card" style="padding:4px 14px" data-noline>
       ${perDatore.map(f => `
         <div class="paniere-anno-riga">
           <span class="fr-nome"><span class="stip-dot" style="background:${f.colore}"></span> ${escapeHtml(f.datore)}</span>
@@ -343,7 +309,7 @@ export const renderStipendiFondo = async (root) => {
     </div>
 
     <div class="section-lbl"><span>Dettaglio per anno</span></div>
-    <div class="card" style="padding:4px 14px">
+    <div class="card" style="padding:4px 14px" data-noline>
       ${perAnno.map(a => `
         <div class="paniere-anno-riga">
           <span class="num anno">${a.anno}</span>

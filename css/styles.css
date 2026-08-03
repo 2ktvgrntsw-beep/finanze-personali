@@ -1480,3 +1480,10 @@ input:focus, input:focus-visible, select:focus, select:focus-visible, textarea:f
 .stip-drow>span:first-child{color:var(--txt-2)}
 .stip-note{margin:0;padding-left:18px;color:var(--txt-2);font-size:13px;line-height:1.5}
 .stip-note li{margin:3px 0}
+
+/* Liste dove la riga del titolo e quella di dettaglio formano un blocco unico:
+   il filetto in mezzo spezzava la lettura invece di aiutarla. */
+[data-noline] .paniere-anno-riga{border-bottom:0;padding-bottom:2px}
+
+/* Pulsante d'azione a piena larghezza in fondo alle sezioni (come "Aggiungi bolletta") */
+.btn.btn-lg{width:calc(100% - 8px);max-width:420px;padding:15px 20px;font-size:16px;font-weight:700;border-radius:14px}

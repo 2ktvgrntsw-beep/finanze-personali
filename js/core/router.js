@@ -92,7 +92,12 @@ const _updateChrome = (name) => {
   }
   // + e Annulla: gestiti con isInserimento/isRicerca
   const addBtn = document.getElementById('btn-add');
-  if (addBtn) addBtn.style.display = (isInserimento || isRicerca) ? 'none' : 'flex';
+  // Energia e Stipendi hanno il loro pulsante dedicato in fondo alla pagina: il "+"
+  // in alto (che crea un MOVIMENTO) lì confonde e basta.
+  const senzaPiu = ['energia', 'energia-bollette', 'energia-anno', 'bolletta-dettaglio',
+    'stipendi', 'stipendi-anno', 'stipendi-storico', 'stipendi-fondo', 'stipendi-fisco',
+    'stipendio-dettaglio', 'stipendio-nuovo'].includes(name);
+  if (addBtn) addBtn.style.display = (isInserimento || isRicerca || senzaPiu) ? 'none' : 'flex';
   const annulla = document.getElementById('btn-annulla');
   if (annulla) annulla.style.display = (isInserimento || isRicerca) ? 'flex' : 'none';
   // filtro patrimonio: visibile SOLO nella pagina Patrimonio, a sinistra del titolo
