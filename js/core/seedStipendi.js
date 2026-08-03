@@ -1,42 +1,58 @@
-// seedStipendi.js — Caricamento iniziale dello storico buste paga (sezione Stipendi).
-// Inietta le buste precaricate (dai quattro archivi datore) alla prima apertura della
-// sezione. Lo storico è PRECARICATO e non modificabile dall'utente: la fonte di verità
-// è il seed. Per questo, oltre al flag "una tantum", c'è una MIGRAZIONE per versione dei
-// dati: quando il contenuto del seed cambia (es. arricchimento fiscale), le buste vengono
-// rigenerate anche su database già esistenti.
+// seedStipendi.js — Storico buste paga precaricato (sezione Stipendi).
+//
+// LO STORICO È DATO DI APP, NON DATO UTENTE: le buste arrivano dagli archivi dei quattro
+// datori, non le digita l'utente. La fonte di verità è quindi il seed.
+//
+// Perché un controllo per IMPRONTA e non un semplice flag "già fatto": col flag, un
+// aggiornamento dei dati (dettaglio fiscale, lordo depurato) NON arrivava mai su un
+// telefono che aveva già seminato una volta. E se una vecchia istanza dell'app resta
+// aperta mentre la nuova rigenera, può reiniettare i dati vecchi nella finestra fra
+// "svuoto" e "riscrivo". Qui l'impronta (n. buste + netto + lordo + Cometa azienda) è
+// confrontata a ogni avvio: se non combacia, riallineo. La scrittura è un unico bulk
+// (put = aggiorna o crea) e la pulizia dei record obsoleti avviene DOPO: non esiste mai
+// un istante con lo store vuoto.
 
 import { STIPENDI_SEED } from './stipendiSeedData.js';
-import { dbBulkPut, dbAdd, dbGet, dbCount, dbClear } from './db.js';
+import { dbBulkPut, dbAdd, dbGet, dbAll, dbDelete } from './db.js';
 
-const FLAG = 'seed_stipendi_completato';
-const FLAG_VER = 'seed_stipendi_versione';
-// Bump a ogni cambio del CONTENUTO del seed:
-//  1 = versione iniziale (v3.10)
-//  2 = v3.12: dettaglio fiscale INPS/IRPEF/addizionali/Cometa azienda per tutti i datori,
-//      flag anticipo/cessazione, viste sul lordo depurate dai mesi speciali.
-const VERSIONE_DATI = 2;
+const FLAG_IMPRONTA = 'seed_stipendi_impronta';
+const round2 = (n) => Math.round(n * 100) / 100;
+
+// Impronta dei dati attesi: cambia da sola quando cambia il contenuto del seed.
+const improntaDi = (buste) => {
+  const somma = (c) => round2(buste.reduce((s, b) => s + (b[c] || 0), 0));
+  return `${buste.length}|${somma('netto')}|${somma('lordo')}|${somma('cometa_azienda')}`;
+};
 
 export const seedStipendiSeNecessario = async () => {
-  const verRec = await dbGet('meta', FLAG_VER);
-  const verCorrente = verRec ? verRec.valore : 0;
-  const n = await dbCount('stipendi');
+  const attesa = improntaDi(STIPENDI_SEED);
+  const presenti = await dbAll('stipendi');
 
-  // MIGRAZIONE: se il seed è più recente di quello iniettato, sostituisco le buste.
-  // (Nessun dato utente si perde: qui non ci sono buste inserite a mano, solo lo storico.)
-  if (verCorrente < VERSIONE_DATI) {
-    await dbClear('stipendi');
-    await dbBulkPut('stipendi', STIPENDI_SEED);
-    await dbAdd('meta', { chiave: FLAG, valore: true, data: new Date().toISOString() });
-    await dbAdd('meta', { chiave: FLAG_VER, valore: VERSIONE_DATI, data: new Date().toISOString() });
-    return true;
+  // Confronto solo le buste DI SEED: quelle aggiunte a mano dall'utente non devono
+  // far scattare un riallineamento continuo.
+  const idSeed = new Set(STIPENDI_SEED.map(b => b.id));
+  const diSeed = presenti.filter(b => idSeed.has(b.id));
+
+  if (improntaDi(diSeed) === attesa && diSeed.length === presenti.filter(b => !b.manuale).length) {
+    const salvata = await dbGet('meta', FLAG_IMPRONTA);
+    if (!salvata || salvata.valore !== attesa) {
+      await dbAdd('meta', { chiave: FLAG_IMPRONTA, valore: attesa, data: new Date().toISOString() });
+    }
+    return false;
   }
 
-  // AUTO-REPAIR basato sui DATI: se lo store è vuoto ma la versione risulta aggiornata
-  // (es. ripristino di un backup che ha svuotato lo store), reinietto le buste.
-  if (n === 0) {
-    await dbBulkPut('stipendi', STIPENDI_SEED);
-    await dbAdd('meta', { chiave: FLAG, valore: true, data: new Date().toISOString() });
-    return true;
+  // Disallineato: riscrivo le buste di seed in un colpo solo.
+  await dbBulkPut('stipendi', STIPENDI_SEED);
+
+  // Poi elimino i record obsoleti del seed precedente (es. vecchi id senza datore, che
+  // nei mesi di passaggio si sovrascrivevano a vicenda). Le buste inserite dall'utente
+  // restano: le riconosco perché coprono periodi che il seed non contiene.
+  const copertoDalSeed = new Set(STIPENDI_SEED.map(b => `${b.anno}-${b.mese}-${b.datore}`));
+  for (const b of presenti) {
+    if (idSeed.has(b.id) || b.manuale) continue;
+    if (copertoDalSeed.has(`${b.anno}-${b.mese}-${b.datore}`)) await dbDelete('stipendi', b.id);
   }
-  return false;
+
+  await dbAdd('meta', { chiave: FLAG_IMPRONTA, valore: attesa, data: new Date().toISOString() });
+  return true;
 };

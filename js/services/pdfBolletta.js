@@ -28,14 +28,14 @@ const a85decode = (str) => {
 };
 
 // inflate zlib con l'API nativa del browser
-const inflate = async (bytes) => {
+export const inflate = async (bytes) => {
   const ds = new DecompressionStream('deflate');
   const stream = new Blob([bytes]).stream().pipeThrough(ds);
   const buf = await new Response(stream).arrayBuffer();
   return new Uint8Array(buf);
 };
 
-const LATIN1 = new TextDecoder('latin1');
+export const LATIN1 = new TextDecoder('latin1');
 
 // decodifica uno stream PDF: ASCII85 -> Flate (con fallback solo-A85)
 const decodificaStream = async (chunkStr) => {
@@ -50,7 +50,7 @@ const decodificaStream = async (chunkStr) => {
 
 // costruisce la mappa CID -> carattere dalle CMap ToUnicode (fuse: nei PDF
 // Dolomiti i font condividono lo stesso subset, zero conflitti)
-const costruisciMappa = (streamsTesto) => {
+export const costruisciMappa = (streamsTesto) => {
   const mappa = {};
   for (const d of streamsTesto) {
     if (!d.includes('beginbfchar') && !d.includes('beginbfrange')) continue;
@@ -71,7 +71,7 @@ const costruisciMappa = (streamsTesto) => {
 
 // estrae il testo da uno stream di contenuto: stringhe hex in Tj/TJ,
 // newline sui movimenti verticali (Td con ty != 0, T*)
-const estraiTesto = (d, mappa) => {
+export const estraiTesto = (d, mappa) => {
   const out = [];
   const decodHex = (h) => {
     let s = '';

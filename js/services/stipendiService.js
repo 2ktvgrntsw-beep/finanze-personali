@@ -7,8 +7,10 @@
 // contano davvero (netto per anno, netto medio, heatmap) usano il netto; la
 // scomposizione del lordo è offerta come vista secondaria, con avviso.
 
-import { state } from '../core/store.js';
+import { state, refreshAll } from '../core/store.js';
 import { round2 } from '../core/utils.js';
+import { dbAdd, dbDelete } from '../core/db.js';
+import { FISCO_UFFICIALE, irpefTeorica, certificatoDi } from '../core/fiscoUfficiale.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Datori: ordine cronologico e colori scelti dall'utente (identità aziendale).
@@ -44,36 +46,35 @@ export const anniDisponibili = () => {
 export const stipendiAnno = (anno) =>
   state.stipendi.filter(s => String(s.anno) === String(anno)).sort((a, b) => a.mese - b.mese);
 
-// Un mese è "ordinario" se non è di anticipo/recupero né di cessazione: solo questi
-// entrano nelle viste sul LORDO (composizione, aliquota), perché nei mesi speciali
-// competenze e trattenute sono gonfiate da partite che si compensano nel netto.
-export const eMesePieno = (b) => !b.anticipo && !b.cessazione;
+// NIENTE PIÙ ESCLUSIONI. Il lordo delle buste è già DEPURATO delle partite di giro
+// Zucchetti (Recupero Anticipo, Assenze Retribuite, Assenza assunti/dimessi), quindi
+// ogni mese è confrontabile: anche le buste di cessazione entrano nei totali, perché
+// quei soldi sono stati incassati e quelle trattenute pagate davvero.
 
 // Aggregato per un anno: totali + netto per datore.
 export const aggregatoAnno = (anno) => {
   const buste = stipendiAnno(anno);
   if (!buste.length) return null;
-  const ordinari = buste.filter(eMesePieno);
   const somma = (arr, campo) => round2(arr.reduce((s, b) => s + (b[campo] || 0), 0));
-  const netto = somma(buste, 'netto');                 // NETTO: tutti i mesi (denaro reale)
-  const lordo = somma(ordinari, 'lordo');              // LORDO: solo mesi ordinari
-  const trattenute = somma(ordinari, 'trattenute');
+  const netto = somma(buste, 'netto');
+  const lordo = somma(buste, 'lordo');
+  const trattenute = somma(buste, 'trattenute');
   // netto per datore (per barre impilate e transizioni di lavoro)
   const perDatore = {};
   for (const b of buste) perDatore[b.datore] = round2((perDatore[b.datore] || 0) + (b.netto || 0));
   const datorePrevalente = Object.entries(perDatore).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
   return {
-    anno: String(anno), mesi: buste.length, mesiOrdinari: ordinari.length,
+    anno: String(anno), mesi: buste.length,
     netto, lordo, trattenute,
     tfr: somma(buste, 'tfr_a_fondo_pensione'),
     cometaDip: somma(buste, 'cometa_dipendente'),
     cometaAz: somma(buste, 'cometa_azienda'),
     premi: somma(buste, 'premi_detassati'),
     rimborso: somma(buste, 'rimborso_fiscale_escluso'),
-    nettoMedio: round2(netto / buste.length),
-    aliquotaEff: lordo ? round2(trattenute / lordo * 100) : 0,   // % trattenute sul lordo (mesi ordinari)
+    nettoMedio: round2((netto + somma(buste, 'addebiti_netti')) / mensilitaDi(buste)),  // netto guadagnato per mensilità (13 in un anno pieno)
+    aliquotaEff: lordo ? round2(trattenute / lordo * 100) : 0,
+    giro: somma(buste, 'partite_di_giro'),
     perDatore, datorePrevalente,
-    haSpeciali: ordinari.length < buste.length,
   };
 };
 
@@ -102,65 +103,86 @@ export const nettoPerAnnoPerDatore = () => {
 // Scomposizione del LORDO anno per anno: netto in tasca + fisco/contributi + Cometa.
 // I tre segmenti sommano al lordo (netto + trattenute; e trattenute = fisco/contributi
 // + Cometa dipendente). Vista secondaria: nei mesi 'anticipo' il lordo è gonfiato.
+// Scomposizione del lordo secondo il modello concordato:
+//   lordo = netto guadagnato + fisco/contributi + Cometa
+// 'netto guadagnato' = quello che il lavoro ti ha reso, PRIMA degli addebiti netti
+// (auto, mensa, ticket): quelli sono spese tue, non minor compenso, e li tracci
+// tra i movimenti. Lo split imposte / contributi INPS sta nel dettaglio, non nella barra.
 export const composizioneLordoAnnuale = () => {
   return anniDisponibili().slice().reverse().map(anno => {
-    const buste = stipendiAnno(anno).filter(eMesePieno);
-    const netto = round2(buste.reduce((s, b) => s + (b.netto || 0), 0));
-    const cometa = round2(buste.reduce((s, b) => s + (b.cometa_dipendente || 0), 0));
-    const trattenute = round2(buste.reduce((s, b) => s + (b.trattenute || 0), 0));
-    const fisco = round2(trattenute - cometa);
-    const tot = round2(netto + trattenute);
-    return { anno, valori: { netto, fisco, cometa }, tot };
+    const buste = stipendiAnno(anno);
+    return { anno, ...composizioneDi(buste) };
   });
 };
 
-// Netto MESE PER MESE di un anno (barre proporzionali, colore per datore).
-// Ritorna [{ mese, label, netto, datore, valori }] cronologico. 'valori' ha una sola
-// chiave = datore del mese, così _barreImpilate colora la barra col colore aziendale.
-export const nettoMensile = (anno) => {
+// Scomposizione del lordo MESE PER MESE di un anno (stessa struttura della barra annuale).
+export const composizioneLordoMensile = (anno) => {
   return stipendiAnno(anno).map(b => ({
-    mese: b.mese, label: MESI3[b.mese - 1], netto: round2(b.netto), datore: b.datore,
-    valori: { [b.datore]: round2(b.netto) }, tot: round2(b.netto),
+    mese: b.mese, label: MESI3[b.mese - 1], ...composizioneDi([b]),
   }));
 };
 
-// Scomposizione del lordo MESE PER MESE di un anno.
-export const composizioneLordoMensile = (anno) => {
-  return stipendiAnno(anno).filter(eMesePieno).map(b => {
-    const netto = round2(b.netto || 0);
-    const cometa = round2(b.cometa_dipendente || 0);
-    const trattenute = round2(b.trattenute || 0);
-    const fisco = round2(trattenute - cometa);
-    return { mese: b.mese, label: MESI3[b.mese - 1], valori: { netto, fisco, cometa }, tot: round2(netto + trattenute) };
-  });
+// Nucleo condiviso: da un gruppo di buste ai tre segmenti della barra.
+export const composizioneDi = (buste) => {
+  const s = (c) => round2(buste.reduce((x, b) => x + (b[c] || 0), 0));
+  const netto = s('netto'), addebiti = s('addebiti_netti');
+  const cometa = s('cometa_dipendente'), trattenute = s('trattenute');
+  const guadagnato = round2(netto + addebiti);
+  const fisco = round2(trattenute - cometa - addebiti);   // imposte + contributi INPS
+  return {
+    valori: { guadagnato, fisco, cometa },
+    tot: round2(guadagnato + fisco + cometa),             // = lordo
+    netto, addebiti, guadagnato, fisco, cometa,
+    // split fine, per il dettaglio sotto la barra (non per la barra)
+    imposte: round2(s('irpef_netta') + s('addizionale_regionale') + s('addizionale_comunale') + s('imposta_sostitutiva') + s('irpef_tass_separata')),
+    contributi: s('contributi_inps'),
+    quotaNetta: (netto + addebiti + fisco + cometa) ? Math.round(guadagnato / (guadagnato + fisco + cometa) * 100) : 0,
+  };
 };
+
+// Segmenti della barra "dove va il lordo".
+export const SEG_LORDO = [
+  { k: 'guadagnato', nome: 'Netto guadagnato', colore: '#22E39A' },
+  { k: 'fisco', nome: 'Fisco e contributi', colore: '#FF3B5C' },
+  { k: 'cometa', nome: 'Cometa (previdenza)', colore: '#7B6CFF' },
+];
 
 // Serie del NETTO nel tempo (per la spike-line), cronologica.
 export const serieNetto = () => stipendiOrdinati().slice().reverse().map(b => ({
   label: `${MESI3[b.mese - 1]} '${String(b.anno).slice(2)}`, valore: round2(b.netto), datore: b.datore,
 }));
 
+// MENSILITÀ: la tredicesima è dentro la busta di dicembre, quindi un anno pieno vale
+// 13 mensilità. Contarle come 12 buste gonfierebbe la media mensile di circa l'8%.
+// La 13ma non e' sempre a dicembre: SASIB la pagava a NOVEMBRE. Per questo conto le
+// mensilita' sul CONTRASSEGNO della busta, non sul mese.
+export const mensilitaDi = (buste) => buste.length + buste.filter(b => b.tredicesima_inclusa).length;
+
 // Confronto DATORI: netto totale, mesi, netto medio, periodo. Ordinato per periodo.
 export const confrontoDatori = () => {
   const per = {};
   for (const b of state.stipendi) {
     const d = b.datore || '?';
-    per[d] = per[d] || { datore: d, nettoTot: 0, lordoTot: 0, mesi: 0, dal: b.id, al: b.id };
-    per[d].nettoTot += (b.netto || 0);
-    per[d].lordoTot += (b.lordo || 0);
-    per[d].mesi++;
+    per[d] = per[d] || { datore: d, buste: [], dal: b.id, al: b.id };
+    per[d].buste.push(b);
     if (b.id < per[d].dal) per[d].dal = b.id;
     if (b.id > per[d].al) per[d].al = b.id;
   }
-  return Object.values(per)
-    .map(f => ({
-      ...f,
-      nettoTot: round2(f.nettoTot),
-      lordoTot: round2(f.lordoTot),
-      nettoMedio: round2(f.nettoTot / f.mesi),
+  return Object.values(per).map(f => {
+    const s = (c) => round2(f.buste.reduce((x, b) => x + (b[c] || 0), 0));
+    const netto = s('netto'), addebiti = s('addebiti_netti');
+    const guadagnato = round2(netto + addebiti);
+    const mensilita = mensilitaDi(f.buste);
+    return {
+      datore: f.datore, dal: f.dal, al: f.al,
+      mesi: f.buste.length, mensilita,
+      netto, addebiti, guadagnato,
+      lordoTot: s('lordo'),
+      // quanto rende il lavoro per mensilità (13 in un anno pieno)
+      perMensilita: mensilita ? round2(guadagnato / mensilita) : 0,
       colore: coloreDatore(f.datore),
-    }))
-    .sort((a, b) => a.dal.localeCompare(b.dal));
+    };
+  }).sort((a, b) => a.dal.localeCompare(b.dal));
 };
 
 // Heatmap netto mese × anno. Celle colorate col colore del datore, intensità = netto.
@@ -215,6 +237,39 @@ export const versamentoFondoTotale = () => {
   return { tfr, dip, az, tot: round2(tfr + dip + az) };
 };
 
+// Dettaglio fondo pensione per ANNO (con datore prevalente) — per la pagina dedicata.
+export const dettaglioFondoAnnuale = () => {
+  return anniDisponibili().slice().reverse().map(anno => {
+    const b = stipendiAnno(anno);
+    const s = (c) => round2(b.reduce((x, r) => x + (r[c] || 0), 0));
+    const tfr = s('tfr_a_fondo_pensione'), dip = s('cometa_dipendente'), az = s('cometa_azienda');
+    const perDatore = {};
+    for (const r of b) {
+      const q = (r.tfr_a_fondo_pensione || 0) + (r.cometa_dipendente || 0) + (r.cometa_azienda || 0);
+      if (q) perDatore[r.datore] = round2((perDatore[r.datore] || 0) + q);
+    }
+    return { anno, tfr, dip, az, tot: round2(tfr + dip + az), mesi: b.length, perDatore };
+  });
+};
+
+// Dettaglio fondo pensione per DATORE (chi ha versato cosa, in quale periodo).
+export const dettaglioFondoPerDatore = () => {
+  const per = {};
+  for (const b of state.stipendi) {
+    const d = b.datore || '?';
+    per[d] = per[d] || { datore: d, tfr: 0, dip: 0, az: 0, dal: b.id, al: b.id };
+    per[d].tfr += (b.tfr_a_fondo_pensione || 0);
+    per[d].dip += (b.cometa_dipendente || 0);
+    per[d].az += (b.cometa_azienda || 0);
+    if (b.id < per[d].dal) per[d].dal = b.id;
+    if (b.id > per[d].al) per[d].al = b.id;
+  }
+  return Object.values(per).map(f => ({
+    ...f, tfr: round2(f.tfr), dip: round2(f.dip), az: round2(f.az),
+    tot: round2(f.tfr + f.dip + f.az), colore: coloreDatore(f.datore),
+  })).sort((a, b) => a.dal.localeCompare(b.dal));
+};
+
 // Segmenti (con colori) per le barre del fondo pensione.
 export const SEG_FONDO = [
   { k: 'tfr', nome: 'TFR devoluto', colore: '#5FC3FF' },
@@ -224,3 +279,133 @@ export const SEG_FONDO = [
 
 export const MESI3 = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
 export const mese3 = (m) => MESI3[m - 1] || '';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FISCO: quanto hai pagato di IRPEF/addizionali e quanto ti e' tornato indietro.
+// Il rimborso 730 e' un CREDITO in busta, non una trattenuta: non va mai sottratto
+// dalle trattenute del mese, ma confrontato con l'imposta pagata.
+// ─────────────────────────────────────────────────────────────────────────────
+const _s = (buste, c) => round2(buste.reduce((x, b) => x + (b[c] || 0), 0));
+
+export const fiscoAnnuale = () => anniDisponibili().slice().reverse().map(anno => {
+  const b = stipendiAnno(anno);
+  const irpef = _s(b, 'irpef_netta');
+  const addReg = _s(b, 'addizionale_regionale');
+  const addCom = _s(b, 'addizionale_comunale');
+  const sost = _s(b, 'imposta_sostitutiva');
+  const sep = _s(b, 'irpef_tass_separata');
+  const pagato = round2(irpef + addReg + addCom + sost + sep);
+  const rimborso = _s(b, 'rimborso_730');
+  return {
+    anno, irpef, addReg, addCom, sost, sep, pagato, rimborso,
+    netto: round2(pagato - rimborso),
+    // anno d'imposta a cui si riferisce il rimborso, quando la busta lo dichiara
+    annoImposta: (b.find(x => x.rimborso_730_anno) || {}).rimborso_730_anno || null,
+    valori: { irpef, addReg, addCom },
+    tot: pagato,
+  };
+});
+
+export const fiscoTotale = () => {
+  const st = state.stipendi;
+  const irpef = _s(st, 'irpef_netta'), addReg = _s(st, 'addizionale_regionale');
+  const addCom = _s(st, 'addizionale_comunale'), sost = _s(st, 'imposta_sostitutiva');
+  const sep = _s(st, 'irpef_tass_separata');
+  const pagato = round2(irpef + addReg + addCom + sost + sep);
+  const rimborso = _s(st, 'rimborso_730');
+  return { irpef, addReg, addCom, sost, sep, pagato, rimborso,
+    netto: round2(pagato - rimborso),
+    quotaRestituita: pagato ? round2(rimborso / pagato * 100) : 0 };
+};
+
+// Elenco dei rimborsi ricevuti (uno per busta che li contiene).
+export const elencoRimborsi = () => state.stipendi
+  .filter(b => b.rimborso_730)
+  .map(b => ({ id: b.id, anno: b.anno, mese: b.mese, datore: b.datore,
+    importo: b.rimborso_730, annoImposta: b.rimborso_730_anno || null }))
+  .sort((a, b) => (b.anno - a.anno) || (b.mese - a.mese));
+
+// Confronto fra la somma delle buste e il dato CERTIFICATO dal datore (riquadro
+// conguaglio della busta di dicembre), piu' l'IRPEF teoricamente dovuta per scaglioni.
+export const verificaFiscale = () => {
+  const anni = [...new Set(FISCO_UFFICIALE.map(x => x.anno))].sort((a, b) => b - a);
+  return anni.map(anno => {
+    const c = certificatoDi(anno);
+    const b = stipendiAnno(anno);
+    // L'IRPEF certificata dal datore COMPRENDE la tassazione separata (TFR, arretrati):
+    // confrontarla con la sola IRPEF ordinaria faceva sembrare che mancassero centinaia
+    // di euro che invece erano regolarmente registrati, solo in un'altra voce.
+    const sommaIrpef = round2(b.reduce((s, x) => s + (x.irpef_netta || 0) + (x.irpef_tass_separata || 0), 0));
+    // Il confronto con gli scaglioni ha senso solo se conosco le DETRAZIONI certificate:
+    // senza, direi che hai pagato troppo poco quando invece il dato mi manca.
+    const dovuta = c.completo ? round2(irpefTeorica(c.imponibile, anno) - c.detrazioni) : null;
+    return {
+      ...c, sommaIrpef, dovuta,
+      differenza: dovuta == null ? null : round2(c.irpefTrattenuta - dovuta),
+      scartoArchivio: round2(sommaIrpef - c.irpefTrattenuta),
+    };
+  });
+};
+
+export const SEG_FISCO = [
+  { k: 'irpef', nome: 'IRPEF', colore: '#FF3B5C' },
+  { k: 'addReg', nome: 'Addiz. regionale', colore: '#FFB020' },
+  { k: 'addCom', nome: 'Addiz. comunale', colore: '#7B6CFF' },
+];
+
+// Scomposizione delle TRATTENUTE di una busta, voce per voce, con il residuo
+// dichiarato: la somma torna sempre al totale di busta.
+export const dettaglioTrattenute = (b) => {
+  const voci = [
+    ['Contributi INPS', b.contributi_inps, '#2E9BFF'],
+    ['IRPEF', b.irpef_netta, '#FF3B5C'],
+    ['Addizionale regionale', b.addizionale_regionale, '#FFB020'],
+    ['Addizionale comunale', b.addizionale_comunale, '#7B6CFF'],
+    ['Imposta sostitutiva (premi)', b.imposta_sostitutiva, '#FF8A3D'],
+    ['IRPEF tassazione separata', b.irpef_tass_separata, '#E2001A'],
+    ['Cometa — quota tua', b.cometa_dipendente, '#22E39A'],
+    ['Altre (mensa, ticket, auto…)', b.altre_trattenute, '#9AA7BD'],
+  ].filter(v => v[1]).map(([nome, val, colore]) => ({ nome, val: round2(val), colore }));
+  const residuo = round2(b.trattenute - voci.reduce((s, v) => s + v.val, 0));
+  return { voci, residuo, totale: round2(b.trattenute) };
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CRUD buste paga (inserimento manuale o import PDF).
+// L'id è composito 'AAAA-MM-datore': nei mesi di passaggio convivono due buste.
+// ─────────────────────────────────────────────────────────────────────────────
+export const salvaStipendio = async (b) => {
+  const anno = +b.anno, mese = +b.mese;
+  const netto = round2(b.netto || 0);
+  const trattenute = round2(b.trattenute || 0);
+  // il lordo è SEMPRE coerente con l'identità di busta: lordo = netto + trattenute
+  const lordo = round2(netto + trattenute);
+  const rec = {
+    id: `${anno}-${String(mese).padStart(2, '0')}-${b.datore}`,
+    periodoId: `${anno}-${String(mese).padStart(2, '0')}`,
+    anno, mese, datore: b.datore,
+    periodo: `${MESI_ESTESI[mese - 1]} ${anno}`,
+    netto, netto_cassa: round2(b.netto_cassa || netto), lordo, trattenute,
+    partite_di_giro: round2(b.partite_di_giro || 0),
+    tfr_a_fondo_pensione: round2(b.tfr_a_fondo_pensione || 0),
+    cometa_dipendente: round2(b.cometa_dipendente || 0),
+    cometa_azienda: round2(b.cometa_azienda || 0),
+    premi_detassati: round2(b.premi_detassati || 0),
+    rimborso_fiscale_escluso: round2(b.rimborso_fiscale_escluso || 0),
+    tredicesima_inclusa: !!b.tredicesima_inclusa,
+    cessazione: !!b.cessazione,
+    manuale: true,   // inserita/modificata da te: il seed non la tocca
+    voci_notevoli: b.voci_notevoli || [],
+  };
+  for (const k of ['contributi_inps', 'irpef_netta', 'addizionale_regionale', 'addizionale_comunale']) {
+    if (b[k] != null && b[k] !== '') rec[k] = round2(b[k]);
+  }
+  await dbAdd('stipendi', rec);
+  await refreshAll();
+  return rec;
+};
+
+export const eliminaStipendio = async (id) => { await dbDelete('stipendi', id); await refreshAll(); };
+
+export const MESI_ESTESI = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
+  'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];

@@ -12,11 +12,14 @@ import { state } from '../core/store.js';
 import { fmtEUR, escapeHtml } from '../core/utils.js';
 import { navigate } from '../core/router.js';
 import { _barreImpilate } from './energia.js';
+import { COMETA, montante, rendimento } from '../core/cometaEstrattoConto.js';
 import {
   DATORI, coloreDatore, ultimoStipendio, stipendioById, anniDisponibili,
   aggregatoAnno, variazioneAnno, nettoPerAnnoPerDatore, composizioneLordoAnnuale,
   nettoMensile, composizioneLordoMensile, confrontoDatori, heatmapNetto,
   versamentoFondoAnnuale, versamentoFondoTotale, SEG_FONDO,
+  dettaglioFondoAnnuale, dettaglioFondoPerDatore,
+  fiscoAnnuale, fiscoTotale, elencoRimborsi, SEG_FISCO, dettaglioTrattenute, verificaFiscale,
   mese3, MESI3,
 } from '../services/stipendiService.js';
 
@@ -94,11 +97,23 @@ export const renderStipendi = async (root) => {
     </div>
 
     <!-- FONDO PENSIONE versato -->
-    <div class="section-lbl"><span>Fondo pensione · versato per anno</span></div>
+    <div class="section-lbl"><span>Fondo pensione</span></div>
+    <div class="card eboll" id="vedi-fondo" style="cursor:pointer">
+      <div class="body" style="flex:1">
+        <div class="lbl2">Totale versato a Cometa</div>
+        <div class="num" style="font-size:24px;font-weight:750">${fmtEUR(versamentoFondoTotale().tot)}</div>
+        <div class="meta" style="margin-top:4px">${(() => { const t = versamentoFondoTotale();
+          return `TFR ${fmtEUR(t.tfr)} · tuo ${fmtEUR(t.dip)} · datore ${fmtEUR(t.az)}`; })()}</div>
+      </div>
+      <div class="eboll-chev">›</div>
+    </div>
+
+    <!-- FISCO: pagato vs restituito -->
+    <div class="section-lbl"><span>Fisco · IRPEF e addizionali</span><span class="act" id="vedi-fisco">Dettaglio ›</span></div>
     <div class="card">
-      ${_leg(SEG_FONDO)}
-      <div class="estack" id="g-fondo"></div>
-      <div class="eprice-note" style="margin-top:8px">${_fondoTotHTML()}</div>
+      ${_leg(SEG_FISCO)}
+      <div class="estack" id="g-fisco"></div>
+      <div class="eprice-note" style="margin-top:8px">${_fiscoTotHTML()}</div>
     </div>
 
     <!-- SCOMPOSIZIONE LORDO anno per anno -->
@@ -106,7 +121,7 @@ export const renderStipendi = async (root) => {
     <div class="card">
       ${_leg(SEG_LORDO)}
       <div class="estack" id="g-lordo"></div>
-      <div class="eprice-note" style="margin-top:8px">Netto + fisco/contributi + Cometa = lordo. Sono esclusi i mesi di anticipo/recupero e le buste di cessazione, dove competenze e trattenute sono gonfiate da partite che si compensano: falserebbero il quadro. Il netto invece li include sempre.</div>
+      <div class="eprice-note" style="margin-top:8px">Netto + fisco/contributi + Cometa = lordo. <b>Ci sono tutti i mesi</b>, comprese le buste di fine rapporto: quei soldi li hai incassati e quelle trattenute le hai pagate. Il lordo è depurato delle partite di giro Zucchetti (recupero anticipo, assenze retribuite, assenza assunti/dimessi), che comparivano sia fra le competenze sia fra le trattenute e gonfiavano il totale senza essere retribuzione.</div>
     </div>
 
     <!-- HEATMAP netto -->
@@ -120,7 +135,7 @@ export const renderStipendi = async (root) => {
     <div class="card" id="s-datori"></div>
 
     <!-- STORICO -->
-    <div class="section-lbl"><span>Storico buste</span><span class="act" id="vedi-tutte">Tutte (${state.stipendi.length}) ›</span></div>
+    <div class="section-lbl"><span>Storico buste</span><span class="act" id="nuova-busta">+ Aggiungi</span><span class="act" id="vedi-tutte">Tutte (${state.stipendi.length}) ›</span></div>
     <div class="card" style="padding:0" id="s-storico">
       ${stipendiRecenti(4).map(b => _rigaStipendioHTML(b)).join('<div class="divider"></div>')}
     </div>
@@ -133,9 +148,9 @@ export const renderStipendi = async (root) => {
     SEG_DATORI, v => fmtEUR(v), v => Math.round(v).toLocaleString('it-IT'),
   );
   _barreImpilate(
-    root.querySelector('#g-fondo'),
-    versamentoFondoAnnuale().map(d => ({ label: `'${d.anno.slice(2)}`, valori: d.valori, tot: d.tot })),
-    SEG_FONDO, v => fmtEUR(v), v => Math.round(v).toLocaleString('it-IT'),
+    root.querySelector('#g-fisco'),
+    fiscoAnnuale().map(d => ({ label: `'${String(d.anno).slice(2)}`, valori: d.valori, tot: d.tot })),
+    SEG_FISCO, v => fmtEUR(v), v => Math.round(v).toLocaleString('it-IT'),
   );
   _barreImpilate(
     root.querySelector('#g-lordo'),
@@ -158,6 +173,12 @@ export const renderStipendi = async (root) => {
     if (i > 0) { _annoKpi = anni[i - 1]; root.querySelector('#skpi-lbl').textContent = _annoKpi; _renderKpi(root); }
   });
 
+  const nb = root.querySelector('#nuova-busta');
+  if (nb) nb.addEventListener('click', () => navigate('stipendio-nuovo'));
+  const vfi = root.querySelector('#vedi-fisco');
+  if (vfi) vfi.addEventListener('click', () => navigate('stipendi-fisco'));
+  const vf = root.querySelector('#vedi-fondo');
+  if (vf) vf.addEventListener('click', () => navigate('stipendi-fondo'));
   const vt = root.querySelector('#vedi-tutte');
   if (vt) vt.addEventListener('click', () => navigate('stipendi-storico'));
 
@@ -165,10 +186,186 @@ export const renderStipendi = async (root) => {
     el.addEventListener('click', () => navigate('stipendio-dettaglio', { id: el.dataset.stip })));
 };
 
+const _fiscoTotHTML = () => {
+  const t = fiscoTotale();
+  return `Imposte pagate: <b class="num">${fmtEUR(t.pagato)}</b> — restituite col 730 <b class="num">${fmtEUR(t.rimborso)}</b> (${t.quotaRestituita}%). Rimaste allo Stato: ${fmtEUR(t.netto)}.`;
+};
+
 // riga riepilogo totale versato al fondo (sotto le barre)
 const _fondoTotHTML = () => {
   const t = versamentoFondoTotale();
   return `Totale versato al fondo: <b class="num">${fmtEUR(t.tot)}</b> — TFR ${fmtEUR(t.tfr)} · mio ${fmtEUR(t.dip)} · datore ${fmtEUR(t.az)}. Sono versamenti reali: inclusi tutti i mesi.`;
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PAGINA FISCO: quanto hai pagato di imposte e quanto ti è tornato indietro
+// ═══════════════════════════════════════════════════════════════════════════
+export const renderStipendiFisco = async (root) => {
+  document.getElementById('view-title').textContent = 'Fisco e rimborsi';
+  const t = fiscoTotale();
+  const perAnno = fiscoAnnuale();
+  const rimborsi = elencoRimborsi();
+  const quota = (v) => t.pagato ? Math.round(v / t.pagato * 100) : 0;
+
+  root.innerHTML = `
+    <div class="net-card" style="margin-top:4px">
+      <div class="lbl2">Imposte pagate sul lavoro</div>
+      <div class="num" style="font-size:30px;font-weight:750">${fmtEUR(t.pagato)}</div>
+      <div class="meta" style="margin-top:4px">di cui <b style="color:var(--up)">${fmtEUR(t.rimborso)}</b> tornati indietro col 730 (${t.quotaRestituita}%)</div>
+    </div>
+
+    <div class="section-lbl"><span>Cosa hai pagato</span></div>
+    <div class="card">
+      ${[['IRPEF', t.irpef, SEG_FISCO[0].colore],
+         ['Addizionale regionale', t.addReg, SEG_FISCO[1].colore],
+         ['Addizionale comunale', t.addCom, SEG_FISCO[2].colore],
+         ['Imposta sostitutiva sui premi', t.sost, '#FF8A3D'],
+         ['IRPEF a tassazione separata', t.sep, '#E2001A']]
+        .filter(x => x[1]).map(([nome, val, col]) => `
+        <div class="fr-row">
+          <div class="fr-head">
+            <span class="fr-nome"><span class="stip-dot" style="background:${col}"></span> ${nome}</span>
+            <span class="fr-val num">${fmtEUR(val)}</span>
+          </div>
+          <div class="fr-bar"><div class="fr-fill" style="width:${quota(val)}%;background:${col}"></div></div>
+          <div class="fr-sub">${quota(val)}% delle imposte pagate</div>
+        </div>`).join('')}
+    </div>
+
+    <div class="section-lbl"><span>Verifica sul dato certificato</span></div>
+    <div class="card" style="padding:4px 14px">
+      ${verificaFiscale().map(v => `
+        <div class="paniere-anno-riga">
+          <span class="num anno">${v.anno} <span class="meta">${escapeHtml(v.datori.join(' + '))}</span></span>
+          <b class="num">${fmtEUR(v.irpefTrattenuta)}</b>
+          <span class="delta ${v.differenza == null ? '' : v.differenza > 100 ? 'ko' : 'ok'} num">${v.differenza == null ? '—' : v.differenza > 100 ? '+' + fmtEUR(v.differenza) : 'in linea'}</span>
+        </div>
+        <div class="fr-sub" style="margin:-4px 0 8px">${v.fonti.includes('CU') ? 'da Certificazione Unica' : 'da conguaglio di busta'} · imponibile ${fmtEUR(v.imponibile)}${v.completo ? ` · detrazioni ${fmtEUR(v.detrazioni)} · dovuta per scaglioni ${fmtEUR(v.dovuta)}` : ' · detrazioni non certificate'}${Math.abs(v.scartoArchivio) > 1 ? ` · <span style="color:var(--warn)">somma buste ${fmtEUR(v.sommaIrpef)}</span>` : ''}</div>
+      `).join('')}
+      <div class="eprice-note" style="margin:4px 0 10px">Dati presi dal riquadro di conguaglio della busta di dicembre: è quello che finisce nella Certificazione Unica. "Dovuta per scaglioni" è l'IRPEF che risulterebbe applicando le aliquote di quell'anno all'imponibile certificato, tolte le detrazioni. Se hai cambiato datore durante l'anno, ogni datore tassa la propria fetta al margine: la differenza si legge solo sommando i due.</div>
+    </div>
+
+    <div class="section-lbl"><span>Rimborsi 730 ricevuti</span></div>
+    <div class="card" style="padding:4px 14px">
+      ${rimborsi.length ? rimborsi.map(r => `
+        <div class="paniere-anno-riga">
+          <span class="num anno">${MESI3[r.mese - 1]} ${r.anno}</span>
+          <b class="num" style="color:var(--up)">+${fmtEUR(r.importo)}</b>
+        </div>
+        <div class="fr-sub" style="margin:-4px 0 8px">${escapeHtml(r.datore)}${r.annoImposta ? ` · conguaglio dell'anno d'imposta ${r.annoImposta}` : ''}</div>
+      `).join('') : '<div class="empty">Nessun rimborso registrato</div>'}
+    </div>
+
+    <div class="section-lbl"><span>Versato anno per anno</span></div>
+    <div class="card">
+      ${_leg(SEG_FONDO)}
+      <div class="estack" id="g-fondo-anno"></div>
+    </div>
+
+    <div class="section-lbl"><span>Dettaglio per anno</span></div>
+    <div class="card" style="padding:4px 14px">
+      ${perAnno.map(a => `
+        <div class="paniere-anno-riga">
+          <span class="num anno">${a.anno}</span>
+          <b class="num">${fmtEUR(a.pagato)}</b>
+          <span class="delta ${a.rimborso ? 'ok' : ''} num">${a.rimborso ? '+' + fmtEUR(a.rimborso) : '—'}</span>
+        </div>
+        <div class="fr-sub" style="margin:-4px 0 8px">IRPEF ${fmtEUR(a.irpef)}${a.addReg ? ` · reg. ${fmtEUR(a.addReg)}` : ''}${a.addCom ? ` · com. ${fmtEUR(a.addCom)}` : ''}${a.rimborso ? ` · rimborso ricevuto ${fmtEUR(a.rimborso)}` : ''}</div>
+      `).join('')}
+    </div>
+
+    <div class="card">
+      <div class="meta">La colonna a destra è il <b>rimborso incassato in quell'anno</b>: il 730 restituisce
+      quasi sempre imposte dell'anno precedente, quindi non confrontarlo con l'IRPEF della stessa riga.
+      Dove la busta lo dichiara, sotto il rimborso trovi l'anno d'imposta a cui si riferisce.
+      Il rimborso è un credito che ti viene accreditato in busta: non riduce le trattenute del mese,
+      per questo lo tengo separato.</div>
+    </div>
+  `;
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PAGINA FONDO PENSIONE (Cometa + TFR): dettaglio per anno e per datore
+// ═══════════════════════════════════════════════════════════════════════════
+export const renderStipendiFondo = async (root) => {
+  document.getElementById('view-title').textContent = 'Fondo pensione';
+  const t = versamentoFondoTotale();
+  const perAnno = dettaglioFondoAnnuale();
+  const perDatore = dettaglioFondoPerDatore();
+  const quota = (v) => t.tot ? Math.round(v / t.tot * 100) : 0;
+
+  root.innerHTML = `
+    <div class="net-card" style="margin-top:4px">
+      <div class="lbl2">Totale versato a Cometa</div>
+      <div class="num" style="font-size:30px;font-weight:750">${fmtEUR(t.tot)}</div>
+      <div class="meta" style="margin-top:4px">${state.stipendi.length} buste · dal 2016 a oggi</div>
+    </div>
+
+    <div class="card" style="border-left:3px solid var(--up)">
+      <div class="lbl2">Quanto vale oggi (estratto conto Cometa)</div>
+      <div class="num" style="font-size:26px;font-weight:750">${fmtEUR(montante())}</div>
+      <div class="meta" style="margin-top:4px">${COMETA.quote.toLocaleString('it-IT')} quote × ${fmtEUR(COMETA.valoreQuota)} al ${COMETA.aggiornatoAl.split('-').reverse().join('/')} —
+      <b style="color:var(--up)">${rendimento().valore >= 0 ? '+' : ''}${fmtEUR(rendimento().valore)} (${rendimento().perc}%)</b> rispetto al versato.
+      Comparto Crescita da giugno 2022, prima Monetario Plus.</div>
+    </div>
+
+    <div class="section-lbl"><span>Da dove arriva</span></div>
+    <div class="card">
+      ${[['TFR devoluto', t.tfr, SEG_FONDO[0].colore, 'Il tuo TFR versato al fondo invece che in azienda'],
+         ['Cometa — quota tua', t.dip, SEG_FONDO[1].colore, 'Trattenuta dalla busta (4% dell\'imponibile)'],
+         ['Cometa — quota datore', t.az, SEG_FONDO[2].colore, 'Versata dall\'azienda, non esce dalla tua busta']]
+        .map(([nome, val, col, nota]) => `
+        <div class="fr-row">
+          <div class="fr-head">
+            <span class="fr-nome"><span class="stip-dot" style="background:${col}"></span> ${nome}</span>
+            <span class="fr-val num">${fmtEUR(val)}</span>
+          </div>
+          <div class="fr-bar"><div class="fr-fill" style="width:${quota(val)}%;background:${col}"></div></div>
+          <div class="fr-sub">${quota(val)}% del totale · ${nota}</div>
+        </div>`).join('')}
+    </div>
+
+    <div class="section-lbl"><span>Chi ha versato</span></div>
+    <div class="card" style="padding:4px 14px">
+      ${perDatore.map(f => `
+        <div class="paniere-anno-riga">
+          <span class="fr-nome"><span class="stip-dot" style="background:${f.colore}"></span> ${escapeHtml(f.datore)}</span>
+          <b class="num">${fmtEUR(f.tot)}</b>
+        </div>
+        <div class="fr-sub" style="margin:-4px 0 8px">TFR ${fmtEUR(f.tfr)} · tua ${fmtEUR(f.dip)} · datore ${fmtEUR(f.az)}</div>
+      `).join('')}
+    </div>
+
+    <div class="section-lbl"><span>Versato anno per anno</span></div>
+    <div class="card">
+      ${_leg(SEG_FONDO)}
+      <div class="estack" id="g-fondo-anno"></div>
+    </div>
+
+    <div class="section-lbl"><span>Dettaglio per anno</span></div>
+    <div class="card" style="padding:4px 14px">
+      ${perAnno.map(a => `
+        <div class="paniere-anno-riga">
+          <span class="num anno">${a.anno}</span>
+          <b class="num">${fmtEUR(a.tot)}</b>
+          <span class="delta num" style="color:var(--txt-3)">${a.mesi} buste</span>
+        </div>
+        <div class="fr-sub" style="margin:-4px 0 8px">TFR ${fmtEUR(a.tfr)} · tua ${fmtEUR(a.dip)} · datore ${fmtEUR(a.az)}</div>
+      `).join('')}
+    </div>
+
+    <div class="card">
+      <div class="meta">Quello che vedi qui è il <b>versato</b>, non il valore attuale della posizione:
+      Cometa investe i contributi, quindi il montante sul tuo estratto conto sarà diverso (di solito più alto).
+      Il TFR e la quota tua escono dalla busta; la quota del datore è un'aggiunta che non passa dal netto.</div>
+    </div>
+  `;
+
+  _barreImpilate(
+    root.querySelector('#g-fondo-anno'),
+    versamentoFondoAnnuale().map(d => ({ label: `'${String(d.anno).slice(2)}`, valori: d.valori, tot: d.tot })),
+    SEG_FONDO, v => fmtEUR(v), v => Math.round(v).toLocaleString('it-IT'),
+  );
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -294,11 +491,54 @@ export const renderStipendioDettaglio = async (root, params) => {
       <div class="meta" style="margin-top:2px">netto incassato</div>
     </div>
 
-    ${(b.anticipo || b.cessazione) ? `<div class="card" style="border-left:3px solid var(--warn)">
-      <div class="meta">${b.anticipo
-        ? 'Mese con <b>anticipo/recupero</b>: lordo e trattenute sono gonfiati da partite che si compensano nel netto. Il netto è quello reale; questo mese è escluso dai grafici sul lordo.'
-        : 'Busta di <b>cessazione</b>: include liquidazione ferie/PAR e conguagli. Importi atipici; esclusa dai grafici sul lordo, ma il netto è reale.'}</div>
+    ${(b.partite_di_giro > 0 || b.cessazione) ? `<div class="card" style="border-left:3px solid var(--warn)">
+      <div class="meta">${b.cessazione ? 'Busta di <b>fine rapporto</b>: comprende liquidazione ferie/permessi e conguagli. È contata nei totali come tutte le altre.<br>' : ''}${b.partite_di_giro > 0
+        ? `In questa busta ci sono <b>${fmtEUR(b.partite_di_giro)}</b> di partite di giro (recupero anticipo / assenze retribuite): comparivano sia fra le competenze sia fra le trattenute e si annullavano. Le ho tolte da entrambi i lati, così il lordo è quello vero. Il netto non è stato toccato.` : ''}</div>
     </div>` : ''}
+
+    <div class="section-lbl"><span>Le tue trattenute, voce per voce</span></div>
+    <div class="card" style="padding:4px 14px">
+      ${(() => {
+        const t = dettaglioTrattenute(b);
+        const righe = t.voci.map(v => `
+          <div class="paniere-anno-riga">
+            <span class="fr-nome"><span class="stip-dot" style="background:${v.colore}"></span> ${v.nome}</span>
+            <b class="num">${fmtEUR(v.val)}</b>
+          </div>`).join('');
+        const res = Math.abs(t.residuo) > 0.02 ? `
+          <div class="paniere-anno-riga">
+            <span class="fr-nome"><span class="stip-dot" style="background:#5A6274"></span> Non dettagliato</span>
+            <b class="num">${fmtEUR(t.residuo)}</b>
+          </div>` : '';
+        return (righe || res) ? righe + res + `
+          <div class="divider"></div>
+          <div class="paniere-anno-riga"><span class="fr-nome"><b>Totale trattenute</b></span><b class="num">${fmtEUR(t.totale)}</b></div>`
+          : '<div class="empty" style="padding:8px 0">Dettaglio non disponibile per questa busta</div>';
+      })()}
+    </div>
+    ${b.fonte === 'trascritto' ? `<div class="eprice-note" style="margin-top:-4px">Busta trascritta da archivio: il PDF originale è una scansione, non rileggibile voce per voce.</div>` : ''}
+
+    ${(b.imponibile_inps || b.imponibile_irpef || b.irpef_lorda) ? `
+    <div class="section-lbl"><span>Imponibili e imposta</span></div>
+    <div class="card" style="padding:4px 14px">
+      ${b.imponibile_inps ? `<div class="paniere-anno-riga"><span class="fr-nome">Imponibile INPS</span><b class="num">${fmtEUR(b.imponibile_inps)}</b></div>` : ''}
+      ${b.imponibile_irpef ? `<div class="paniere-anno-riga"><span class="fr-nome">Imponibile IRPEF</span><b class="num">${fmtEUR(b.imponibile_irpef)}</b></div>` : ''}
+      ${b.irpef_lorda ? `<div class="paniere-anno-riga"><span class="fr-nome">IRPEF lorda</span><b class="num">${fmtEUR(b.irpef_lorda)}</b></div>` : ''}
+      ${b.detrazioni ? `<div class="paniere-anno-riga"><span class="fr-nome">Detrazioni</span><b class="num" style="color:var(--up)">−${fmtEUR(b.detrazioni)}</b></div>` : ''}
+      ${b.irpef_netta ? `<div class="paniere-anno-riga"><span class="fr-nome">IRPEF trattenuta</span><b class="num">${fmtEUR(b.irpef_netta)}</b></div>` : ''}
+    </div>` : ''}
+
+    ${b.quadratura_annuale ? `<div class="card" style="border-left:3px solid var(--violet)">
+      <div class="meta">Su questa busta è riportata la <b>quadratura annuale</b>: la differenza fra le buste che ho potuto leggere e il totale certificato dal datore nel conguaglio di dicembre. I PDF non contengono le buste "AGG." della tredicesima, e quella differenza appartiene proprio a dicembre — così l'anno chiude al centesimo sul dato ufficiale.</div>
+    </div>` : ''}
+
+    ${b.rimborso_730 ? `<div class="card" style="border-left:3px solid var(--up)">
+      <div class="meta">In questa busta hai ricevuto un <b>rimborso 730 di ${fmtEUR(b.rimborso_730)}</b>${b.rimborso_730_anno ? ` (conguaglio dell'anno d'imposta ${b.rimborso_730_anno})` : ''}. È un credito accreditato, non una trattenuta: per questo non compare qui sopra.</div>
+    </div>` : ''}
+
+    <div class="btn-row" style="margin:4px 0 12px">
+      <button class="btn btn-secondary" id="stip-modifica">Modifica busta</button>
+    </div>
 
     <div class="section-lbl"><span>Composizione del lordo</span></div>
     <div class="card">
@@ -317,6 +557,8 @@ export const renderStipendioDettaglio = async (root, params) => {
         <ul class="stip-note">${b.voci_notevoli.map(n => `<li>${escapeHtml(n)}</li>`).join('')}</ul>
       </div>` : ''}
   `;
+  const sm = root.querySelector('#stip-modifica');
+  if (sm) sm.addEventListener('click', () => navigate('stipendio-nuovo', { id: b.id }));
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -346,7 +588,7 @@ const _renderKpiIn = (cont, anno) => {
   const parziale = agg.mesi < 12 ? `<small> · ${agg.mesi} mesi</small>` : '';
   cont.innerHTML = `
     <div class="ekpi"><div class="k">Netto ${anno}</div><div class="v num">${fmtEUR(agg.netto)}${parziale}</div>${vN != null ? `<div class="d ${_clsUp(vN)}">${_fmtVar(vN)} vs ${prec}</div>` : ''}</div>
-    <div class="ekpi"><div class="k">Netto medio/mese</div><div class="v num">${fmtEUR(agg.nettoMedio)}</div>${vM != null ? `<div class="d ${_clsUp(vM)}">${_fmtVar(vM)} vs ${prec}</div>` : ''}</div>
+    <div class="ekpi"><div class="k">Netto per mensilità</div><div class="v num">${fmtEUR(agg.nettoMedio)}</div>${vM != null ? `<div class="d ${_clsUp(vM)}">${_fmtVar(vM)} vs ${prec}</div>` : ''}</div>
     <div class="ekpi"><div class="k">Lordo ${anno}</div><div class="v num">${fmtEUR(agg.lordo)}</div>${vL != null ? `<div class="d ${_clsUp(vL)}">${_fmtVar(vL)} vs ${prec}</div>` : ''}</div>
     <div class="ekpi"><div class="k">Trattenute sul lordo</div><div class="v num">${agg.aliquotaEff.toFixed(1)}<small> %</small></div>${vA != null ? `<div class="d ${_clsDown(vA)}">${_fmtVar(vA)} vs ${prec}</div>` : ''}</div>`;
 };
@@ -377,18 +619,18 @@ const _renderHeatmap = (cont) => {
 const _renderDatori = (cont, datoreAttuale) => {
   const dati = confrontoDatori();
   if (!dati.length) { cont.innerHTML = '<div class="empty">Nessun dato</div>'; return; }
-  const maxN = Math.max(...dati.map(d => d.nettoMedio));
+  const maxN = Math.max(...dati.map(d => d.perMensilita));
   cont.innerHTML = dati.map(f => {
-    const w = (f.nettoMedio / maxN * 100).toFixed(0);
+    const w = (f.perMensilita / maxN * 100).toFixed(0);
     const attuale = f.datore === datoreAttuale;
     const [y1, m1] = f.dal.split('-'); const [y2, m2] = f.al.split('-');
     return `<div class="fr-row">
       <div class="fr-head">
         <span class="fr-nome"><span class="stip-dot" style="background:${f.colore}"></span> ${escapeHtml(f.datore)}${attuale ? ' <span class="fr-badge">attuale</span>' : ''}</span>
-        <span class="fr-val num">${fmtEUR(f.nettoMedio)}/mese</span>
+        <span class="fr-val num">${fmtEUR(f.perMensilita)}/mensilità</span>
       </div>
       <div class="fr-bar"><div class="fr-fill" style="width:${w}%;background:${f.colore}"></div></div>
-      <div class="fr-sub">${mese3(+m1)} '${y1.slice(2)} – ${mese3(+m2)} '${y2.slice(2)} · ${f.mesi} buste · netto totale ${fmtEUR(f.nettoTot)}</div>
+      <div class="fr-sub">${mese3(+m1)} '${y1.slice(2)} – ${mese3(+m2)} '${y2.slice(2)} · ${f.mensilita} mensilità · netto guadagnato ${fmtEUR(f.guadagnato)}${f.addebiti ? ` (di cui ${fmtEUR(f.addebiti)} di addebiti: auto, mensa)` : ''}</div>
     </div>`;
-  }).join('') + `<div class="eprice-note" style="margin-top:6px">La barra è il <b>netto medio mensile</b>; "netto totale" è tutto il netto realmente incassato con quel datore nell'intero periodo (mesi di passaggio, conguagli e tredicesime inclusi, perché sono denaro reale).</div>`;
+  }).join('') + `<div class="eprice-note" style="margin-top:6px">La barra è il <b>netto guadagnato per mensilità</b>: un anno pieno vale <b>13 mensilità</b>, perché la tredicesima è dentro la busta di dicembre e resta lì. È il netto <i>prima</i> degli addebiti in busta (auto, mensa): quelli sono spese tue, non minor stipendio, così i datori si confrontano ad armi pari.</div>`;
 };
