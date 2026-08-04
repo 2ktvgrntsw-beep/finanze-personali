@@ -20,6 +20,7 @@ import {
   versamentoFondoAnnuale, versamentoFondoTotale, SEG_FONDO,
   dettaglioFondoAnnuale, dettaglioFondoPerDatore,
   fiscoAnnuale, fiscoTotale, elencoRimborsi, SEG_FISCO, dettaglioTrattenute, verificaFiscale, SEG_LORDO,
+  nettoGuadagnato,
   mese3, MESI3,
 } from '../services/stipendiService.js';
 
@@ -65,7 +66,7 @@ export const renderStipendi = async (root) => {
         <div class="ehero-forn"><span class="stip-dot" style="background:${colU}"></span> Ultima busta · <b>${escapeHtml(u.datore)}</b><br><span class="meta">${escapeHtml(u.periodo)}</span></div>
         ${u.tredicesima_inclusa ? `<span class="ebadge">13ª inclusa</span>` : ''}
       </div>
-      <div class="ehero-imp num">${fmtEUR(u.netto)}</div>
+      <div class="ehero-imp num">${fmtEUR(nettoGuadagnato(u))}</div>
       <div class="ehero-meta">
         <div><div class="k">Lordo</div><div class="v num">${fmtEUR(u.lordo)}</div></div>
         <div><div class="k">Trattenute</div><div class="v num">${fmtEUR(u.trattenute)}</div></div>
@@ -86,6 +87,21 @@ export const renderStipendi = async (root) => {
 
     <!-- NETTO ANNO PER ANNO (ripartito per datore) -->
     <!-- FISCO: pagato vs restituito -->
+    <div class="section-lbl"><span>Netto percepito · anno per anno</span></div>
+    <div class="card">
+      ${_leg(SEG_DATORI)}
+      <div class="estack" id="g-netto"></div>
+    </div>
+
+    <div class="section-lbl"><span>Fondo pensione</span></div>
+    <div class="card eboll" id="vedi-fondo" style="cursor:pointer">
+      <div class="eboll-body">
+        <div class="eboll-r1"><span class="eboll-nm">Versato a Cometa</span><span class="eboll-imp num">${fmtEUR(versamentoFondoTotale().tot)}</span></div>
+        <div class="eboll-r2"><span class="eboll-sub">${(() => { const t = versamentoFondoTotale(); return `TFR ${fmtEUR(t.tfr)} · tuo ${fmtEUR(t.dip)} · datore ${fmtEUR(t.az)}`; })()}</span></div>
+      </div>
+      <div class="eboll-chev">›</div>
+    </div>
+
     <div class="section-lbl"><span>Fisco</span></div>
     <div class="card eboll" id="vedi-fisco" style="cursor:pointer">
       <div class="body" style="flex:1">
@@ -101,7 +117,6 @@ export const renderStipendi = async (root) => {
     <div class="card">
       ${_leg(SEG_LORDO)}
       <div class="estack" id="g-lordo"></div>
-      <div class="eprice-note" style="margin-top:8px">Netto + fisco/contributi + Cometa = lordo. <b>Ci sono tutti i mesi</b>, comprese le buste di fine rapporto: quei soldi li hai incassati e quelle trattenute le hai pagate. Il lordo è depurato delle partite di giro Zucchetti (recupero anticipo, assenze retribuite, assenza assunti/dimessi), che comparivano sia fra le competenze sia fra le trattenute e gonfiavano il totale senza essere retribuzione.</div>
     </div>
 
     <!-- HEATMAP netto -->
@@ -124,6 +139,11 @@ export const renderStipendi = async (root) => {
   `;
 
   _renderKpi(root);
+  _barreImpilate(
+    root.querySelector('#g-netto'),
+    nettoPerAnnoPerDatore().map(d => ({ label: `'${String(d.anno).slice(2)}`, valori: d.valori, tot: d.tot })),
+    SEG_DATORI, v => fmtEUR(v), v => Math.round(v).toLocaleString('it-IT'),
+  );
   _barreImpilate(
     root.querySelector('#g-lordo'),
     composizioneLordoAnnuale().map(d => ({ label: `'${d.anno.slice(2)}`, valori: d.valori, tot: d.tot })),
@@ -342,7 +362,7 @@ export const renderStipendiStorico = async (root) => {
   const anni = anniDisponibili();
   root.innerHTML = anni.map(anno => {
     const buste = state.stipendi.filter(s => String(s.anno) === anno).sort((a, b) => b.mese - a.mese);
-    const tot = buste.reduce((s, b) => s + (b.netto || 0), 0);
+    const tot = buste.reduce((s, b) => s + nettoGuadagnato(b), 0);
     return `<div class="section-lbl"><span>${anno}</span><span class="meta num">${fmtEUR(tot)}</span></div>
       <div class="card" style="padding:0">${buste.map(b => _rigaStipendioHTML(b)).join('<div class="divider"></div>')}</div>`;
   }).join('');
@@ -421,9 +441,9 @@ export const renderStipendioDettaglio = async (root, params) => {
   document.getElementById('view-title').textContent = b.periodo;
 
   const cometa = b.cometa_dipendente || 0;
-  const fisco = Math.max(0, (b.trattenute || 0) - cometa);
+  const fisco = Math.max(0, (b.trattenute || 0) - cometa - (b.addebiti_netti || 0));
   const comp = [
-    { nome: 'Netto in tasca', val: b.netto, colore: '#22E39A' },
+    { nome: 'Netto guadagnato', val: nettoGuadagnato(b), colore: '#22E39A' },
     { nome: 'Fisco e contributi', val: fisco, colore: '#FF3B5C' },
     { nome: 'Cometa (previdenza)', val: cometa, colore: '#7B6CFF' },
   ].filter(v => v.val > 0);
@@ -435,7 +455,8 @@ export const renderStipendioDettaglio = async (root, params) => {
     ['Trattenute totali', b.trattenute],
     ['— di cui fisco e contributi', fisco],
     ['— di cui Cometa dipendente', cometa],
-    ['Netto', b.netto],
+    ['Netto guadagnato', nettoGuadagnato(b)],
+    ['— di cui addebiti in busta (auto, mensa)', b.addebiti_netti],
     ['TFR a fondo pensione', b.tfr_a_fondo_pensione],
     ['Premi detassati', b.premi_detassati],
     ['Rimborso 730 (escluso dal netto)', b.rimborso_fiscale_escluso],
@@ -453,8 +474,8 @@ export const renderStipendioDettaglio = async (root, params) => {
         <div><span class="stip-dot" style="background:${col}"></span> <b>${escapeHtml(b.datore)}</b> · <span class="meta">${escapeHtml(b.periodo)}</span></div>
         ${b.tredicesima_inclusa ? `<span class="ebadge">13ª inclusa</span>` : ''}
       </div>
-      <div class="ehero-imp num" style="margin-top:6px">${fmtEUR(b.netto)}</div>
-      <div class="meta" style="margin-top:2px">netto incassato</div>
+      <div class="ehero-imp num" style="margin-top:6px">${fmtEUR(nettoGuadagnato(b))}</div>
+      <div class="meta" style="margin-top:2px">netto guadagnato${b.addebiti_netti ? ` · ${fmtEUR(b.addebiti_netti)} di addebiti in busta` : ''}</div>
     </div>
 
     ${(b.partite_di_giro > 0 || b.cessazione) ? `<div class="card" style="border-left:3px solid var(--warn)">
@@ -537,7 +558,7 @@ const _rigaStipendioHTML = (b) => {
   return `<div class="eboll" data-stip="${escapeHtml(b.id)}">
     <div class="eboll-ic" style="color:${col}">${BUSTA}</div>
     <div class="eboll-body">
-      <div class="eboll-r1"><span class="eboll-nm">${escapeHtml(b.periodo)}</span><span class="eboll-imp num">${fmtEUR(b.netto)}</span></div>
+      <div class="eboll-r1"><span class="eboll-nm">${escapeHtml(b.periodo)}</span><span class="eboll-imp num">${fmtEUR(nettoGuadagnato(b))}</span></div>
       <div class="eboll-r2"><span class="eboll-sub"><span class="stip-dot" style="background:${col}"></span> ${escapeHtml(b.datore)}${b.tredicesima_inclusa ? ' · 13ª' : ''}</span><span class="eboll-kwh num">lordo ${fmtEUR(b.lordo)}</span></div>
     </div>
     <div class="eboll-chev">›</div>
@@ -556,7 +577,7 @@ const _renderKpiIn = (cont, anno) => {
     <div class="ekpi"><div class="k">Netto ${anno}</div><div class="v num">${fmtEUR(agg.netto)}${parziale}</div>${vN != null ? `<div class="d ${_clsUp(vN)}">${_fmtVar(vN)} vs ${prec}</div>` : ''}</div>
     <div class="ekpi"><div class="k">Netto per mensilità</div><div class="v num">${fmtEUR(agg.nettoMedio)}</div>${vM != null ? `<div class="d ${_clsUp(vM)}">${_fmtVar(vM)} vs ${prec}</div>` : ''}</div>
     <div class="ekpi"><div class="k">Lordo ${anno}</div><div class="v num">${fmtEUR(agg.lordo)}</div>${vL != null ? `<div class="d ${_clsUp(vL)}">${_fmtVar(vL)} vs ${prec}</div>` : ''}</div>
-    <div class="ekpi"><div class="k">Trattenute sul lordo</div><div class="v num">${agg.aliquotaEff.toFixed(1)}<small> %</small></div>${vA != null ? `<div class="d ${_clsDown(vA)}">${_fmtVar(vA)} vs ${prec}</div>` : ''}</div>`;
+    <div class="ekpi"><div class="k">Fisco e contributi</div><div class="v num">${agg.aliquotaEff.toFixed(1)}<small> %</small></div>${agg.irpefEffettiva != null ? `<div class="d" style="color:var(--txt-3)">IRPEF ${agg.irpefEffettiva.toFixed(1)}% sull'imponibile</div>` : (vA != null ? `<div class="d ${_clsDown(vA)}">${_fmtVar(vA)} vs ${prec}</div>` : '')}</div>`;
 };
 const _renderKpi = (root) => _renderKpiIn(root.querySelector('#skpis'), _annoKpi);
 

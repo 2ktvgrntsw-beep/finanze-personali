@@ -62,7 +62,7 @@ export const aggregatoAnno = (anno) => {
   const trattenute = somma(buste, 'trattenute');
   // netto per datore (per barre impilate e transizioni di lavoro)
   const perDatore = {};
-  for (const b of buste) perDatore[b.datore] = round2((perDatore[b.datore] || 0) + (b.netto || 0));
+  for (const b of buste) perDatore[b.datore] = round2((perDatore[b.datore] || 0) + nettoGuadagnato(b));
   const datorePrevalente = Object.entries(perDatore).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
   return {
     anno: String(anno), mesi: buste.length,
@@ -73,7 +73,18 @@ export const aggregatoAnno = (anno) => {
     premi: somma(buste, 'premi_detassati'),
     rimborso: somma(buste, 'rimborso_fiscale_escluso'),
     nettoMedio: round2(netto / mensilitaDi(buste)),   // netto guadagnato per mensilità
-    aliquotaEff: lordo ? round2(trattenute / lordo * 100) : 0,
+    // PRELIEVO VERO sul lordo: contributi + imposte. Cometa resta FUORI: e' risparmio
+    // tuo che va in pensione, non un prelievo. Metterlo dentro gonfiava il numero e lo
+    // rendeva incomparabile con le aliquote fiscali.
+    aliquotaEff: lordo ? round2((somma(buste, 'contributi_inps') + somma(buste, 'irpef_netta')
+      + somma(buste, 'addizionale_regionale') + somma(buste, 'addizionale_comunale')
+      + somma(buste, 'imposta_sostitutiva') + somma(buste, 'irpef_tass_separata')) / lordo * 100) : 0,
+    // ALIQUOTA IRPEF EFFETTIVA: IRPEF sull'IMPONIBILE fiscale (non sul lordo). E' il
+    // numero confrontabile con gli scaglioni: se somiglia troppo all'aliquota di uno
+    // scaglione secco, il datore probabilmente non sta applicando la progressivita'.
+    imponibileIrpef: somma(buste, 'imponibile_irpef'),
+    irpefEffettiva: somma(buste, 'imponibile_irpef')
+      ? round2(somma(buste, 'irpef_netta') / somma(buste, 'imponibile_irpef') * 100) : null,
     giro: somma(buste, 'partite_di_giro'),
     perDatore, datorePrevalente,
   };
@@ -120,8 +131,8 @@ export const composizioneLordoAnnuale = () => {
 // Netto mese per mese di un anno, colorato per datore (barre del riepilogo anno).
 export const nettoMensile = (anno) => {
   return stipendiAnno(anno).map(b => ({
-    mese: b.mese, label: MESI3[b.mese - 1], netto: round2(b.netto), datore: b.datore,
-    valori: { [b.datore]: round2(b.netto) }, tot: round2(b.netto),
+    mese: b.mese, label: MESI3[b.mese - 1], netto: nettoGuadagnato(b), datore: b.datore,
+    valori: { [b.datore]: nettoGuadagnato(b) }, tot: nettoGuadagnato(b),
   }));
 };
 
@@ -176,6 +187,10 @@ export const serieNetto = () => stipendiOrdinati().slice().reverse().map(b => ({
 // Un mese parziale (assunzione o cessazione) NON vale una mensilita' intera: pesa per i
 // giorni di rapporto effettivi, letti dal campo "Giorni Detrazioni" della busta. Senza
 // questo, il mese in cui cambi lavoro abbassa la media come se avessi lavorato tutto.
+// NETTO GUADAGNATO: quello che il lavoro ha reso, prima degli addebiti in busta
+// (auto uso privato, mensa, ticket). Quelli sono spese, non minor stipendio.
+export const nettoGuadagnato = (b) => round2((b.netto || 0) + (b.addebiti_netti || 0));
+
 export const mensilitaDi = (buste) => round2(
   buste.reduce((t, b) => t + (b.frazione_mensilita || 1) + (b.tredicesima_inclusa ? 1 : 0), 0));
 
@@ -218,7 +233,7 @@ export const heatmapNetto = () => {
       celle[k].netto = round2(celle[k].netto + (b.netto || 0));
       if ((b.netto || 0) > celle[k]._top) { celle[k]._top = b.netto || 0; celle[k].datore = b.datore; }
     } else {
-      celle[k] = { netto: round2(b.netto || 0), datore: b.datore, _top: b.netto || 0 };
+      celle[k] = { netto: nettoGuadagnato(b), datore: b.datore, _top: nettoGuadagnato(b) };
     }
     if (celle[k].netto > max) max = celle[k].netto;
   }
