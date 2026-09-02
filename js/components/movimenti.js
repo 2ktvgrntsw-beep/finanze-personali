@@ -3,7 +3,7 @@
 // dal drill-down o dall'icona di una categoria. Senza filtri mostra il mese corrente.
 
 import { state, movimentiDelMese } from '../core/store.js';
-import { fmtEUR, fmtDataEstesa, nomeMese, annomese, todayISO, escapeHtml, gruppoPer } from '../core/utils.js';
+import { fmtEUR, fmtDataEstesa, nomeMese, annomese, todayISO, escapeHtml, gruppoPer, toISO } from '../core/utils.js';
 import { iconaMacro, iconaTipo } from '../core/icons.js';
 import { navigate } from '../core/router.js';
 import { deleteMovimento, movimentiDiVoce } from '../services/movimentiService.js';
@@ -34,7 +34,7 @@ export const renderMovimenti = async (root, params = {}) => {
     movs = state.movimenti.filter(m => m.data.startsWith(anno));
   } else if (_periodo === 'settimana') {
     const oggi = new Date(); const s = new Date(); s.setDate(oggi.getDate() - 6);
-    const da = s.toISOString().slice(0, 10), a = oggi.toISOString().slice(0, 10);
+    const da = toISO(s), a = toISO(oggi);
     movs = state.movimenti.filter(m => m.data >= da && m.data <= a);
   } else {
     movs = movimentiDelMese(_mese);

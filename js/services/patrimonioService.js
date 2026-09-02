@@ -2,7 +2,7 @@
 
 import { dbAdd } from '../core/db.js';
 import { state, refreshAll } from '../core/store.js';
-import { uid, round2, annomese, todayISO } from '../core/utils.js';
+import { uid, round2, annomese, todayISO, oggiAnnomese } from '../core/utils.js';
 import { saldoStimato, contiPerTipo } from './contiService.js';
 import { debitoTotaleResiduo } from './prestitiService.js';
 
@@ -100,7 +100,7 @@ const _serieStoricoCalcolo = (escludiTipi = []) => {
   const mesi = Object.keys(flussoMese).sort();
   if (!mesi.length) return { punti: [], primoReale: null };
 
-  const meseCorrente = new Date().toISOString().slice(0, 7);
+  const meseCorrente = oggiAnnomese();
   const tuttiMesi = Array.from(new Set([...mesi, meseCorrente])).sort();
 
   // Asset con data di possesso: il loro valore va SOTTRATTO dalla stima nei mesi

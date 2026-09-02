@@ -34,6 +34,7 @@ import { renderImpostazioni } from './components/impostazioni.js';
 import { renderEnergia, renderEnergiaAnno } from './components/energia.js';
 import { renderStipendi, renderStipendiAnno, renderStipendioDettaglio, renderStipendiStorico, renderStipendiFondo, renderStipendiFisco, renderStipendiDichiarazioni } from './components/stipendi.js';
 import { renderStipendioForm } from './components/stipendiForm.js';
+import { renderBilancio } from './components/bilancio.js';
 import { renderPaniere } from './components/panieri.js';
 import { renderBollettaForm, renderBollettaDettaglio, renderBolletteStorico } from './components/energiaBollette.js';
 
@@ -75,6 +76,7 @@ const registraRotte = () => {
   registerRoute('stipendi-fondo', renderStipendiFondo);
   registerRoute('stipendi-fisco', renderStipendiFisco);
   registerRoute('stipendi-dichiarazioni', renderStipendiDichiarazioni);
+  registerRoute('bilancio', renderBilancio);
   registerRoute('stipendio-nuovo', (root, params) => renderStipendioForm(root, params));
   registerRoute('paniere', renderPaniere);
   registerRoute('bolletta-nuova', renderBollettaForm);

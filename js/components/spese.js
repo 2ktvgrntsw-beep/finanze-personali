@@ -2,12 +2,12 @@
 // Vista per periodo (Settimana/Mese/Anno) delle spese per categoria, con drill-down.
 
 import { state, movimentiDelMese } from '../core/store.js';
-import { fmtEUR, fmtEUR0, fmtPct, nomeMese, annomese, todayISO, escapeHtml, clamp } from '../core/utils.js';
+import { fmtEUR, fmtEUR0, fmtPct, nomeMese, annomese, todayISO, toISO, toAnnomese, escapeHtml } from '../core/utils.js';
 import { iconaMacro } from '../core/icons.js';
 import { navigate } from '../core/router.js';
 import { costruisciSparkline, agganciaSparkline } from '../core/sparkline.js';
 import {
-  totaliPeriodo, aggregaPerLivello, mediaSpeseMensile, soloSpese,
+  totaliPeriodo, aggregaPerLivello, baselineSpeseMensile, soloSpese,
 } from '../services/movimentiService.js';
 import { calcolaDelta } from './shared.js';
 
@@ -28,7 +28,7 @@ const movimentiPeriodo = () => {
   }
   // settimana: ultimi 7 giorni da oggi
   const oggi = new Date(); const sette = new Date(); sette.setDate(oggi.getDate() - 6);
-  const da = sette.toISOString().slice(0, 10), a = oggi.toISOString().slice(0, 10);
+  const da = toISO(sette), a = toISO(oggi);
   return state.movimenti.filter(m => m.data >= da && m.data <= a);
 };
 
@@ -42,25 +42,41 @@ export const renderSpese = async (root) => {
     : _periodo === 'mese' ? `${nomeMese(parseInt(mese) - 1)} ${anno}`
     : 'Ultimi 7 giorni';
 
-  // delta spese vs media mensile (solo in vista mese)
+  // Delta rispetto al mese tipico (solo in vista mese).
+  //
+  // Nel mese IN CORSO il confronto e' col RITMO, non col totale: il 2 del mese sei
+  // sempre a -95% di un mese intero, e leggerlo come un risultato e' fuorviante in un
+  // verso quanto lo era la vecchia media in quello opposto. Quindi il riferimento
+  // viene ridotto in proporzione ai giorni trascorsi: "in linea" significa che stai
+  // andando al passo del tuo mese tipico.
+  const meseInCorso = _periodo === 'mese' && _meseCorrente === annomese(todayISO());
+  const giorno = new Date().getDate();
+  const giorniMese = new Date(parseInt(anno), parseInt(mese), 0).getDate();
+  const quotaTempo = meseInCorso ? giorno / giorniMese : 1;
+
+  // Nei primissimi giorni il rapporto e' troppo nervoso per dire qualcosa: una spesa
+  // sola il giorno 2 vale il 60% del ritmo. Meglio tacere e lasciar parlare la barra.
   let deltaHTML = '';
-  if (_periodo === 'mese') {
-    const media = mediaSpeseMensile(_meseCorrente);
-    const d = calcolaDelta(tot.spese, media);
-    if (d) deltaHTML = `<div class="delta ${d.classe} num">${d.testo}</div>`;
+  if (_periodo === 'mese' && !(meseInCorso && giorno < 4)) {
+    const media = baselineSpeseMensile(_meseCorrente);
+    const d = calcolaDelta(tot.spese, media * quotaTempo);
+    if (d) deltaHTML = `<div class="delta ${d.classe} num">${meseInCorso ? d.testo.replace('mese tipico', 'ritmo abituale') : d.testo}</div>`;
   }
 
   // barra "dove sto col mese": solo il filo con la tacca, niente testi (compatta)
   let paceHTML = '';
-  if (_periodo === 'mese' && _meseCorrente === annomese(todayISO())) {
-    const giorno = new Date().getDate();
-    const giorniMese = new Date(parseInt(anno), parseInt(mese), 0).getDate();
+  if (meseInCorso) {
     const pctTempo = Math.round(giorno / giorniMese * 100);
-    const media = mediaSpeseMensile(_meseCorrente);
-    const pctSpeso = media > 0 ? clamp(Math.round(tot.spese / media * 100), 0, 100) : 0;
+    const media = baselineSpeseMensile(_meseCorrente);
+    const pctSpeso = media > 0 ? Math.round(tot.spese / media * 100) : 0;
+    // La barra NON si ferma al 100%. Tapparla li' voleva dire spegnere l'informazione
+    // proprio nel mese in cui stai sforando: adesso oltre il mese tipico continua a
+    // crescere (fino a 200%, poi satura) e cambia colore, cosi' si vede di quanto.
+    const oltre = pctSpeso > 100;
+    const largh = Math.min(pctSpeso, 200) / 2;   // 200% = barra piena
     paceHTML = `
-      <div class="pace pace-slim" title="Speso ${pctSpeso}% del solito · giorno ${giorno}/${giorniMese}">
-        <div class="track"><span class="fill" style="width:${pctSpeso}%"></span><span class="marker" style="left:${pctTempo}%"></span></div>
+      <div class="pace pace-slim ${oltre ? 'over' : ''}" title="Speso ${pctSpeso}% del mese tipico · giorno ${giorno}/${giorniMese}">
+        <div class="track"><span class="fill" style="width:${oltre ? largh : pctSpeso / 2}%"></span><span class="marker" style="left:${pctTempo / 2}%"></span></div>
       </div>`;
   }
 
@@ -177,7 +193,7 @@ const _datiSparkline = (meseRif) => {
   const out = [];
   for (let i = 5; i >= 0; i--) {
     const d = new Date(y, m - 1 - i, 1);
-    const am = annomese(d.toISOString().slice(0, 10));
+    const am = toAnnomese(d);
     const t = totaliPeriodo(movimentiDelMese(am));
     const idxMese = parseInt(am.slice(5, 7), 10) - 1;
     out.push({ label: nomeMese(idxMese).slice(0, 3), mese: am, val: t.spese || 0 });

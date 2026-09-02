@@ -1,6 +1,6 @@
 // shared.js — Componenti UI riutilizzabili (bottom sheet, righe, selettori).
 
-import { escapeHtml, fmtEUR, fmtDataEstesa } from '../core/utils.js';
+import { escapeHtml, fmtEUR, fmtDataEstesa, todayISO } from '../core/utils.js';
 import { iconaMacro, iconaTipo } from '../core/icons.js';
 import { listaMacro, categorieDi, sottocategorieDi } from '../services/categorieService.js';
 
@@ -121,12 +121,12 @@ export const apriSelettoreCategoria = (onSelect) => {
 export const calcolaDelta = (valore, riferimento, invertiColore = false) => {
   if (!riferimento || riferimento === 0) return null;
   const pct = Math.round(((valore - riferimento) / riferimento) * 100);
-  if (Math.abs(pct) < 3) return { testo: 'in linea con la media', classe: 'flat' };
+  if (Math.abs(pct) < 3) return { testo: 'in linea col solito', classe: 'flat' };
   const su = pct > 0;
   // per le spese, "su" è peggio (rosso); invertiColore per casi dove su è meglio
   const peggio = invertiColore ? !su : su;
   return {
-    testo: `${su ? '+' : ''}${pct}% vs media`,
+    testo: `${su ? '+' : ''}${pct}% vs mese tipico`,
     classe: peggio ? 'worse' : 'better',
   };
 };
@@ -139,7 +139,7 @@ export const apriDataNativa = (dataAttuale, onChange) => {
   // crea un input date invisibile e lo attiva: iOS mostra il suo picker nativo
   const inp = document.createElement('input');
   inp.type = 'date';
-  inp.value = dataAttuale || new Date().toISOString().slice(0, 10);
+  inp.value = dataAttuale || todayISO();
   inp.style.position = 'fixed';
   inp.style.opacity = '0';
   inp.style.left = '-9999px';

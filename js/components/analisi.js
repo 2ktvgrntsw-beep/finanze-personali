@@ -69,9 +69,11 @@ const _renderCategoriaTempo = (body, root) => {
       <div class="cat-grid" style="margin-top:6px">
         ${macros.map(m => `<div class="cat-cell" data-macro="${escapeHtml(m)}"><div class="ci">${iconaMacro(m)}</div><span>${escapeHtml(m)}</span></div>`).join('')}
       </div>
-      ${panieriSezioneHTML()}`;
+      ${panieriSezioneHTML()}
+      <button class="btn btn-secondary btn-lg" id="apri-bilancio" style="margin:20px auto 10px;display:block">Bilancio · quanto resta ogni anno</button>`;
     body.querySelectorAll('[data-macro]').forEach(el => el.addEventListener('click', () => { location.hash = buildHash('analisi', { macro: el.dataset.macro }); }));
     bindPanieri(body);
+    body.querySelector('#apri-bilancio').addEventListener('click', () => navigate('bilancio'));
     return;
   }
 
@@ -103,7 +105,18 @@ const _renderCategoriaTempo = (body, root) => {
   const anni = Object.keys(perAnno).sort();
   const maxVal = anni.length ? Math.max(...anni.map(a => perAnno[a])) : 1;
   const totale = Object.values(perAnno).reduce((s, v) => s + v, 0);
-  const mediaAnnua = anni.length ? totale / anni.length : 0;
+
+  // ANNO IN CORSO: non e' un anno come gli altri e non va trattato come tale.
+  // La media per anno lo esclude (undici mesi di gennaio-novembre abbassavano la
+  // media di tutti), e il confronto con l'anno prima si fa a PARITA' DI CALENDARIO.
+  // Senza, a settembre l'app confrontava otto mesi contro dodici e annunciava un -57%
+  // che era solo il calendario: il confronto onesto gennaio-agosto diceva -35%.
+  const annoOggi = String(new Date().getFullYear());
+  const meseOggi = new Date().getMonth() + 1;
+  const anniCompleti = anni.filter(a => a !== annoOggi);
+  const mediaAnnua = anniCompleti.length
+    ? anniCompleti.reduce((s, a) => s + perAnno[a], 0) / anniCompleti.length
+    : (anni.length ? totale / anni.length : 0);
 
   // anno selezionato (default: l'ultimo disponibile). Navigabile con le frecce.
   if (!_cAnno || !anni.includes(_cAnno)) _cAnno = anni.length ? anni[anni.length - 1] : String(new Date().getFullYear());
@@ -117,11 +130,27 @@ const _renderCategoriaTempo = (body, root) => {
   const lblTipo = tipoMacro === 'entrata' ? 'Entrate' : tipoMacro === 'trasferimento' ? 'Investito' : 'Spesa';
   const clsTipo = tipoMacro === 'entrata' ? 'en' : tipoMacro === 'trasferimento' ? 'tr' : 'sp';
   const colTipo = tipoMacro === 'entrata' ? 'var(--up)' : tipoMacro === 'trasferimento' ? 'var(--transfer)' : 'var(--accent)';
+  const parziale = _cAnno === annoOggi;
+  // somma del ramo selezionato in un anno, fermandosi a un certo mese incluso
+  const sommaFinoA = (anno, meseMax) => state.movimenti.reduce((s, m) => {
+    if (!filtraTipo(m) || m.macro !== _cMacro) return s;
+    if (_cCat && m.cat !== _cCat) return s;
+    if (_cSub && m.sub !== _cSub) return s;
+    if (m.data.slice(0, 4) !== anno) return s;
+    if (meseMax && Number(m.data.slice(5, 7)) > meseMax) return s;
+    return s + m.imp;
+  }, 0);
+
   let deltaAnno = '';
-  if (prevAnno && perAnno[prevAnno] > 0) {
-    const pct = Math.round((totaleAnno - perAnno[prevAnno]) / perAnno[prevAnno] * 100);
-    const buono = tipoMacro === 'spesa' ? pct <= 0 : pct >= 0;
-    deltaAnno = `<div class="delta ${buono ? 'better' : 'worse'} num" style="margin-top:3px">${pct > 0 ? '+' : ''}${pct}% vs ${prevAnno}</div>`;
+  if (prevAnno) {
+    const cur = parziale ? sommaFinoA(_cAnno, meseOggi) : totaleAnno;
+    const prec = parziale ? sommaFinoA(prevAnno, meseOggi) : perAnno[prevAnno];
+    if (prec > 0) {
+      const pct = Math.round((cur - prec) / prec * 100);
+      const buono = tipoMacro === 'spesa' ? pct <= 0 : pct >= 0;
+      const finestra = parziale ? ` gen-${nomeMese(meseOggi - 1).slice(0, 3).toLowerCase()}` : '';
+      deltaAnno = `<div class="delta ${buono ? 'better' : 'worse'} num" style="margin-top:3px">${pct > 0 ? '+' : ''}${pct}% vs ${prevAnno}${finestra}</div>`;
+    }
   }
 
   // sotto-voci per il drill — filtrate sull'ANNO SELEZIONATO (si aggiornano con le frecce)
@@ -172,6 +201,7 @@ const _renderCategoriaTempo = (body, root) => {
       <div class="cell"><div class="lbl">Totale ${anni.length} anni</div><div class="val sa num">${fmtEUR0(totale)}</div></div>
       </div>
     </div>
+    ${anniCompleti.length && anni.includes(annoOggi) ? `<div class="meta" style="text-align:center;margin:-2px 0 6px">media su ${anniCompleti.length} anni completi · il ${annoOggi} e' ancora in corso${parziale ? `, quindi il confronto e' gennaio-${nomeMese(meseOggi - 1).slice(0, 3).toLowerCase()} contro lo stesso periodo` : ''}</div>` : ''}
 
     <div class="yearchart">
       <div class="yc-bars">${anni.map(a => `
@@ -398,4 +428,3 @@ const _renderTag = (body, root) => {
   const tr = body.querySelector('#tag-reset');
   if (tr) tr.addEventListener('click', () => { _tagSel.clear(); _tagQuery = ''; renderAnalisi(root); });
 };
-

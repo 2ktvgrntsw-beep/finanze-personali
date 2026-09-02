@@ -4,7 +4,7 @@
 
 import { dbAdd, dbDelete, dbBulkPut } from '../core/db.js';
 import { state, refreshAll } from '../core/store.js';
-import { uid, round2 } from '../core/utils.js';
+import { uid, round2, toISO, todayISO } from '../core/utils.js';
 
 // Calcola il piano di ammortamento completo di un prestito (mutuo o finanziamento).
 export const calcolaPiano = (p, eventi = []) => {
@@ -46,7 +46,7 @@ export const calcolaPiano = (p, eventi = []) => {
     const oggi = new Date();
     rate.push({
       n: i,
-      data: dataRata.toISOString().slice(0, 10),
+      data: toISO(dataRata),
       rata: round2(p.rata),
       quotaCapitale: round2(capitale),
       quotaInteressi: round2(interessi),
@@ -142,7 +142,7 @@ export const sincronizzaRicorrenzaPrestito = async (prestito, tipo) => {
   }
 
   const piano = calcolaPiano(prestito, tipo === 'mutuo' ? (await _all('eventiMutuo')) : []);
-  const oggiISO = new Date().toISOString().slice(0, 10);
+  const oggiISO = todayISO();
   const prossimaRata = piano.find(r => r.data >= oggiISO);
   if (!prossimaRata) {
     // prestito concluso: la ricorrenza muore

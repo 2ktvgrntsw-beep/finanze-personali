@@ -5,7 +5,7 @@
 
 import { dbAdd, dbDelete } from '../core/db.js';
 import { state, refreshAll } from '../core/store.js';
-import { uid, round2 } from '../core/utils.js';
+import { uid, round2, todayISO } from '../core/utils.js';
 
 export const TIPI_CONTO = ['liquidita', 'risparmio', 'investimenti', 'asset', 'debiti'];
 export const LABEL_TIPO = {
@@ -62,6 +62,6 @@ export const contiLiquidiEnominali = () => state.conti.filter(c => c.attivo !== 
 // Assicura almeno un conto se il DB fosse vuoto (fallback di sicurezza)
 export const ensureContoDefault = async () => {
   if (state.conti.length === 0) {
-    await saveConto({ nome: 'Conto principale', tipo: 'liquidita', saldo_iniziale: 0, data_saldo: new Date().toISOString().slice(0, 10) });
+    await saveConto({ nome: 'Conto principale', tipo: 'liquidita', saldo_iniziale: 0, data_saldo: todayISO() });
   }
 };

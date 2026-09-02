@@ -10,9 +10,16 @@ const FLAG = 'seed_consumi_mensili_impronta';
 const improntaDi = (a) => `${a.length}|${a.reduce((s, x) => s + (x.kwh || 0), 0)}`;
 
 export const seedConsumiMensiliSeNecessario = async () => {
-  const attesa = improntaDi(CONSUMI_MENSILI_SEED);
   const presenti = await dbAll('consumiMensili');
-  const idSeed = new Set(CONSUMI_MENSILI_SEED.map(x => x.id));
+  // I mesi manuali escono da ENTRAMBI i lati del confronto. Prima uscivano solo da
+  // 'diSeed' mentre l'attesa era l'impronta del seed intero: con anche un solo mese
+  // corretto a mano le due non tornavano piu' e il seed riscriveva tutto a ogni avvio.
+  // Nessun dato perso — la scrittura salta comunque i manuali — ma un lavoro inutile
+  // a ogni apertura dell'app.
+  const manuali = new Set(presenti.filter(x => x.manuale).map(x => x.id));
+  const daSeminare = CONSUMI_MENSILI_SEED.filter(x => !manuali.has(x.id));
+  const attesa = improntaDi(daSeminare);
+  const idSeed = new Set(daSeminare.map(x => x.id));
   const diSeed = presenti.filter(x => idSeed.has(x.id) && !x.manuale);
 
   if (improntaDi(diSeed) === attesa) {
@@ -22,9 +29,7 @@ export const seedConsumiMensiliSeNecessario = async () => {
     }
     return false;
   }
-  // non sovrascrivo i mesi che l'utente ha importato o corretto a mano
-  const manuali = new Set(presenti.filter(x => x.manuale).map(x => x.id));
-  await dbBulkPut('consumiMensili', CONSUMI_MENSILI_SEED.filter(x => !manuali.has(x.id)));
+  await dbBulkPut('consumiMensili', daSeminare);
   await dbAdd('meta', { chiave: FLAG, valore: attesa, data: new Date().toISOString() });
   return true;
 };

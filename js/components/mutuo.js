@@ -1,7 +1,7 @@
 // mutuo.js — Scheda mutuo: stato, piano di ammortamento, eventi.
 
 import { state } from '../core/store.js';
-import { fmtEUR, escapeHtml, fmtData } from '../core/utils.js';
+import { fmtEUR, escapeHtml, fmtData, todayISO } from '../core/utils.js';
 import { statoPrestito, saveMutuo, saveEventoMutuo, eventiMutuo, deleteEventoMutuo } from '../services/prestitiService.js';
 import { apriSheet, apriDataNativa, montaTastierino, apriSelettoreCategoria, conferma } from './shared.js';
 import { toast } from '../core/utils.js';
@@ -110,7 +110,7 @@ const _edit = (root) => {
 const _fmtDMutuo = (iso) => { if (!iso) return ''; const [a, mm, g] = iso.split('-'); return `${g}/${mm}/${a}`; };
 
 const _addEvento = (root) => {
-  const tmp = { data: new Date().toISOString().slice(0, 10) };
+  const tmp = { data: todayISO() };
   apriSheet('Estinzione parziale', `
     <label class="meta">Importo estinto (€)</label>
     <input type="text" inputmode="decimal" id="e-imp" value="" placeholder="0,00" class="sheet-input">

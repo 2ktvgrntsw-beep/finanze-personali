@@ -4,13 +4,18 @@
 // CACHE_VERSION non combaciano, i telefoni continuano a servire il codice vecchio
 // dalla cache e sembra che il rilascio non sia mai avvenuto.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { APP_VERSION } from '../js/core/version.js';
+import { toISO, toAnnomese } from '../js/core/utils.js';
 import {
   DICHIARAZIONI, verificaIdentita, irpefPerScaglioni, scaglioniDi,
   plafondPrimaOccupazione, detrazionePluriennale, detrazionePluriennaleCalcolata, creditiInMaturazione,
 } from '../js/core/dichiarazioni.js';
 import { certificatoDi } from '../js/core/fiscoUfficiale.js';
+import { pianoSeed } from '../js/core/seedStipendi.js';
+import { state } from '../js/core/store.js';
+import { round2 } from '../js/core/utils.js';
+import { bilancioAnnuale, candidatiUnaTantum, TAG_UNA_TANTUM } from '../js/services/bilancioService.js';
 
 let falliti = 0, passati = 0;
 const ok = (nome, cond, extra = '') => {
@@ -102,6 +107,192 @@ console.log('\nincrocio 730 / dato certificato dal datore');
   }
   const c25 = certificatoDi(2025);
   ok('la riga 2025 e\' marcata da verificare', c25.daVerificare.length === 1);
+}
+
+console.log('\ndate: ora locale, non UTC');
+{
+  // La radice di tre bug diversi: toISOString() converte in UTC e in Italia la
+  // mezzanotte locale cade nel giorno prima. Il primo del mese diventava l'ultimo del
+  // mese precedente (rate del mutuo nel mese sbagliato, sparkline sfalsata di un mese),
+  // e una data inserita all'una di notte tornava indietro di un giorno.
+  const primoOttobre = new Date(2026, 9, 1);
+  ok('toISO tiene il giorno locale sul primo del mese', toISO(primoOttobre) === '2026-10-01',
+    `ottenuto ${toISO(primoOttobre)}`);
+  ok('toISO non e\' toISOString', toISO(primoOttobre) !== primoOttobre.toISOString().slice(0, 10)
+    || primoOttobre.getTimezoneOffset() >= 0);
+  ok('toAnnomese resta nel mese giusto', toAnnomese(primoOttobre) === '2026-10',
+    `ottenuto ${toAnnomese(primoOttobre)}`);
+  const meta = new Date(2026, 9, 15, 0, 30);
+  ok('toISO regge la mezzanotte e mezza', toISO(meta) === '2026-10-15', `ottenuto ${toISO(meta)}`);
+
+  // Guardia di regressione: nessun sorgente deve tornare a fabbricare date con
+  // toISOString().slice(). I timestamp interi (marcatempo) restano leciti.
+  const dir = new URL('../js/', import.meta.url);
+  const colpevoli = [];
+  const scorri = (d) => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      const u = new URL(e.name + (e.isDirectory() ? '/' : ''), d);
+      if (e.isDirectory()) scorri(u);
+      else if (e.name.endsWith('.js')) {
+        const txt = readFileSync(u, 'utf8');
+        if (/toISOString\(\)\.slice/.test(txt)) colpevoli.push(e.name);
+      }
+    }
+  };
+  scorri(dir);
+  ok('nessun toISOString().slice() nei sorgenti', colpevoli.length === 0, colpevoli.join(', '));
+}
+
+console.log('\nbilancio: entrate, uscite, quel che resta');
+{
+  // Lo stato e' un oggetto esportato e mutabile: si puo' riempire a mano senza
+  // IndexedDB e provare la logica pura del servizio.
+  state.conti = [
+    { nome: 'Conto', tipo: 'liquidita' },
+    { nome: 'ETF', tipo: 'investimenti' },
+  ];
+  state._idxContoByNome = Object.fromEntries(state.conti.map(c => [c.nome, c]));
+  state.stipendi = [{ anno: 2024, mese: 1, netto: 20000, addebiti_netti: 0 }];
+  state.movimenti = [
+    { id: 'e1', data: '2024-03-10', tipo: 'entrata', cat: 'Stipendio', imp: 20000, tag: [] },
+    { id: 'e2', data: '2024-07-01', tipo: 'entrata', cat: 'Vendite', imp: 10000, tag: [TAG_UNA_TANTUM], desc: 'Vendita auto' },
+    { id: 's1', data: '2024-04-10', tipo: 'spesa', imp: 12000, tag: [] },
+    { id: 's2', data: '2024-07-02', tipo: 'spesa', imp: 8000, tag: [TAG_UNA_TANTUM], desc: 'Saldo auto' },
+    { id: 't1', data: '2024-05-10', tipo: 'trasferimento', contoDest: 'ETF', imp: 5000, tag: [] },
+    { id: 't2', data: '2024-05-11', tipo: 'trasferimento', contoDest: 'Conto', imp: 999, tag: [] },
+  ];
+  const [r] = bilancioAnnuale().filter(x => x.anno === '2024');
+  ok('entrate sommate dai movimenti', r.entrate === 30000, `${r.entrate}`);
+  ok('speso sommato dai movimenti', r.speso === 20000, `${r.speso}`);
+  ok('accantonato solo verso conti risparmio/investimenti', r.accantonato === 5000, `${r.accantonato}`);
+  ok('rimasto = entrate - speso - accantonato', r.rimasto === 5000, `${r.rimasto}`);
+  ok('risparmiato = entrate - speso', r.risparmiato === r.entrate - r.speso, `${r.risparmiato}`);
+  ok('tasso = risparmiato / entrate', Math.round(r.tasso) === 33, `${r.tasso}`);
+  // tolte le una tantum da entrambi i lati: 20.000 dentro, 12.000 fuori -> 40%
+  ok('tasso ordinario esclude le una tantum dai due lati',
+    Math.round(r.tassoOrdinario) === 40, `${r.tassoOrdinario}`);
+  ok('le una tantum sono elencate', r.straordinari.length === 2);
+  ok('scarto con le buste calcolato', r.scartoBuste === 0, `${r.scartoBuste}`);
+  ok('anno non in rosso', r.inRosso === false);
+
+  // stessa scena ma con un accantonamento superiore a quel che avanza
+  state.movimenti.push({ id: 't3', data: '2024-06-01', tipo: 'trasferimento', contoDest: 'ETF', imp: 9000, tag: [] });
+  const [r2] = bilancioAnnuale().filter(x => x.anno === '2024');
+  ok('accantonare oltre l\'avanzo mette l\'anno in rosso', r2.inRosso === true, `rimasto ${r2.rimasto}`);
+  ok('ma il tasso di risparmio non cambia', Math.round(r2.tasso) === 33, `${r2.tasso}`);
+
+  // ── la rata del mutuo si divide: il capitale non e' spesa ──
+  state.mutuo = { importo_iniziale: 80000, tasso: 2, durata_mesi: 180, rata: 514.81,
+    data_inizio: '2018-03-31', giorno_addebito: 28, macro: 'Casa', cat: 'Affitto/Mutuo', sub: 'Rata Mutuo' };
+  state.eventiMutuo = [];
+  state.finanziamenti = [];
+  const senzaMutuo = bilancioAnnuale().find(x => x.anno === '2024');
+  state.movimenti.push(...Array.from({ length: 12 }, (_, i) => ({
+    id: 'mut' + i, data: `2024-${String(i + 1).padStart(2, '0')}-28`, tipo: 'spesa',
+    macro: 'Casa', cat: 'Affitto/Mutuo', sub: 'Rata Mutuo', imp: 514.81, tag: [],
+  })));
+  const conMutuo = bilancioAnnuale().find(x => x.anno === '2024');
+  const rate = round2(514.81 * 12);
+  ok('le rate del mutuo sono riconosciute', conMutuo.rateDebito === rate, `${conMutuo.rateDebito}`);
+  ok('capitale + interessi = rate registrate',
+    round2(conMutuo.capitaleDebito + conMutuo.interessiDebito) === rate,
+    `${conMutuo.capitaleDebito} + ${conMutuo.interessiDebito}`);
+  ok('nel 2024 il capitale e\' la parte grossa della rata',
+    conMutuo.capitaleDebito / rate > 0.8, `${(conMutuo.capitaleDebito / rate * 100).toFixed(1)}%`);
+  ok('tutte e dodici le rate del 2024 sono abbinate', conMutuo.rateMancanti === 0,
+    `mancanti ${conMutuo.rateMancanti}`);
+  ok('il capitale NON finisce fra le spese',
+    round2(conMutuo.speso - senzaMutuo.speso) === conMutuo.interessiDebito,
+    `speso cresciuto di ${round2(conMutuo.speso - senzaMutuo.speso)}, interessi ${conMutuo.interessiDebito}`);
+  ok('la cassa pero\' e\' uscita davvero: rimasto scende di tutta la rata',
+    round2(senzaMutuo.rimasto - conMutuo.rimasto) === rate,
+    `${round2(senzaMutuo.rimasto - conMutuo.rimasto)}`);
+  ok('l\'identita\' torna: entrate = speso + capitale + accantonato + rimasto',
+    round2(conMutuo.speso + conMutuo.capitaleDebito + conMutuo.accantonato + conMutuo.rimasto) === conMutuo.entrate,
+    `${conMutuo.speso} + ${conMutuo.capitaleDebito} + ${conMutuo.accantonato} + ${conMutuo.rimasto} vs ${conMutuo.entrate}`);
+  // Il paragone giusto NON e' con l'anno senza mutuo — un mutuo aggiunge un costo vero
+  // (gli interessi) e il tasso infatti scende un po'. E' con il trattamento ingenuo, che
+  // considera spesa tutta la rata: li' il tasso crollerebbe di oltre il triplo.
+  const tassoIngenuo = round2((conMutuo.entrate - (conMutuo.speso + rate - conMutuo.interessiDebito)) / conMutuo.entrate * 100);
+  ok('il capitale non deprime il tasso come farebbe la rata intera',
+    conMutuo.tasso > tassoIngenuo + 15,
+    `con lo split ${conMutuo.tasso}% contro ${tassoIngenuo}% contando tutta la rata`);
+  ok('solo gli interessi erodono il tasso',
+    vicino(senzaMutuo.tasso - conMutuo.tasso, conMutuo.interessiDebito / conMutuo.entrate * 100, 0.02),
+    `${senzaMutuo.tasso}% -> ${conMutuo.tasso}%`);
+  // ── una rata che nel registro non c'e' va dichiarata, non spalmata ──
+  state.movimenti = state.movimenti.filter(m => m.id !== 'mut5');   // via giugno
+  const buco = bilancioAnnuale().find(x => x.anno === '2024');
+  ok('la rata mancante viene contata', buco.rateMancanti === 1, `${buco.rateMancanti}`);
+  ok('il capitale scende di una rata sola',
+    buco.capitaleDebito < conMutuo.capitaleDebito && buco.capitaleDebito > conMutuo.capitaleDebito * 0.9,
+    `${conMutuo.capitaleDebito} -> ${buco.capitaleDebito}`);
+  ok('e l\'identita\' regge lo stesso',
+    round2(buco.speso + buco.capitaleDebito + buco.accantonato + buco.rimasto) === buco.entrate);
+
+  // ── i finanziamenti NON si dividono: un elettrodomestico si consuma ──
+  state.movimenti = state.movimenti.filter(m => !m.id.startsWith('mut'));
+  state.finanziamenti = [{ importo_iniziale: 972, tasso: 0, durata_mesi: 20, rata: 48.59,
+    data_inizio: '2024-05-05', giorno_addebito: 5, macro: 'Casa', cat: 'Finanziamenti', sub: 'Elettrodomestico' }];
+  state.movimenti.push({ id: 'fin1', data: '2024-05-05', tipo: 'spesa',
+    macro: 'Casa', cat: 'Finanziamenti', sub: 'Elettrodomestico', imp: 48.59, tag: [] });
+  const conFin = bilancioAnnuale().find(x => x.anno === '2024');
+  ok('la rata del finanziamento resta spesa intera', conFin.capitaleDebito === 0, `${conFin.capitaleDebito}`);
+  state.movimenti = state.movimenti.filter(m => m.id !== 'fin1');
+  state.finanziamenti = [];
+  state.mutuo = null;
+
+  const cand = candidatiUnaTantum();
+  ok('i candidati escludono gli stipendi e i gia\' marcati',
+    cand.length === 1 && cand[0].id === 's1', cand.map(c => c.id).join(','));
+}
+
+console.log('\nseed buste paga: la correzione a mano vince sul seed');
+{
+  // Il seed delle buste e' autoritativo per scelta, ma una busta corretta a mano no:
+  // chi l'ha corretta ha guardato il cedolino. Fino alla 3.35 la busta modificata
+  // teneva l'id del seed, rientrava nel confronto, l'impronta non tornava mai e a ogni
+  // avvio veniva riscritta. Questi controlli stanno di guardia proprio li'.
+  const SEED = [
+    { id: 'a', anno: 2024, mese: 1, datore: 'X', netto: 100, lordo: 200, cometa_azienda: 0 },
+    { id: 'b', anno: 2024, mese: 2, datore: 'X', netto: 110, lordo: 210, cometa_azienda: 0 },
+  ];
+
+  const uguale = pianoSeed(SEED.map(b => ({ ...b })), SEED);
+  ok('database identico al seed: non si tocca niente', uguale.allineato === true);
+
+  // una busta corretta a mano, con importi diversi
+  const conManuale = [
+    { ...SEED[0], netto: 999, manuale: true },
+    { ...SEED[1] },
+  ];
+  const pm = pianoSeed(conManuale, SEED);
+  ok('con una busta manuale il seed resta allineato', pm.allineato === true,
+    `allineato=${pm.allineato}`);
+  ok('la busta manuale non viene riscritta',
+    !pm.daSeminare.some(b => b.id === 'a'), pm.daSeminare.map(b => b.id).join(','));
+  ok('la busta manuale non viene cancellata',
+    !pm.obsoleti.some(b => b.id === 'a'));
+
+  // una busta di seed davvero mancante: li' il riallineamento deve scattare
+  const mancante = pianoSeed([{ ...SEED[0] }], SEED);
+  ok('se manca una busta di seed, si risemina', mancante.allineato === false);
+  ok('e si riscrivono entrambe', mancante.daSeminare.length === 2);
+
+  // residuo di un seed vecchio (stesso periodo, id diverso, non manuale)
+  const conResiduo = pianoSeed(
+    [...SEED.map(b => ({ ...b })), { id: 'vecchio', anno: 2024, mese: 1, datore: 'X', netto: 1, lordo: 1 }],
+    SEED);
+  ok('un residuo di seed vecchio viene rimosso',
+    conResiduo.obsoleti.length === 1 && conResiduo.obsoleti[0].id === 'vecchio',
+    conResiduo.obsoleti.map(b => b.id).join(','));
+
+  // busta aggiunta dall'utente su un periodo che il seed non copre
+  const conAggiunta = pianoSeed(
+    [...SEED.map(b => ({ ...b })), { id: 'c', anno: 2024, mese: 3, datore: 'Y', netto: 50, lordo: 60, manuale: true }],
+    SEED);
+  ok('una busta aggiunta a mano non fa riseminare', conAggiunta.allineato === true);
+  ok('e non viene rimossa', conAggiunta.obsoleti.length === 0);
 }
 
 console.log(`\n${passati} passati, ${falliti} falliti\n`);

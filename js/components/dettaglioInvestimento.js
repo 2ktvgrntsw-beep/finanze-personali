@@ -3,7 +3,7 @@
 // (cumulato), grande e interattivo al tocco, in stile Cockpit.
 
 import { state } from '../core/store.js';
-import { fmtEUR, escapeHtml, nomeMese } from '../core/utils.js';
+import { fmtEUR, escapeHtml, nomeMese, oggiAnnomese } from '../core/utils.js';
 import { navigate } from '../core/router.js';
 import { contoDiTrasferimento, eInvestimento } from '../services/attribuzioneInvestimenti.js';
 import { costruisciSparkline, agganciaSparkline } from '../core/sparkline.js';
@@ -95,7 +95,7 @@ export const renderDettaglioInvestimento = async (root, params = {}) => {
   `;
 
   root.querySelector('#vedi-mov').addEventListener('click', () => navigate('movimenti', {
-    tipo: 'trasferimento', periodo: 'anno', mese: new Date().toISOString().slice(0, 7),
+    tipo: 'trasferimento', periodo: 'anno', mese: oggiAnnomese(),
   }));
 
   // interattività grafico: modulo condiviso (corregge anche la precisione della barra,

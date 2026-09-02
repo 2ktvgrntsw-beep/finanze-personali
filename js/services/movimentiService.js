@@ -1,7 +1,7 @@
 // movimentiService.js — CRUD movimenti + aggregazioni per la home e il drill-down.
 
 import { dbAdd, dbDelete, dbBulkPut } from '../core/db.js';
-import { state, refreshAll } from '../core/store.js';
+import { state, refreshAll, contoByNome } from '../core/store.js';
 import { uid, round2, annomese, annoDi } from '../core/utils.js';
 import { apprendiDaMovimento, riallineaSuggerimenti } from './suggerimentiService.js';
 
@@ -135,7 +135,9 @@ export const totaliPeriodo = (movs) => {
     else if (m.tipo === 'entrata') entrate += m.imp;
     else if (m.tipo === 'trasferimento') {
       // conta come "investito/accantonato" se la destinazione è un conto risparmio/investimenti
-      const dest = state.conti.find(c => c.nome === m.contoDest);
+      // (l'indice per nome e' gia' pronto in store: cercare nell'array a ogni riga era
+      //  una scansione dentro una scansione, inutile)
+      const dest = contoByNome(m.contoDest);
       if (dest && (dest.tipo === 'investimenti' || dest.tipo === 'risparmio')) investito += m.imp;
     }
   }
@@ -175,18 +177,40 @@ export const movimentiDiVoce = (movs, filtro = {}) => {
   return out.sort((a, b) => b.data.localeCompare(a.data));
 };
 
-// --- Media mensile spese (per i delta "vs media") ---
-export const mediaSpeseMensile = (meseCorrente) => {
+// --- Riferimento mensile di spesa (per i delta "vs solito") ---
+//
+// Due scelte, imparate guardando i dati veri.
+//
+// FINESTRA MOBILE, non tutto l'archivio. Prima si faceva la media di ogni mese dal
+// primo movimento a oggi: dopo dieci anni il metro era una persona con un'altra vita
+// e un altro stipendio. Adesso contano gli ultimi 12 mesi CHIUSI: il mese in corso
+// resta fuori, perche' a meta' mese e' sempre "sotto la media" e non vuol dire niente.
+//
+// MEDIANA, non media. Una spesa una tantum grossa avvelena la media per un anno
+// intero: dopo il saldo dell'auto di luglio 2023, la media a 12 mesi diceva 4.120 EUR
+// al mese contro una mediana di 2.619 — per dodici mesi l'app avrebbe dichiarato ogni
+// mese "molto sotto la media", che e' esattamente il momento in cui NON vuoi essere
+// rassicurato. La mediana in quello stesso periodo e' rimasta ferma: 2.619, 2.622,
+// 2.540. E' il mese tipico, non il mese medio.
+const FINESTRA_MESI = 12;
+
+export const baselineSpeseMensile = (meseCorrente) => {
   const perMese = {};
   for (const m of state.movimenti) {
     if (m.tipo !== 'spesa') continue;
-    if (m.annomese === meseCorrente) continue;      // escludo il mese in corso
+    if (m.annomese >= meseCorrente) continue;       // solo mesi gia' chiusi
     perMese[m.annomese] = (perMese[m.annomese] || 0) + m.imp;
   }
-  const valori = Object.values(perMese);
+  const valori = Object.keys(perMese).sort().slice(-FINESTRA_MESI).map(k => perMese[k]);
   if (!valori.length) return 0;
-  return round2(valori.reduce((s, v) => s + v, 0) / valori.length);
+  valori.sort((a, b) => a - b);
+  const n = valori.length;
+  const mediana = n % 2 ? valori[(n - 1) / 2] : (valori[n / 2 - 1] + valori[n / 2]) / 2;
+  return round2(mediana);
 };
+
+// vecchio nome, mantenuto per non rompere eventuali import esterni
+export const mediaSpeseMensile = baselineSpeseMensile;
 
 // --- Spese per anno (vista Anno) ---
 export const spesePerAnno = () => {
@@ -206,7 +230,7 @@ export const investitoPerMese = () => {
   const perMese = {};
   for (const m of state.movimenti) {
     if (m.tipo !== 'trasferimento') continue;
-    const dest = state.conti.find(c => c.nome === m.contoDest);
+    const dest = contoByNome(m.contoDest);
     const isInv = dest ? (dest.tipo === 'investimenti') : (m.macro === 'Investimenti');
     if (!isInv) continue;
     perMese[m.annomese] = (perMese[m.annomese] || 0) + m.imp;

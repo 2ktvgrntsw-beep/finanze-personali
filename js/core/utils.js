@@ -34,8 +34,14 @@ export const parseDataEU = (v) => {
   return isNaN(d) ? todayISO() : toISO(d);
 };
 
-const toISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+// SEMPRE questa, mai d.toISOString(): toISOString converte in UTC, e in Italia
+// (UTC+1/+2) la mezzanotte locale cade nel GIORNO PRIMA. Il primo del mese diventa
+// l'ultimo del mese precedente, e una data inserita all'una di notte torna indietro
+// di un giorno. Qui si legge l'ora locale, che e' quella che intende chi usa l'app.
+export const toISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 export const todayISO = () => toISO(new Date());
+export const toAnnomese = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+export const oggiAnnomese = () => toAnnomese(new Date());
 
 const MESI = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
 const GIORNI = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];

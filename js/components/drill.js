@@ -4,7 +4,7 @@
 // e card [Totale] [vs media] [vs precedente], come nella home.
 
 import { state, movimentiDelMese } from '../core/store.js';
-import { fmtEUR, fmtPct, nomeMese, escapeHtml } from '../core/utils.js';
+import { fmtEUR, fmtPct, nomeMese, escapeHtml, toISO } from '../core/utils.js';
 import { iconaMacro } from '../core/icons.js';
 import { navigate, buildHash } from '../core/router.js';
 import { aggregaPerLivello, soloSpese } from '../services/movimentiService.js';
@@ -15,7 +15,7 @@ const movimentiPeriodo = (periodo, mese) => {
   if (periodo === 'anno') return state.movimenti.filter(m => m.data.startsWith(mese.slice(0, 4)));
   if (periodo === 'settimana') {
     const oggi = new Date(); const s = new Date(); s.setDate(oggi.getDate() - 6);
-    return state.movimenti.filter(m => m.data >= s.toISOString().slice(0, 10));
+    return state.movimenti.filter(m => m.data >= toISO(s));
   }
   return movimentiDelMese(mese);
 };
