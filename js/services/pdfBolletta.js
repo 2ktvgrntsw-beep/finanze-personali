@@ -1,3 +1,5 @@
+import { estraiStoricoMensile } from './storicoMensile.js';
+
 // pdfBolletta.js — Import bolletta da PDF (formato Dolomiti Energia).
 // ZERO dipendenze esterne: i PDF Dolomiti usano stream ASCII85+Flate con testo
 // CID e CMap ToUnicode incorporate. Decodifica: ASCII85 scritto a mano (~30 righe)
@@ -38,14 +40,24 @@ export const inflate = async (bytes) => {
 export const LATIN1 = new TextDecoder('latin1');
 
 // decodifica uno stream PDF: ASCII85 -> Flate (con fallback solo-A85)
-const decodificaStream = async (chunkStr) => {
+// I fornitori usano codifiche diverse: Dolomiti impacchetta gli stream in ASCII85+Flate,
+// Illumia/ENGIE/Enel usano Flate puro. Provo entrambe le strade invece di assumerne una.
+const decodificaStream = async (chunkStr, bytes) => {
   const fine = chunkStr.indexOf('~>');
-  if (fine === -1) return null;
-  try {
-    const a85 = a85decode(chunkStr.slice(0, fine));
-    try { return LATIN1.decode(await inflate(a85)); }
-    catch { return LATIN1.decode(a85); }
-  } catch { return null; }
+  if (fine !== -1) {
+    try {
+      const a85 = a85decode(chunkStr.slice(0, fine));
+      try { return LATIN1.decode(await inflate(a85)); }
+      catch { return LATIN1.decode(a85); }
+    } catch { /* non era ASCII85: provo Flate diretto */ }
+  }
+  if (bytes) {
+    // taglio gli a-capo finali: il decompressore non li tollera
+    let n = bytes.length;
+    while (n > 0 && (bytes[n - 1] === 10 || bytes[n - 1] === 13)) n--;
+    try { return LATIN1.decode(await inflate(bytes.subarray(0, n))); } catch { /* non deflate */ }
+  }
+  return null;
 };
 
 // costruisce la mappa CID -> carattere dalle CMap ToUnicode (fuse: nei PDF
@@ -71,6 +83,44 @@ export const costruisciMappa = (streamsTesto) => {
 
 // estrae il testo da uno stream di contenuto: stringhe hex in Tj/TJ,
 // newline sui movimenti verticali (Td con ty != 0, T*)
+// Estrae il testo CON LA POSIZIONE di ogni pezzo, e segnala se e' ruotato.
+// Serve per gli storici disegnati come GRAFICO (Dolomiti): li' i valori sono scritti
+// ruotati di 90 gradi e l'unico modo per capire a quale mese appartengono e' la
+// coordinata orizzontale, che senza le posizioni andrebbe persa.
+// Alcuni fornitori (Illumia, Enel) scrivono il testo come STRINGA LETTERALE in chiaro
+// "(testo) Tj" invece che come esadecimale mappato: qui basta togliere gli escape.
+const dLetterale = (raw) => raw
+  .replace(/\\([0-7]{1,3})/g, (_, o) => String.fromCharCode(parseInt(o, 8)))
+  .replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\t/g, '\t')
+  .replace(/\\([()\\])/g, '$1');
+
+export const estraiRun = (d, mappa) => {
+  const run = [];
+  const decodHex = (h) => {
+    let s = '';
+    for (let i = 0; i + 4 <= h.length; i += 4) s += mappa[parseInt(h.slice(i, i + 4), 16)] || '';
+    return s;
+  };
+  let x = 0, y = 0, ruotato = false;
+  const re = /(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+Tm|(-?[\d.]+)\s+(-?[\d.]+)\s+Td|<([0-9A-Fa-f]+)>\s*Tj|\[([^\]]*)\]\s*TJ|\(((?:\\.|[^\\()])*)\)\s*Tj/g;
+  let m;
+  while ((m = re.exec(d)) !== null) {
+    if (m[1] !== undefined) {                    // Tm: matrice completa
+      const a = +m[1], b = +m[2], c = +m[3], dd = +m[4];
+      x = +m[5]; y = +m[6];
+      ruotato = Math.abs(a) < 0.01 && Math.abs(dd) < 0.01 && (Math.abs(b) > 0.01 || Math.abs(c) > 0.01);
+      continue;
+    }
+    if (m[7] !== undefined) { x = +m[7]; y = +m[8]; continue; }   // Td
+    let t = '';
+    if (m[9]) t = decodHex(m[9]);
+    else if (m[10]) for (const hh of m[10].matchAll(/<([0-9A-Fa-f]+)>/g)) t += decodHex(hh[1]);
+    else if (m[11] !== undefined) t = dLetterale(m[11]);
+    if (t) run.push({ t, x, y, ruotato });
+  }
+  return run;
+};
+
 export const estraiTesto = (d, mappa) => {
   const out = [];
   const decodHex = (h) => {
@@ -78,12 +128,13 @@ export const estraiTesto = (d, mappa) => {
     for (let i = 0; i + 4 <= h.length; i += 4) s += mappa[parseInt(h.slice(i, i + 4), 16)] || '';
     return s;
   };
-  const re = /<([0-9A-Fa-f]+)>\s*Tj|\[([^\]]*)\]\s*TJ|(-?[\d.]+)\s+(-?[\d.]+)\s+Td|T\*/g;
+  const re = /<([0-9A-Fa-f]+)>\s*Tj|\[([^\]]*)\]\s*TJ|\(((?:\\.|[^\\()])*)\)\s*Tj|(-?[\d.]+)\s+(-?[\d.]+)\s+Td|T\*/g;
   let m;
   while ((m = re.exec(d)) !== null) {
     if (m[1]) out.push(decodHex(m[1]));
     else if (m[2]) for (const hh of m[2].matchAll(/<([0-9A-Fa-f]+)>/g)) out.push(decodHex(hh[1]));
-    else if (m[3] !== undefined) out.push(Math.abs(parseFloat(m[4])) > 0.1 ? '\n' : ' ');
+    else if (m[3] !== undefined) out.push(dLetterale(m[3]));
+    else if (m[4] !== undefined) out.push(Math.abs(parseFloat(m[5])) > 0.1 ? '\n' : ' ');
     else out.push('\n');
   }
   return out.join('');
@@ -160,25 +211,33 @@ export const estraiBollettaDaPDF = async (file) => {
   const intero = LATIN1.decode(buf);
   if (!intero.startsWith('%PDF')) throw new Error('Il file non sembra un PDF.');
 
-  const grezzi = [];
-  for (const m of intero.matchAll(/stream\r?\n([\s\S]*?)endstream/g)) grezzi.push(m[1]);
   const decodificati = [];
-  for (const g of grezzi) {
-    const d = await decodificaStream(g);
+  for (const m of intero.matchAll(/stream\r?\n([\s\S]*?)endstream/g)) {
+    const inizio = m.index + m[0].indexOf('\n') + 1;
+    const d = await decodificaStream(m[1], buf.subarray(inizio, inizio + m[1].length));
     if (d) decodificati.push(d);
   }
   if (!decodificati.length) throw new Error('PDF non leggibile: potrebbe essere una scansione o un formato non supportato.');
 
   const mappa = costruisciMappa(decodificati);
-  const testo = decodificati
-    .filter(d => (d.includes('Tj') || d.includes('TJ')) && !d.includes('beginbfchar'))
-    .map(d => estraiTesto(d, mappa)).join('\n');
+  const conTesto = decodificati.filter(d => (d.includes('Tj') || d.includes('TJ')) && !d.includes('beginbfchar'));
+  const testo = conTesto.map(d => estraiTesto(d, mappa)).join('\n');
+  const run = conTesto.flatMap(d => estraiRun(d, mappa));
 
   if (testo.replace(/\s/g, '').length < 100) throw new Error('Non sono riuscito a estrarre testo dal PDF (scansione?).');
 
   const dati = parseCampi(testo);
   const campiTrovati = ['dal', 'al', 'totale', 'kwhTot', 'kwhF1', 'materia', 'oneri', 'accise', 'iva', 'canone']
     .filter(k => dati[k] != null).length;
-  if (campiTrovati < 3) throw new Error('PDF letto ma formato non riconosciuto (il parser è tarato sulle bollette Dolomiti).');
-  return { dati, campiTrovati };
+
+  // Lo STORICO MENSILE si legge anche quando i campi della bolletta non sono riconosciuti:
+  // i lettori dello storico coprono tutti i fornitori, il parser dei campi per ora solo
+  // Dolomiti. Sarebbe un peccato buttare 13 mesi di consumi reali per questo.
+  let mensili = {};
+  try { mensili = estraiStoricoMensile(testo, run); } catch { /* storico assente */ }
+
+  if (campiTrovati < 3 && !Object.keys(mensili).length) {
+    throw new Error('PDF letto ma non riconosciuto: compila i campi a mano.');
+  }
+  return { dati, campiTrovati, mensili };
 };

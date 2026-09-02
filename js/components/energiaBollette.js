@@ -122,7 +122,7 @@ export const renderBollettaForm = async (root) => {
       pdfBtn.innerHTML = 'Lettura in corso…';
       try {
         const { estraiBollettaDaPDF } = await import('../services/pdfBolletta.js');
-        const { dati, campiTrovati } = await estraiBollettaDaPDF(file);
+        const { dati, campiTrovati, mensili } = await estraiBollettaDaPDF(file);
         const setV = (sel, v) => { const el = root.querySelector(sel); if (el && v != null) el.value = String(v).replace('.', ','); };
         if (dati.fornitore) root.querySelector('#f-forn').value = dati.fornitore;
         if (dati.offerta) root.querySelector('#f-off').value = dati.offerta;
@@ -140,7 +140,20 @@ export const renderBollettaForm = async (root) => {
         setV('#f-materia', dati.materia); setV('#f-trasp', dati.trasporto);
         setV('#f-oneri', dati.oneri); setV('#f-accise', dati.accise);
         setV('#f-iva', dati.iva); setV('#f-canone', dati.canone);
-        toast(`Letti ${campiTrovati} campi dal PDF: verifica i valori e salva`);
+        // storico mensile: lo salvo in silenzio, avviso solo se qualcosa contrasta
+        let nota = '';
+        if (mensili && Object.keys(mensili).length) {
+          const { salvaConsumiMensili } = await import('../services/energiaService.js');
+          const esito = await salvaConsumiMensili(mensili);
+          if (esito.conflitti.length) {
+            nota = ` · ATTENZIONE: ${esito.conflitti.length} mesi non coincidono con l'archivio`;
+          } else if (esito.nuovi) {
+            nota = ` · ${esito.nuovi} mesi di consumo reale aggiunti`;
+          }
+        }
+        toast(campiTrovati >= 3
+          ? `Letti ${campiTrovati} campi dal PDF${nota}: verifica i valori e salva`
+          : `Campi bolletta non riconosciuti (compilali a mano)${nota}`);
       } catch (err) {
         toast(err.message || 'Lettura PDF non riuscita');
       } finally {

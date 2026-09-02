@@ -3,7 +3,7 @@
 import { dbAdd, dbDelete, dbBulkPut } from '../core/db.js';
 import { state, refreshAll } from '../core/store.js';
 import { uid, round2, annomese, annoDi } from '../core/utils.js';
-import { apprendiDaMovimento } from './suggerimentiService.js';
+import { apprendiDaMovimento, riallineaSuggerimenti } from './suggerimentiService.js';
 
 // --- CRUD ---
 export const saveMovimento = async (m) => {
@@ -50,23 +50,47 @@ export const applicaModificaAmbito = async (ricorrenza, modifiche, ambito) => {
     return matchDesc || matchSub;
   }).map(m => { const n = { ...m, ...modifiche }; n.annomese = annomese(n.data); return n; });
 
-  if (daAggiornare.length) { await dbBulkPut('movimenti', daAggiornare); await refreshAll(); }
+  if (daAggiornare.length) {
+    await dbBulkPut('movimenti', daAggiornare);
+    await refreshAll();
+    if (modifiche.macro !== undefined || modifiche.sub !== undefined) await riallineaSuggerimenti();
+  }
   return daAggiornare.length;
 };
 
 // Modifica massiva: applica un set di modifiche a una lista di id di movimenti.
-// Usata dalla selezione multipla nella ricerca. Ogni campo in `modifiche` sovrascrive.
+// Usata dalla selezione multipla nella ricerca.
+//
+// ATTENZIONE alla CLASSIFICAZIONE: macro, cat e sub sono un blocco unico, non tre campi
+// indipendenti. Se si saltano i valori vuoti (com'era prima), spostando dei movimenti da
+// "Casa > Bollette > Luce" a "Casa > Affitto" (che non ha sottocategorie) la vecchia sub
+// resta attaccata e nasce "Casa > Affitto > Luce": una combinazione che non esiste in
+// anagrafica e che falsa grafici e panieri. Quando arriva 'macro', i tre campi vengono
+// quindi riscritti tutti e tre, vuoti compresi.
 export const modificaMassiva = async (ids, modifiche) => {
   const set = new Set(ids);
+  const cambiaClassificazione = modifiche.macro !== undefined;
   const daAggiornare = state.movimenti.filter(m => set.has(m.id)).map(m => {
     const nuovo = { ...m };
+    if (cambiaClassificazione) {
+      nuovo.macro = modifiche.macro || '';
+      nuovo.cat = modifiche.cat || '';
+      nuovo.sub = modifiche.sub || '';
+    }
     for (const [k, v] of Object.entries(modifiche)) {
+      if (['macro', 'cat', 'sub'].includes(k)) continue;      // già gestiti sopra
       if (v !== undefined && v !== null && v !== '') nuovo[k] = v;
     }
     nuovo.annomese = annomese(nuovo.data);
     return nuovo;
   });
-  if (daAggiornare.length) { await dbBulkPut('movimenti', daAggiornare); await refreshAll(); }
+  if (daAggiornare.length) {
+    await dbBulkPut('movimenti', daAggiornare);
+    await refreshAll();
+    // i suggerimenti derivano dai movimenti: se cambio la classificazione in blocco,
+    // vanno ricostruiti, altrimenti continuerebbero a proporre quella vecchia
+    if (cambiaClassificazione) await riallineaSuggerimenti();
+  }
   return daAggiornare.length;
 };
 
@@ -86,6 +110,7 @@ export const modificaBulk = async (ids, patch) => {
   });
   await dbBulkPut('movimenti', daAggiornare);
   await refreshAll();
+  if (patch.macro !== undefined) await riallineaSuggerimenti();
   return daAggiornare.length;
 };
 

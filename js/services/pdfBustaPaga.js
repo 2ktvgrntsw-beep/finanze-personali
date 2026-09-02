@@ -145,6 +145,13 @@ export const parseBusta = (testo, totaliPos = null) => {
   const totComp = (totaliPos && totaliPos.competenze) ?? primoPerEtichetta(righe, /TOTALE.{0,3}COMPETENZE/i);
   const totTratt = (totaliPos && totaliPos.trattenute) ?? primoPerEtichetta(righe, /TOTALE.{0,3}TRATTENUTE/i);
 
+  // ADDEBITI NETTI: spese TUE che il datore ti riaddebita tramite il cedolino (auto a
+  // uso privato, mensa/ticket, multe, trattenute sindacali). Stanno fra le trattenute ma
+  // NON sono imposte né contributi: sono già denaro tassato che ti viene ripreso. Vanno
+  // isolati, altrimenti finiscono contati come "fisco" e l'aliquota risulta gonfiata.
+  r.addebiti_netti = sommaPerEtichetta(righe,
+    /(Tratt\.?\s*Auto\s*Uso|Tratt\.?\s*Ticket|Tratt\.?\s*Mensa|Trattenuta\s*Pasto|MULTA|Cod\.?\s*Strada|Tratt\.?\s*Sindacal|Trattenuta\s*sindac)/i) || 0;
+
   // PARTITE DI GIRO: compaiono sia fra le competenze sia fra le trattenute e si
   // annullano; gonfiano entrambi i totali senza essere né retribuzione né trattenuta.
   const giro = sommaPerEtichetta(righe,
@@ -192,6 +199,7 @@ export const parseBusta = (testo, totaliPos = null) => {
   if (fuori(r.irpef_netta, 10, 20000)) delete r.irpef_netta;
   if (fuori(r.addizionale_regionale, 0.5, 500)) delete r.addizionale_regionale;
   if (fuori(r.addizionale_comunale, 0.5, 500)) delete r.addizionale_comunale;
+  if (fuori(r.addebiti_netti, 0.01, 3000)) r.addebiti_netti = 0;
   if (fuori(r.cometa_dipendente, 5, 2000)) delete r.cometa_dipendente;
   if (fuori(r.cometa_azienda, 5, 500)) delete r.cometa_azienda;
   if (fuori(r.tfr_a_fondo_pensione, 20, 20000)) delete r.tfr_a_fondo_pensione;

@@ -20,7 +20,7 @@ const bozza = () => {
     datore: DATORI[DATORI.length - 1]?.nome || '',
     netto: '', trattenute: '', tfr_a_fondo_pensione: '', cometa_dipendente: '', cometa_azienda: '',
     contributi_inps: '', irpef_netta: '', addizionale_regionale: '', addizionale_comunale: '',
-    partite_di_giro: 0, tredicesima_inclusa: false, cessazione: false,
+    addebiti_netti: '', partite_di_giro: 0, tredicesima_inclusa: false, cessazione: false,
   };
 };
 
@@ -88,6 +88,7 @@ const _render = (root) => {
     <div class="card">
       ${_campo('netto', 'Netto in busta', '(quello che hai incassato)')}
       ${_campo('trattenute', 'Totale trattenute', '(senza partite di giro)')}
+      ${_campo('addebiti_netti', 'di cui addebiti in busta', '(auto, mensa, ticket: spese tue, non tasse)')}
       <div class="eprice-note">Lordo calcolato: <b class="num">${fmtEUR(_lordo())}</b> — netto + trattenute, come sulla busta.</div>
     </div>
 
@@ -183,6 +184,7 @@ const _salva = async (root) => {
     anno: +d.anno, mese: +d.mese, datore: d.datore,
     netto: _n(d.netto), trattenute: _n(d.trattenute),
     partite_di_giro: _n(d.partite_di_giro),
+    addebiti_netti: _n(d.addebiti_netti),
     tfr_a_fondo_pensione: _n(d.tfr_a_fondo_pensione),
     cometa_dipendente: _n(d.cometa_dipendente),
     cometa_azienda: _n(d.cometa_azienda),

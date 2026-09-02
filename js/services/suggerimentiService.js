@@ -3,8 +3,8 @@
 // 2-3 lettere nella descrizione, propone la classificazione (macro/cat/sub/conto) usata
 // più spesso per descrizioni simili. Distingue descrizione (libera) da classificazione.
 
-import { dbAdd, dbGet } from '../core/db.js';
-import { state } from '../core/store.js';
+import { dbAdd, dbGet, dbBulkPut, dbDelete } from '../core/db.js';
+import { state, refreshAll } from '../core/store.js';
 import { _normDesc } from '../core/seed.js';
 
 // Apprende (o rinforza) l'associazione descrizione -> classificazione da un movimento.
@@ -72,4 +72,44 @@ export const suggerisciTag = (testo, limite = 8) => {
   const nomi = Object.keys(freq).sort((a, b) => freq[b] - freq[a]);
   if (!q) return nomi.slice(0, limite);
   return nomi.filter(n => n.toLowerCase().includes(q)).slice(0, limite);
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RIALLINEAMENTO: ricostruisce i suggerimenti dai movimenti COME SONO ADESSO.
+//
+// I suggerimenti sono una cache: si costruiscono dai movimenti e vivono in un archivio
+// separato, perché ricalcolarli ad ogni battuta su migliaia di righe sarebbe lento. Il
+// rovescio è che possono invecchiare: se correggi la classificazione di cento movimenti,
+// la cache continuerebbe a proporre quella vecchia. Questa funzione la riallinea alla
+// realtà, e va chiamata dopo ogni modifica massiva della classificazione.
+//
+// Conserva 'ultimoUso' dove c'era: è l'informazione di recenza, che dai movimenti non si
+// ricava e che serve a far emergere ciò che hai usato di recente.
+// ─────────────────────────────────────────────────────────────────────────────
+export const riallineaSuggerimenti = async () => {
+  const precedenti = new Map(state.suggerimenti.map(s => [s.chiave, s]));
+  const mappa = {};
+  for (const m of state.movimenti) {
+    const chiave = _normDesc(m.desc);
+    if (!chiave) continue;
+    const combo = JSON.stringify({ macro: m.macro, cat: m.cat, sub: m.sub, conto: m.conto, tipo: m.tipo });
+    mappa[chiave] = mappa[chiave] || { desc: m.desc, combos: {}, ultimaData: '' };
+    mappa[chiave].combos[combo] = (mappa[chiave].combos[combo] || 0) + 1;
+    if (m.data > mappa[chiave].ultimaData) { mappa[chiave].ultimaData = m.data; mappa[chiave].desc = m.desc; }
+  }
+  const items = Object.entries(mappa).map(([chiave, v]) => {
+    let best = null, bestN = 0;
+    for (const [combo, n] of Object.entries(v.combos)) if (n > bestN) { bestN = n; best = combo; }
+    const pre = precedenti.get(chiave);
+    return {
+      chiave, desc: v.desc, classificazione: JSON.parse(best), occorrenze: bestN,
+      ultimoUso: (pre && pre.ultimoUso) || (v.ultimaData ? v.ultimaData + 'T12:00:00.000Z' : undefined),
+    };
+  });
+  // le voci non più presenti in nessun movimento vanno tolte, non lasciate a invecchiare
+  const vive = new Set(items.map(i => i.chiave));
+  for (const s of state.suggerimenti) if (!vive.has(s.chiave)) await dbDelete('suggerimenti', s.chiave);
+  await dbBulkPut('suggerimenti', items);
+  await refreshAll();
+  return items.length;
 };

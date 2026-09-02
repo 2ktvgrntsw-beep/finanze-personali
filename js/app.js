@@ -3,6 +3,7 @@
 import { openDB, setWriteErrorHandler } from './core/db.js';
 import { refreshAll } from './core/store.js';
 import { seedStoricoSeNecessario } from './core/seed.js';
+import { seedConsumiMensiliSeNecessario } from './core/seedConsumiMensili.js';
 import { seedBolletteSeNecessario } from './core/seedBollette.js';
 import { seedStipendiSeNecessario } from './core/seedStipendi.js';
 import { registerRoute, initRouter, navigate, renderCurrent, currentRoute } from './core/router.js';
@@ -133,6 +134,7 @@ const boot = async () => {
     await openDB();
     await seedStoricoSeNecessario();   // carica lo storico al primo avvio
     await seedBolletteSeNecessario();  // carica le bollette energia (una tantum)
+    await seedConsumiMensiliSeNecessario();  // consumi mensili reali (sezione Energia)
     await seedStipendiSeNecessario();  // carica le buste paga (una tantum)
     await refreshAll();
 

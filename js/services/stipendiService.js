@@ -424,6 +424,8 @@ export const salvaStipendio = async (b) => {
     periodo: `${MESI_ESTESI[mese - 1]} ${anno}`,
     netto, netto_cassa: round2(b.netto_cassa || netto), lordo, trattenute,
     partite_di_giro: round2(b.partite_di_giro || 0),
+    // addebiti in busta (auto, mensa, ticket): riducono la cassa ma non sono prelievo
+    addebiti_netti: round2(b.addebiti_netti || 0),
     tfr_a_fondo_pensione: round2(b.tfr_a_fondo_pensione || 0),
     cometa_dipendente: round2(b.cometa_dipendente || 0),
     cometa_azienda: round2(b.cometa_azienda || 0),

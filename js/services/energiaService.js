@@ -2,8 +2,9 @@
 // Separata dalla presentazione (come gli altri service): calcola KPI, aggregazioni
 // per anno, ripartizione fasce, serie prezzo. Il componente energia.js la consuma.
 
-import { state } from '../core/store.js';
+import { state, refreshAll } from '../core/store.js';
 import { round2 } from '../core/utils.js';
+import { dbBulkPut } from '../core/db.js';
 
 // Tutte le bollette ordinate dalla più recente alla più vecchia.
 export const bolletteOrdinate = () => state.bollette.slice().sort((a, b) => (b.al || '').localeCompare(a.al || ''));
@@ -192,8 +193,11 @@ export const serieFasceAnnuale = () => {
 
 // Distribuisce i kWh di ogni bolletta sui mesi del periodo, in proporzione ai
 // giorni: una bolletta bimestrale Apr–Mag da 323 kWh contribuisce a Aprile e a
-// Maggio per la quota di giorni di ciascun mese. Serve a heatmap e viste mensili,
-// perché le bollette non coincidono coi mesi di calendario.
+// Ripartisce un importo della bolletta sui mesi che copre. La bolletta non dice quanto
+// è costato ciascun mese, ma il costo segue il CONSUMO: quindi divido in proporzione ai
+// kWh reali di ogni mese (che ora conosco), e solo se quei kWh mancano ripiego sui
+// giorni. Ripartire a giorni un bimestre ottobre-novembre attribuiva a ottobre costi che
+// erano di novembre, dove si consuma molto di più.
 const _distribuisciSuiMesi = (b, prendi) => {
   const out = [];   // [{ anno, mese(1-12), quota }]
   const val = prendi(b);
@@ -201,14 +205,24 @@ const _distribuisciSuiMesi = (b, prendi) => {
   const d1 = new Date(b.dal + 'T00:00:00'), d2 = new Date(b.al + 'T00:00:00');
   const totGiorni = Math.round((d2 - d1) / 86400000) + 1;
   if (totGiorni <= 0) return out;
+
+  const pezzi = [];
   let cur = new Date(d1);
   while (cur <= d2) {
     const anno = cur.getFullYear(), mese = cur.getMonth();
     const fineMese = new Date(anno, mese + 1, 0);
     const fine = fineMese < d2 ? fineMese : d2;
-    const giorniNelMese = Math.round((fine - cur) / 86400000) + 1;
-    out.push({ anno: String(anno), mese: mese + 1, quota: val * giorniNelMese / totGiorni });
+    const giorni = Math.round((fine - cur) / 86400000) + 1;
+    const reale = state.consumiMensili.find(c => c.anno === anno && c.mese === mese + 1);
+    pezzi.push({ anno: String(anno), mese: mese + 1, giorni, kwh: reale ? reale.kwh : null });
     cur = new Date(anno, mese + 1, 1);
+  }
+  // peso sui consumi reali se li conosco per TUTTI i mesi del periodo, altrimenti giorni
+  const tuttiNoti = pezzi.every(p => p.kwh != null);
+  const totKwh = pezzi.reduce((s2, p) => s2 + (p.kwh || 0), 0);
+  for (const p of pezzi) {
+    const peso = (tuttiNoti && totKwh > 0) ? p.kwh / totKwh : p.giorni / totGiorni;
+    out.push({ anno: p.anno, mese: p.mese, quota: val * peso });
   }
   return out;
 };
@@ -216,23 +230,18 @@ const _distribuisciSuiMesi = (b, prendi) => {
 // Heatmap consumi: matrice { anni: [..], celle: { 'anno-mese': kWh }, max }.
 // kWh mensili ottenuti ripartendo le bollette sui mesi (vedi sopra).
 export const heatmapConsumi = () => {
+  // I valori vengono dai CONSUMI MENSILI REALI letti dalle bollette (store
+  // 'consumiMensili'). Prima si spalmava il totale bimestrale sui giorni: comodo ma
+  // sbagliato fino al 19% su un mese. Se un mese non c'è, resta vuoto: non lo stimo.
   const celle = {};
-  for (const b of bolletteComplete()) {
-    for (const q of _distribuisciSuiMesi(b, x => x.kwhTot)) {
-      const k = `${q.anno}-${q.mese}`;
-      celle[k] = (celle[k] || 0) + q.quota;
-    }
+  for (const c of state.consumiMensili) {
+    celle[`${c.anno}-${c.mese}`] = { kwh: c.kwh, fonte: c.fonte, conferme: c.conferme || 1 };
   }
-  Object.keys(celle).forEach(k => { celle[k] = Math.round(celle[k]); });
-  const anni = anniDisponibili().slice().reverse();
-  const max = Math.max(1, ...Object.values(celle));
-  return { anni, celle, max };
+  const anni = [...new Set(state.consumiMensili.map(c => c.anno))].sort();
+  const valori = Object.values(celle).map(c => c.kwh);
+  return { celle, anni, max: valori.length ? Math.max(...valori) : 0 };
 };
 
-// Voci di costo di una bolletta (chiave, etichetta, colore) — ordine e palette
-// unici per scomposizioni e dettaglio. 'altro' è DERIVATA: totale − voci note
-// (ingloba bonus/sconti, altri importi e ricalcoli), così la somma dei segmenti
-// coincide SEMPRE con la spesa reale e i totali quadrano con le card.
 export const VOCI_COSTO = [
   { k: 'materia', nome: 'Materia energia', colore: '#2E9BFF' },
   { k: 'trasporto', nome: 'Trasporto', colore: '#5FC3FF' },
@@ -318,4 +327,34 @@ export const confrontoFornitori = () => {
     .filter(f => f.kwh > 0)
     .map(f => ({ ...f, spesa: round2(f.spesa), eurKwh: Math.round(f.spesa / f.kwh * 1000) / 1000 }))
     .sort((a, b) => a.eurKwh - b.eurKwh);
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONSUMI MENSILI REALI — salvataggio dello storico letto da una bolletta PDF.
+// Conferma in silenzio i mesi già noti; segnala solo se un valore CONTRASTA con
+// quello già in archivio, perché quello è l'unico caso che merita la tua attenzione.
+// ─────────────────────────────────────────────────────────────────────────────
+export const salvaConsumiMensili = async (mensili) => {
+  const noti = new Map(state.consumiMensili.map(c => [c.id, c]));
+  const daScrivere = [];
+  let nuovi = 0, confermati = 0;
+  const conflitti = [];
+  for (const [id, m] of Object.entries(mensili || {})) {
+    if (!/^\d{4}-\d{2}$/.test(id) || !(m.kwh > 0)) continue;
+    const pre = noti.get(id);
+    if (pre) {
+      if (pre.kwh !== m.kwh) { conflitti.push({ id, vecchio: pre.kwh, nuovo: m.kwh }); continue; }
+      confermati++;
+      daScrivere.push({ ...pre, conferme: (pre.conferme || 1) + 1 });
+      continue;
+    }
+    nuovi++;
+    daScrivere.push({
+      id, anno: +id.slice(0, 4), mese: +id.slice(5), kwh: m.kwh,
+      f1: m.f1 ?? null, f2: m.f2 ?? null, f3: m.f3 ?? null,
+      fonte: m.fonte, conferme: 1, manuale: true,
+    });
+  }
+  if (daScrivere.length) { await dbBulkPut('consumiMensili', daScrivere); await refreshAll(); }
+  return { nuovi, confermati, conflitti };
 };
