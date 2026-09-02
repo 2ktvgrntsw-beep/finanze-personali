@@ -10,7 +10,11 @@
 import { state, refreshAll } from '../core/store.js';
 import { round2 } from '../core/utils.js';
 import { dbAdd, dbDelete } from '../core/db.js';
-import { FISCO_UFFICIALE, irpefTeorica, certificatoDi } from '../core/fiscoUfficiale.js';
+import { FISCO_UFFICIALE, certificatoDi } from '../core/fiscoUfficiale.js';
+import {
+  DICHIARAZIONI, dichiarazioneDi, dichiarazioneIncassataNel, irpefPerScaglioni,
+  plafondPrimaOccupazione, seriePlafond, PLAFOND_ORDINARIO, creditiInMaturazione,
+} from '../core/dichiarazioni.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Datori: ordine cronologico e colori scelti dall'utente (identità aziendale).
@@ -362,27 +366,135 @@ export const elencoRimborsi = () => state.stipendi
     importo: b.rimborso_730, annoImposta: b.rimborso_730_anno || null }))
   .sort((a, b) => (b.anno - a.anno) || (b.mese - a.mese));
 
-// Confronto fra la somma delle buste e il dato CERTIFICATO dal datore (riquadro
-// conguaglio della busta di dicembre), piu' l'IRPEF teoricamente dovuta per scaglioni.
+// VERIFICA FISCALE — riscritta sul 730 (v3.30).
+//
+// Prima confrontavo le ritenute del datore con "IRPEF per scaglioni meno le detrazioni
+// certificate in busta". Due errori in uno: gli scaglioni erano quelli sbagliati per
+// gli anni fino al 2021, e le detrazioni di busta sono una frazione di quelle vere
+// (mancavano ~1.880 EUR l'anno di recupero edilizio e 500 di bonus arredo). Risultato:
+// scarti a tre cifre segnalati in rosso che non esistevano.
+//
+// Adesso il metro e' il 730, che l'imposta la calcola per davvero. Il confronto utile
+// non e' piu' "hai pagato il giusto?" ma "quanto ti hanno trattenuto in piu' rispetto
+// a quello che dovevi, e quando te l'hanno ridato?".
 export const verificaFiscale = () => {
-  const anni = [...new Set(FISCO_UFFICIALE.map(x => x.anno))].sort((a, b) => b - a);
+  const anni = [...new Set([...DICHIARAZIONI.map(d => d.anno), ...FISCO_UFFICIALE.map(x => x.anno)])]
+    .sort((a, b) => b - a);
   return anni.map(anno => {
-    const c = certificatoDi(anno);
+    const d = dichiarazioneDi(anno);
+    const c = certificatoDi(anno) || {};
     const b = stipendiAnno(anno);
-    // L'IRPEF certificata dal datore COMPRENDE la tassazione separata (TFR, arretrati):
-    // confrontarla con la sola IRPEF ordinaria faceva sembrare che mancassero centinaia
-    // di euro che invece erano regolarmente registrati, solo in un'altra voce.
     const sommaIrpef = round2(b.reduce((s, x) => s + (x.irpef_netta || 0) + (x.irpef_tass_separata || 0), 0));
-    // Il confronto con gli scaglioni ha senso solo se conosco le DETRAZIONI certificate:
-    // senza, direi che hai pagato troppo poco quando invece il dato mi manca.
-    const dovuta = c.completo ? round2(irpefTeorica(c.imponibile, anno) - c.detrazioni) : null;
+    if (!d) {
+      // Nessun 730 per quest'anno (tipicamente l'anno in corso): resta il vecchio
+      // riscontro sui dati di busta, dichiarato per quello che e'.
+      return { anno, fonte: 'busta', datori: c.datori || [], sommaIrpef,
+        imponibile: c.imponibile ?? null, irpefTrattenuta: c.irpefTrattenuta ?? null,
+        impostaNetta: null, eccedenza: null, rimborso: null, daVerificare: c.daVerificare || [] };
+    }
     return {
-      ...c, sommaIrpef, dovuta,
-      differenza: dovuta == null ? null : round2(c.irpefTrattenuta - dovuta),
-      scartoArchivio: round2(sommaIrpef - c.irpefTrattenuta),
+      anno, fonte: '730', presentata: d.presentata,
+      datori: c.datori || [],
+      redditoComplessivo: d.redditoComplessivo,
+      imponibile: d.imponibile,
+      impostaLorda: d.impostaLorda,
+      detrazioni: d.detr.totale,
+      impostaNetta: d.impostaNetta,
+      irpefTrattenuta: d.ritenute,
+      // quanto il datore ha trattenuto in piu' (positivo) o in meno (negativo)
+      eccedenza: round2(d.ritenute - d.impostaNetta),
+      rimborso: d.rimborsoBusta,
+      aliquotaReale: round2(d.impostaNetta / d.redditoComplessivo * 100),
+      // riscontro fra l'archivio buste e le ritenute certificate
+      sommaIrpef, scartoArchivio: round2(sommaIrpef - d.ritenute),
+      // riscontro dell'imposta lorda sugli scaglioni dell'anno giusto
+      scartoScaglioni: round2(irpefPerScaglioni(d.imponibile, anno) - d.impostaLorda),
+      piuDatori: !!c.piuDatori,
+      daVerificare: c.daVerificare || [],
     };
   });
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WATERFALL — dal reddito complessivo al saldo, passo per passo. E' il percorso che
+// il 730 fa davvero, e che dalla busta non si vede: ogni gradino toglie o aggiunge.
+// ─────────────────────────────────────────────────────────────────────────────
+export const waterfallAnno = (anno) => {
+  const d = dichiarazioneDi(anno);
+  if (!d) return null;
+  const p = [];
+  p.push({ k: 'complessivo', nome: 'Reddito complessivo', val: d.redditoComplessivo, tipo: 'base' });
+  if (d.deduzioneAbit) p.push({ k: 'abit', nome: 'Deduzione abitazione principale', val: -d.deduzioneAbit, tipo: 'giu' });
+  if (d.oneriDeducibili) p.push({ k: 'oneri', nome: 'Oneri deducibili', val: -d.oneriDeducibili, tipo: 'giu' });
+  p.push({ k: 'imponibile', nome: 'Reddito imponibile', val: d.imponibile, tipo: 'tappa' });
+  p.push({ k: 'lorda', nome: 'IRPEF lorda', val: d.impostaLorda, tipo: 'base' });
+  p.push({ k: 'detr', nome: 'Detrazioni e crediti', val: -d.detr.totale, tipo: 'giu' });
+  p.push({ k: 'netta', nome: 'IRPEF netta', val: d.impostaNetta, tipo: 'tappa' });
+  p.push({ k: 'rit', nome: 'Ritenute subite in busta', val: -d.ritenute, tipo: 'giu' });
+  p.push({ k: 'saldo', nome: d.differenza < 0 ? 'A credito' : 'A debito', val: Math.abs(d.differenza), tipo: 'saldo' });
+  return { anno: d.anno, presentata: d.presentata, passi: p, credito: d.differenza < 0,
+    rimborso: d.rimborsoBusta, aliquotaReale: round2(d.impostaNetta / d.redditoComplessivo * 100) };
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CASSA REALE DI UN ANNO SOLARE. Il netto delle buste non e' quello che entra in banca:
+// nell'anno arriva anche il rimborso del 730 dell'anno prima (che l'app tiene giustamente
+// fuori dal netto, perche' non e' retribuzione). Qui i due si rimettono insieme.
+// ─────────────────────────────────────────────────────────────────────────────
+export const cassaRealeAnnuale = () => anniDisponibili().slice().reverse().map(anno => {
+  const buste = stipendiAnno(anno);
+  const netto = round2(buste.reduce((s, b) => s + nettoGuadagnato(b), 0));
+  const rimborsoIncassato = round2(buste.reduce((s, b) => s + (b.rimborso_730 || 0), 0));
+  const attesa = dichiarazioneIncassataNel(anno);
+  return {
+    anno, netto, rimborsoIncassato,
+    // un anno con meno di dodici buste e' in corso (o troncato da un cambio lavoro):
+    // il totale non va confrontato con gli anni pieni senza dirlo.
+    mesi: buste.length, parziale: buste.length < 12,
+    // quello che il 730 di quell'anno prevedeva di far arrivare in busta
+    rimborsoPrevisto: attesa ? attesa.rimborsoBusta : null,
+    annoImpostaRimborso: attesa ? attesa.anno : null,
+    tot: round2(netto + rimborsoIncassato),
+    valori: { netto, rimborso: rimborsoIncassato },
+  };
+});
+
+// Totale storico: quanto e' stato trattenuto in eccesso e poi restituito.
+export const saldoDichiarazioni = () => {
+  const ecc = DICHIARAZIONI.reduce((s, d) => s + (d.ritenute - d.impostaNetta), 0);
+  const rim = DICHIARAZIONI.reduce((s, d) => s + (d.rimborsoBusta || 0), 0);
+  const ultimo = DICHIARAZIONI[DICHIARAZIONI.length - 1];
+  return {
+    anni: DICHIARAZIONI.length,
+    eccedenzaTotale: round2(ecc), rimborsatoTotale: round2(rim),
+    mediaAnnua: round2(ecc / DICHIARAZIONI.length),
+    ultimo: { anno: ultimo.anno, presentata: ultimo.presentata,
+      eccedenza: round2(ultimo.ritenute - ultimo.impostaNetta), rimborso: ultimo.rimborsoBusta },
+  };
+};
+
+// RIMBORSO ANCORA DA INCASSARE. Il 730 dice quanto tornera' in busta; l'archivio buste
+// dice se e' gia' arrivato. Quando i due non coincidono c'e' del denaro in viaggio, e
+// vale la pena dirlo in home invece di farselo trovare per caso nel cedolino.
+export const rimborsoAtteso = () => {
+  for (const d of [...DICHIARAZIONI].reverse()) {
+    if (!d.rimborsoBusta) continue;
+    const incassato = stipendiAnno(d.presentata).reduce((s, b) => s + (b.rimborso_730 || 0), 0);
+    if (round2(incassato) < d.rimborsoBusta - 1) {
+      return { anno: d.anno, presentata: d.presentata, importo: d.rimborsoBusta,
+        giaIncassato: round2(incassato), residuo: round2(d.rimborsoBusta - incassato) };
+    }
+    return null;   // l'ultimo con credito e' gia' stato pagato: non c'e' nulla in viaggio
+  }
+  return null;
+};
+
+// Plafond del fondo pensione: quanto del tetto deducibile e' stato usato, e quanto
+// vale l'extra da prima occupazione mai richiesto.
+export const plafondFondo = () => ({ ...plafondPrimaOccupazione(), serie: seriePlafond(), tettoOrdinario: PLAFOND_ORDINARIO });
+
+// Detrazioni pluriennali gia' acquisite, dall'anno indicato in poi.
+export const creditiFuturi = (daAnno) => creditiInMaturazione(daAnno);
 
 export const SEG_FISCO = [
   { k: 'irpef', nome: 'IRPEF', colore: '#FF3B5C' },

@@ -95,7 +95,7 @@ const _updateChrome = (name) => {
   // Energia e Stipendi hanno il loro pulsante dedicato in fondo alla pagina: il "+"
   // in alto (che crea un MOVIMENTO) lì confonde e basta.
   const senzaPiu = ['energia', 'energia-bollette', 'energia-anno', 'bolletta-dettaglio',
-    'stipendi', 'stipendi-anno', 'stipendi-storico', 'stipendi-fondo', 'stipendi-fisco',
+    'stipendi', 'stipendi-anno', 'stipendi-storico', 'stipendi-fondo', 'stipendi-fisco', 'stipendi-dichiarazioni',
     'stipendio-dettaglio', 'stipendio-nuovo'].includes(name);
   if (addBtn) addBtn.style.display = (isInserimento || isRicerca || senzaPiu) ? 'none' : 'flex';
   const annulla = document.getElementById('btn-annulla');

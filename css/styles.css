@@ -1487,3 +1487,18 @@ input:focus, input:focus-visible, select:focus, select:focus-visible, textarea:f
 
 /* Pulsante d'azione a piena larghezza in fondo alle sezioni (come "Aggiungi bolletta") */
 .btn.btn-lg{width:calc(100% - 8px);max-width:420px;padding:15px 20px;font-size:16px;font-weight:700;border-radius:14px}
+
+/* ═══ DICHIARAZIONI — blocchi a fisarmonica ═══
+   Una riga per blocco: nome, numero, frase che lo spiega. Il corpo si apre al tocco.
+   Chiusa la pagina sta in una schermata: su un telefono e' l'unico modo di consultarla. */
+.dich-head{display:flex;align-items:center;gap:12px;padding:13px 14px;cursor:pointer;user-select:none}
+.dich-head .b{flex:1;min-width:0}
+.dich-head .r1{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.dich-head .nm{font-size:14px;font-weight:600}
+.dich-head .imp{font-size:15.5px;font-weight:750}
+.dich-head .r2{font-size:12px;color:var(--txt-2);margin-top:3px;line-height:1.35}
+.dich-chev{color:var(--txt-3);font-size:17px;flex:none;transition:transform .2s}
+.dich-head.on .dich-chev{transform:rotate(90deg);color:var(--blue-2)}
+.dich-head.on{background:var(--surface-2)}
+.dich-body{display:none;padding:2px 14px 4px;border-top:1px solid var(--line)}
+.dich-body.on{display:block}
