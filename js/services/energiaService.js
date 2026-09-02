@@ -233,13 +233,18 @@ export const heatmapConsumi = () => {
   // I valori vengono dai CONSUMI MENSILI REALI letti dalle bollette (store
   // 'consumiMensili'). Prima si spalmava il totale bimestrale sui giorni: comodo ma
   // sbagliato fino al 19% su un mese. Se un mese non c'è, resta vuoto: non lo stimo.
-  const celle = {};
+  // La forma del risultato deve restare quella attesa dal componente: 'anni' stringhe
+  // (usa .slice(2) per mostrare '25) e 'celle' NUMERI. La provenienza di ogni mese sta
+  // a parte, in 'meta', per non cambiare il tipo delle celle.
+  const celle = {}, meta = {};
   for (const c of state.consumiMensili) {
-    celle[`${c.anno}-${c.mese}`] = { kwh: c.kwh, fonte: c.fonte, conferme: c.conferme || 1 };
+    const k = `${c.anno}-${c.mese}`;
+    celle[k] = c.kwh;
+    meta[k] = { fonte: c.fonte, conferme: c.conferme || 1 };
   }
-  const anni = [...new Set(state.consumiMensili.map(c => c.anno))].sort();
-  const valori = Object.values(celle).map(c => c.kwh);
-  return { celle, anni, max: valori.length ? Math.max(...valori) : 0 };
+  const anni = [...new Set(state.consumiMensili.map(c => String(c.anno)))].sort().reverse();
+  const valori = Object.values(celle);
+  return { anni, celle, meta, max: Math.max(1, ...valori) };
 };
 
 export const VOCI_COSTO = [

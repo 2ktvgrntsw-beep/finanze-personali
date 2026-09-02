@@ -145,6 +145,20 @@ export const parseBusta = (testo, totaliPos = null) => {
   const totComp = (totaliPos && totaliPos.competenze) ?? primoPerEtichetta(righe, /TOTALE.{0,3}COMPETENZE/i);
   const totTratt = (totaliPos && totaliPos.trattenute) ?? primoPerEtichetta(righe, /TOTALE.{0,3}TRATTENUTE/i);
 
+  // RIMBORSO 730: è un CREDITO che il datore ti accredita in busta per conto del fisco,
+  // non una retribuzione. Sta fra le competenze e gonfia sia il totale competenze sia il
+  // netto del mese. Va scorporato da entrambi e tenuto a parte, altrimenti quel mese
+  // sembra uno stipendio molto più alto del vero e falsa medie e confronti.
+  const rimb = primoPerEtichetta(righe, /Rimborsi?\s*da\s*730/i);
+  if (rimb) {
+    r.rimborso_730 = rimb;
+    // l'anno d'imposta sta sulla stessa riga della voce: lo cerco lì, non nel testo
+    // intero, dove altri "2024" (addizionali, conguagli) potrebbero venire prima.
+    const riga = righe.find(x => /Rimborsi?\s*da\s*730/i.test(x)) || '';
+    const annoImp = riga.match(/730\D{0,4}(20\d\d)/);
+    if (annoImp) r.rimborso_730_anno = +annoImp[1];
+  }
+
   // ADDEBITI NETTI: spese TUE che il datore ti riaddebita tramite il cedolino (auto a
   // uso privato, mensa/ticket, multe, trattenute sindacali). Stanno fra le trattenute ma
   // NON sono imposte né contributi: sono già denaro tassato che ti viene ripreso. Vanno
@@ -162,6 +176,8 @@ export const parseBusta = (testo, totaliPos = null) => {
   if (netto != null) r.netto = netto;
   else if (totComp != null && totTratt != null) r.netto = Math.round((totComp - totTratt) * 100) / 100;
   if (totTratt != null) r.trattenute = Math.round((totTratt - giro) * 100) / 100;
+  // il rimborso 730 esce dal netto: quello che resta è ciò che il LAVORO ha prodotto
+  if (r.netto != null && r.rimborso_730) r.netto = Math.round((r.netto - r.rimborso_730) * 100) / 100;
   // lordo per identità di busta (mai inventato): lordo = netto + trattenute depurate
   if (r.netto != null && r.trattenute != null) r.lordo = Math.round((r.netto + r.trattenute) * 100) / 100;
 

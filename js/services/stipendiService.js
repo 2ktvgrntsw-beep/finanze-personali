@@ -431,6 +431,9 @@ export const salvaStipendio = async (b) => {
     cometa_azienda: round2(b.cometa_azienda || 0),
     premi_detassati: round2(b.premi_detassati || 0),
     rimborso_fiscale_escluso: round2(b.rimborso_fiscale_escluso || 0),
+    // rimborso 730: credito accreditato in busta, tenuto fuori da netto e lordo
+    rimborso_730: round2(b.rimborso_730 || 0),
+    rimborso_730_anno: b.rimborso_730_anno || null,
     tredicesima_inclusa: !!b.tredicesima_inclusa,
     cessazione: !!b.cessazione,
     manuale: true,   // inserita/modificata da te: il seed non la tocca

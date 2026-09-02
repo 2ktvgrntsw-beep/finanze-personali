@@ -20,7 +20,7 @@ const bozza = () => {
     datore: DATORI[DATORI.length - 1]?.nome || '',
     netto: '', trattenute: '', tfr_a_fondo_pensione: '', cometa_dipendente: '', cometa_azienda: '',
     contributi_inps: '', irpef_netta: '', addizionale_regionale: '', addizionale_comunale: '',
-    addebiti_netti: '', partite_di_giro: 0, tredicesima_inclusa: false, cessazione: false,
+    addebiti_netti: '', rimborso_730: '', partite_di_giro: 0, tredicesima_inclusa: false, cessazione: false,
   };
 };
 
@@ -105,6 +105,7 @@ const _render = (root) => {
       ${_campo('irpef_netta', 'IRPEF')}
       ${_campo('addizionale_regionale', 'Addizionale regionale')}
       ${_campo('addizionale_comunale', 'Addizionale comunale')}
+      ${_campo('rimborso_730', 'Rimborso 730 ricevuto', '(credito: non è stipendio)')}
     </div>
 
     <div class="card">
@@ -184,6 +185,8 @@ const _salva = async (root) => {
     anno: +d.anno, mese: +d.mese, datore: d.datore,
     netto: _n(d.netto), trattenute: _n(d.trattenute),
     partite_di_giro: _n(d.partite_di_giro),
+    rimborso_730: _n(d.rimborso_730),
+    rimborso_730_anno: d.rimborso_730_anno || null,
     addebiti_netti: _n(d.addebiti_netti),
     tfr_a_fondo_pensione: _n(d.tfr_a_fondo_pensione),
     cometa_dipendente: _n(d.cometa_dipendente),

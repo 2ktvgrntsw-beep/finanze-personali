@@ -348,7 +348,7 @@ const _renderHeatmap = (cont) => {
     }).join('');
   }).join('');
   cont.innerHTML = `<div class="hm-grid" style="grid-template-columns:34px repeat(${anni.length},1fr)">${testata}${righe}</div>
-    <div class="eprice-note" style="margin-top:10px;padding:0 4px">kWh mensili · le bollette a cavallo di due mesi sono ripartite in proporzione ai giorni.</div>`;
+    <div class="eprice-note" style="margin-top:10px;padding:0 4px">kWh mensili reali, letti dallo storico che le bollette stesse riportano. I mesi senza dato restano vuoti.</div>`;
 };
 
 // Confronto fornitori: €/kWh medio tutto compreso, dal più economico.
