@@ -7,6 +7,7 @@ import { escapeHtml, fmtEUR, fmtDataEstesa, fmtDataEstesaAnno } from '../core/ut
 import { navigate } from '../core/router.js';
 import { esportaBackup, importaBackup } from '../services/excelService.js';
 import { registraBackupExcelFatto, giorniDaUltimoBackupExcel, esportaJSON, importaJSON } from '../services/backupService.js';
+import { DICHIARAZIONI } from '../core/dichiarazioni.js';
 import { applicaTagBulk, cercaMovimenti } from '../services/movimentiService.js';
 import { STORE_NAMES } from '../core/db.js';
 import { dbClear } from '../core/db.js';
@@ -49,6 +50,8 @@ export const renderImpostazioni = async (root) => {
       <div class="patrow" id="go-energia" style="cursor:pointer"><div class="icon" style="background:var(--surface-2)">${UI_SVG.fulmine}</div><div class="body"><div class="row1"><span class="name">Energia</span><span class="meta num">${state.bollette.length}</span></div></div><div class="chev">›</div></div>
       <div class="divider"></div>
       <div class="patrow" id="go-stipendi" style="cursor:pointer"><div class="icon" style="background:var(--surface-2)">${UI_SVG.busta}</div><div class="body"><div class="row1"><span class="name">Stipendi</span><span class="meta num">${state.stipendi.length}</span></div></div><div class="chev">›</div></div>
+      <div class="divider"></div>
+      <div class="patrow" id="go-fisco" style="cursor:pointer"><div class="icon" style="background:var(--surface-2)">${UI_SVG.busta}</div><div class="body"><div class="row1"><span class="name">Fisco</span><span class="meta num">${DICHIARAZIONI.length}</span></div></div><div class="chev">›</div></div>
     </div>
 
     <div class="section-lbl"><span>Gestione</span></div>
@@ -120,6 +123,7 @@ export const renderImpostazioni = async (root) => {
   // navigazione
   root.querySelector('#go-energia').addEventListener('click', () => navigate('energia'));
   root.querySelector('#go-stipendi').addEventListener('click', () => navigate('stipendi'));
+  root.querySelector('#go-fisco').addEventListener('click', () => navigate('fisco'));
   root.querySelector('#go-conti').addEventListener('click', () => navigate('conti'));
   root.querySelector('#go-cat').addEventListener('click', () => navigate('categorie'));
 

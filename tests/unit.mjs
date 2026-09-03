@@ -10,12 +10,14 @@ import { toISO, toAnnomese } from '../js/core/utils.js';
 import {
   DICHIARAZIONI, verificaIdentita, irpefPerScaglioni, scaglioniDi,
   plafondPrimaOccupazione, detrazionePluriennale, detrazionePluriennaleCalcolata, creditiInMaturazione,
+  plafondOrdinarioDi, plafondAnno, anniPlafond,
 } from '../js/core/dichiarazioni.js';
 import { certificatoDi } from '../js/core/fiscoUfficiale.js';
 import { pianoSeed } from '../js/core/seedStipendi.js';
 import { state } from '../js/core/store.js';
 import { round2 } from '../js/core/utils.js';
 import { bilancioAnnuale, candidatiUnaTantum, TAG_UNA_TANTUM } from '../js/services/bilancioService.js';
+import { deduzioniAnno, detrazioniAnnuali, attesoAnno } from '../js/services/fiscoService.js';
 
 let falliti = 0, passati = 0;
 const ok = (nome, cond, extra = '') => {
@@ -64,13 +66,33 @@ console.log('\nscaglioni storici');
 
 console.log('\nplafond previdenza complementare');
 {
-  const p = plafondPrimaOccupazione();
+  const p = plafondPrimaOccupazione(2025);
   ok('cinque anni di riferimento', p.primiCinqueAnni.length === 5);
   ok('residuo positivo e sotto il massimo teorico', p.residuo > 0 && p.residuo <= 25822.85);
   ok('incremento annuo mai oltre 2.582,29', p.incrementoAnnuo <= 2582.29);
   ok('tetto annuo = ordinario + incremento',
-    vicino(p.tettoAnnuo, 5164.57 + p.incrementoAnnuo, 0.01));
+    vicino(p.tettoAnnuo, p.ordinario + p.incrementoAnnuo, 0.01));
   ok('finestra chiusa al 25esimo anno di adesione', p.scadenza === 2040);
+
+  // Il tetto ORDINARIO non e' una costante: la legge di bilancio 2026 lo ha portato da
+  // 5.164,57 a 5.300. Trattarlo come fisso avrebbe falsato ogni percentuale dal 2026.
+  ok('tetto ordinario 2025 = 5.164,57', plafondOrdinarioDi(2025) === 5164.57);
+  ok('tetto ordinario 2026 = 5.300', plafondOrdinarioDi(2026) === 5300);
+  ok('tetto con recupero 2026 = 7.882,29',
+    vicino(plafondPrimaOccupazione(2026).tettoAnnuo, 7882.29, 0.01),
+    `${plafondPrimaOccupazione(2026).tettoAnnuo}`);
+  ok('il plafond arretrato non cambia con l\'anno: guarda il 2016-2020',
+    plafondPrimaOccupazione(2026).residuo === plafondPrimaOccupazione(2025).residuo);
+
+  // riga della barra: l'anno in corso non ha ancora un 730 ma ha comunque un tetto
+  const r26 = plafondAnno(2026);
+  ok('2026 non e\' ancora dichiarato', r26.dichiarato === false && r26.dedotto === 0);
+  ok('ma il tetto del 2026 c\'e\'', r26.tetto === 5300 && vicino(r26.tettoConRecupero, 7882.29, 0.01));
+  const r25 = plafondAnno(2025);
+  ok('2025 dichiarato, quota calcolata sul tetto del suo anno',
+    r25.dichiarato === true && r25.quota === Math.round(r25.dedotto / 5164.57 * 100), `${r25.quota}%`);
+  ok('gli anni navigabili comprendono quello in corso',
+    anniPlafond().includes(new Date().getFullYear()));
 }
 
 console.log('\ndetrazioni pluriennali');
@@ -293,6 +315,50 @@ console.log('\nseed buste paga: la correzione a mano vince sul seed');
     SEED);
   ok('una busta aggiunta a mano non fa riseminare', conAggiunta.allineato === true);
   ok('e non viene rimossa', conAggiunta.obsoleti.length === 0);
+}
+
+console.log('\nsezione fisco: deduzioni e detrazioni');
+{
+  // DEDUZIONI. Il rigo 13 del 730 e' zero in nove anni su dieci, ma non perche' non ci
+  // siano deduzioni: i contributi al fondo li deduce il sostituto in busta, quindi al
+  // 730 il reddito arriva gia' al netto. Elencare solo il rigo 13 avrebbe mostrato una
+  // riga vuota; qui devono esserci tutte e tre le voci che abbassano l'imponibile.
+  const d25 = deduzioniAnno(2025);
+  ok('la previdenza complementare e\' fra le deduzioni',
+    d25.voci.some(v => v.k === 'previdenza' && v.val === 3174));
+  ok('e cosi\' l\'abitazione principale',
+    d25.voci.some(v => v.k === 'abitazione' && v.val === 563));
+  ok('totale dedotto = somma delle voci', d25.totale === 3737, `${d25.totale}`);
+  ok('reddito complessivo - abitazione = imponibile',
+    d25.redditoComplessivo - 563 === d25.imponibile);
+  ok('aliquota marginale 2025 al 43%', d25.aliquotaMarginale === 43, `${d25.aliquotaMarginale}`);
+  ok('il risparmio stimato usa la marginale',
+    vicino(d25.risparmioStimato, 3737 * 0.43, 0.01), `${d25.risparmioStimato}`);
+  const d23 = deduzioniAnno(2023);
+  ok('gli altri oneri deducibili compaiono quando ci sono',
+    d23.voci.some(v => v.k === 'altri' && v.val === 45));
+  ok('un anno senza dichiarazione non inventa deduzioni', deduzioniAnno(2030) === null);
+
+  // DETRAZIONI. La somma delle voci esposte piu' il resto dichiarato deve sempre
+  // ricomporre il totale del prospetto: niente puo' sparire per strada.
+  const det = detrazioniAnnuali();
+  ok('un anno per ogni dichiarazione', det.length === DICHIARAZIONI.length);
+  ok('ordinate dal piu\' recente', det[0].anno > det[det.length - 1].anno);
+  for (const x of det) {
+    const somma = round2(x.voci.reduce((s2, v) => s2 + v.val, 0) + x.resto);
+    ok(`${x.anno}: voci + resto = totale del prospetto`, vicino(somma, x.totale, 0.51),
+      `${somma} vs ${x.totale}`);
+  }
+
+  // ATTESO. Non un numero calato dall'alto: la somma di rate, ognuna col suo intervento.
+  const att = attesoAnno(2026);
+  ok('l\'atteso 2026 e\' la somma delle sue voci',
+    vicino(att.voci.reduce((s2, v) => s2 + v.importo, 0), att.totale, 0.01));
+  ok('ogni voce dice a che rata siamo',
+    att.voci.every(v => v.rata >= 1 && v.rata <= v.su));
+  ok('il 2026 non e\' ancora dichiarato', att.dichiarato === false);
+  ok('lo scalino verso l\'anno dopo e\' dichiarato',
+    vicino(att.scalino, att.totale - att.prossimoAnno, 0.01));
 }
 
 console.log(`\n${passati} passati, ${falliti} falliti\n`);

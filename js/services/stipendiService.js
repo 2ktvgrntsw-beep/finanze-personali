@@ -13,7 +13,8 @@ import { dbAdd, dbDelete } from '../core/db.js';
 import { FISCO_UFFICIALE, certificatoDi } from '../core/fiscoUfficiale.js';
 import {
   DICHIARAZIONI, dichiarazioneDi, dichiarazioneIncassataNel, irpefPerScaglioni,
-  plafondPrimaOccupazione, seriePlafond, PLAFOND_ORDINARIO, creditiInMaturazione,
+  plafondPrimaOccupazione, seriePlafond, plafondAnno, anniPlafond, plafondOrdinarioDi,
+  creditiInMaturazione,
 } from '../core/dichiarazioni.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -489,9 +490,19 @@ export const rimborsoAtteso = () => {
   return null;
 };
 
-// Plafond del fondo pensione: quanto del tetto deducibile e' stato usato, e quanto
-// vale l'extra da prima occupazione mai richiesto.
-export const plafondFondo = () => ({ ...plafondPrimaOccupazione(), serie: seriePlafond(), tettoOrdinario: PLAFOND_ORDINARIO });
+// Plafond del fondo pensione per un anno: quanto del tetto deducibile e' stato usato e
+// quanto vale l'extra da prima occupazione mai richiesto. Il tetto ordinario cambia per
+// anno (5.164,57 fino al 2025, 5.300 dal 2026), quindi va sempre chiesto per anno.
+export const plafondFondo = (anno) => {
+  const a = Number(anno) || new Date().getFullYear();
+  return {
+    ...plafondPrimaOccupazione(a),
+    riga: plafondAnno(a),
+    serie: seriePlafond(),
+    anni: anniPlafond(),
+    tettoOrdinario: plafondOrdinarioDi(a),
+  };
+};
 
 // Detrazioni pluriennali gia' acquisite, dall'anno indicato in poi.
 export const creditiFuturi = (daAnno) => creditiInMaturazione(daAnno);

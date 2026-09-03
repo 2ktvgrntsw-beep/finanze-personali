@@ -32,7 +32,9 @@ import { renderDettaglioInvestimento } from './components/dettaglioInvestimento.
 import { renderCategorie } from './components/categorie.js';
 import { renderImpostazioni } from './components/impostazioni.js';
 import { renderEnergia, renderEnergiaAnno } from './components/energia.js';
-import { renderStipendi, renderStipendiAnno, renderStipendioDettaglio, renderStipendiStorico, renderStipendiFondo, renderStipendiFisco, renderStipendiDichiarazioni } from './components/stipendi.js';
+import { renderStipendi, renderStipendiAnno, renderStipendioDettaglio, renderStipendiStorico, renderStipendiFondo } from './components/stipendi.js';
+import { renderFisco, renderFiscoDichiarazioni } from './components/fisco.js';
+import { renderDeduzione } from './components/deduzione.js';
 import { renderStipendioForm } from './components/stipendiForm.js';
 import { renderBilancio } from './components/bilancio.js';
 import { renderPaniere } from './components/panieri.js';
@@ -74,8 +76,9 @@ const registraRotte = () => {
   registerRoute('stipendio-dettaglio', renderStipendioDettaglio);
   registerRoute('stipendi-storico', renderStipendiStorico);
   registerRoute('stipendi-fondo', renderStipendiFondo);
-  registerRoute('stipendi-fisco', renderStipendiFisco);
-  registerRoute('stipendi-dichiarazioni', renderStipendiDichiarazioni);
+  registerRoute('fisco', renderFisco);
+  registerRoute('fisco-dichiarazioni', renderFiscoDichiarazioni);
+  registerRoute('deduzione', (root, params) => renderDeduzione(root, params));
   registerRoute('bilancio', renderBilancio);
   registerRoute('stipendio-nuovo', (root, params) => renderStipendioForm(root, params));
   registerRoute('paniere', renderPaniere);

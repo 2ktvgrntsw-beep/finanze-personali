@@ -153,9 +153,20 @@ export const dichiarazioneIncassataNel = (anno) =>
 // VENTICINQUESIMO anno puo' alzarlo di quanto ha lasciato sul tavolo, fino a
 // +2.582,29 EUR l'anno. Il plafond arretrato non si perde: scade nel 2040.
 // ─────────────────────────────────────────────────────────────────────────────
-export const PLAFOND_ORDINARIO = 5164.57;
+// Il tetto ordinario NON e' una costante: fermo a 5.164,57 dal 2007, la legge di
+// bilancio 2026 lo ha portato a 5.300 dal periodo d'imposta 2026. Tenerlo come numero
+// fisso avrebbe falsato ogni percentuale dal 2026 in poi, quindi e' una tabella per anno.
+const PLAFOND_PER_ANNO = [
+  { dal: 2026, valore: 5300.00 },
+  { dal: 2007, valore: 5164.57 },
+];
+export const plafondOrdinarioDi = (anno) =>
+  (PLAFOND_PER_ANNO.find(x => Number(anno) >= x.dal) || PLAFOND_PER_ANNO[PLAFOND_PER_ANNO.length - 1]).valore;
+
+// L'incremento massimo da prima occupazione invece non e' stato ritoccato: resta
+// 2.582,29. Quindi dal 2026 il tetto massimo raggiungibile e' 7.882,29, non 7.746,86.
 export const PLAFOND_INCREMENTO_MAX = 2582.29;
-const PLAFOND_PRIMI_5 = 25822.85;   // 5 x 5.164,57
+const PLAFOND_PRIMI_5 = 25822.85;   // 5 x 5.164,57, i cinque anni 2016-2020
 
 // Adesione a Cometa: 10 aprile 2016 -> primi cinque anni = 2016-2020,
 // finestra dell'incremento = dal 2021 al 2040.
@@ -164,18 +175,23 @@ const PRIMI_CINQUE = [2016, 2017, 2018, 2019, 2020];
 
 export const dedottoDi = (d) => (d.cometaOrdinario || 0) + (d.cometaPrimaOccupazione || 0);
 
-export const plafondPrimaOccupazione = () => {
+export const plafondPrimaOccupazione = (anno) => {
   const nei5 = DICHIARAZIONI.filter(d => PRIMI_CINQUE.includes(d.anno));
   const dedotto5 = nei5.reduce((s, d) => s + dedottoDi(d), 0);
   const usatoDopo = DICHIARAZIONI.filter(d => d.anno > 2020)
     .reduce((s, d) => s + (d.cometaPrimaOccupazione || 0), 0);
   const residuo = Math.round((PLAFOND_PRIMI_5 - dedotto5 - usatoDopo) * 100) / 100;
+  const incremento = Math.min(PLAFOND_INCREMENTO_MAX, Math.max(0, residuo));
+  const annoRif = anno || new Date().getFullYear();
+  const ordinario = plafondOrdinarioDi(annoRif);
   return {
+    anno: Number(annoRif),
     primiCinqueAnni: PRIMI_CINQUE, dedottoNeiPrimiCinque: Math.round(dedotto5 * 100) / 100,
     usatoNellaFinestra: Math.round(usatoDopo * 100) / 100,
     residuo: Math.max(0, residuo),
-    incrementoAnnuo: Math.min(PLAFOND_INCREMENTO_MAX, Math.max(0, residuo)),
-    tettoAnnuo: Math.round((PLAFOND_ORDINARIO + Math.min(PLAFOND_INCREMENTO_MAX, Math.max(0, residuo))) * 100) / 100,
+    incrementoAnnuo: incremento,
+    ordinario,
+    tettoAnnuo: Math.round((ordinario + incremento) * 100) / 100,
     scadenza: ANNO_ADESIONE + 24,   // 25o anno di adesione = 2040
   };
 };
@@ -183,13 +199,38 @@ export const plafondPrimaOccupazione = () => {
 // Serie anno per anno: quanto hai dedotto e quanto ti e' avanzato del tetto ordinario.
 export const seriePlafond = () => DICHIARAZIONI.map(d => {
   const ded = dedottoDi(d);
+  const tetto = plafondOrdinarioDi(d.anno);
   return {
     anno: d.anno, dedotto: Math.round(ded * 100) / 100,
     ordinario: d.cometaOrdinario || 0, primaOccupazione: d.cometaPrimaOccupazione || 0,
-    nonUsato: Math.round((PLAFOND_ORDINARIO - ded) * 100) / 100,
-    quota: Math.round(ded / PLAFOND_ORDINARIO * 100),
+    tetto,
+    nonUsato: Math.round((tetto - ded) * 100) / 100,
+    quota: Math.round(ded / tetto * 100),
   };
 });
+
+// Riga dell'anno per la barra: se per quell'anno non c'e' una dichiarazione (tipicamente
+// l'anno in corso, il cui 730 si presenta l'anno prossimo) restituisce comunque il tetto,
+// con dedotto a zero e la nota che il dato non c'e' ancora.
+export const plafondAnno = (anno) => {
+  const a = Number(anno);
+  const riga = seriePlafond().find(r => r.anno === a);
+  const p = plafondPrimaOccupazione(a);
+  if (riga) return { ...riga, dichiarato: true, tettoConRecupero: p.tettoAnnuo, incremento: p.incrementoAnnuo };
+  const tetto = plafondOrdinarioDi(a);
+  return {
+    anno: a, dedotto: 0, ordinario: 0, primaOccupazione: 0, tetto,
+    nonUsato: tetto, quota: 0, dichiarato: false,
+    tettoConRecupero: p.tettoAnnuo, incremento: p.incrementoAnnuo,
+  };
+};
+
+// Gli anni su cui la barra puo' navigare: quelli dichiarati piu' l'anno in corso.
+export const anniPlafond = () => {
+  const anni = new Set(DICHIARAZIONI.map(d => d.anno));
+  anni.add(new Date().getFullYear());
+  return [...anni].sort((a, b) => b - a);
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // VERIFICA DELLE IDENTITA' CONTABILI. Non e' un vezzo: se domani si aggiunge un anno

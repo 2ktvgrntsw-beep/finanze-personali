@@ -70,7 +70,7 @@ const _renderCategoriaTempo = (body, root) => {
         ${macros.map(m => `<div class="cat-cell" data-macro="${escapeHtml(m)}"><div class="ci">${iconaMacro(m)}</div><span>${escapeHtml(m)}</span></div>`).join('')}
       </div>
       ${panieriSezioneHTML()}
-      <button class="btn btn-secondary btn-lg" id="apri-bilancio" style="margin:20px auto 10px;display:block">Bilancio · quanto resta ogni anno</button>`;
+      <button class="btn btn-secondary btn-lg" id="apri-bilancio" style="margin:20px auto 10px;display:block">Bilancio</button>`;
     body.querySelectorAll('[data-macro]').forEach(el => el.addEventListener('click', () => { location.hash = buildHash('analisi', { macro: el.dataset.macro }); }));
     bindPanieri(body);
     body.querySelector('#apri-bilancio').addEventListener('click', () => navigate('bilancio'));

@@ -12,19 +12,15 @@ import { state } from '../core/store.js';
 import { fmtEUR, escapeHtml } from '../core/utils.js';
 import { navigate } from '../core/router.js';
 import { _barreImpilate } from './energia.js';
-import { COMETA, montante, rendimento } from '../core/cometaEstrattoConto.js';
 import {
   DATORI, coloreDatore, ultimoStipendio, stipendioById, anniDisponibili,
   aggregatoAnno, variazioneAnno, nettoPerAnnoPerDatore, composizioneLordoAnnuale,
   nettoMensile, composizioneLordoMensile, confrontoDatori, heatmapNetto,
   versamentoFondoAnnuale, versamentoFondoTotale, SEG_FONDO,
   dettaglioFondoAnnuale, dettaglioFondoPerDatore,
-  fiscoAnnuale, fiscoTotale, elencoRimborsi, SEG_FISCO, dettaglioTrattenute, verificaFiscale, SEG_LORDO,
-  nettoGuadagnato,
-  waterfallAnno, saldoDichiarazioni, plafondFondo, creditiFuturi, cassaRealeAnnuale, rimborsoAtteso,
+  dettaglioTrattenute, SEG_LORDO, nettoGuadagnato, plafondFondo,
   mese3, MESI3,
 } from '../services/stipendiService.js';
-import { DICHIARAZIONI, INTERVENTI_PLURIENNALI } from '../core/dichiarazioni.js';
 
 const BUSTA = '<svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 9h16M8 13h5"/></svg>';
 
@@ -104,29 +100,6 @@ export const renderStipendi = async (root) => {
       <div class="eboll-chev">›</div>
     </div>
 
-    <div class="section-lbl"><span>Fisco</span></div>
-    <div class="card eboll" id="vedi-fisco" style="cursor:pointer">
-      <div class="body" style="flex:1">
-        <div class="lbl2">Imposte pagate sul lavoro</div>
-        <div class="num" style="font-size:24px;font-weight:750">${fmtEUR(fiscoTotale().pagato)}</div>
-        <div class="meta" style="margin-top:4px">di cui <b style="color:var(--up)">${fmtEUR(fiscoTotale().rimborso)}</b> restituiti col 730 (${fiscoTotale().quotaRestituita}%)</div>
-      </div>
-      <div class="eboll-chev">›</div>
-    </div>
-    ${(() => {
-      // Soldi in viaggio: il 730 dice che devono arrivare, le buste dicono che non sono
-      // ancora arrivati. E' l'unica cosa della sezione Dichiarazioni che merita la home.
-      const a = rimborsoAtteso();
-      return a ? `<div class="card eboll" id="vedi-dich-home" style="cursor:pointer;border-left:3px solid var(--up)">
-        <div class="body" style="flex:1">
-          <div class="lbl2">Rimborso 730 in arrivo</div>
-          <div class="num" style="font-size:20px;font-weight:750;color:var(--up)">${fmtEUR(a.residuo)}</div>
-          <div class="meta" style="margin-top:4px">dal 730 sui redditi ${a.anno} · accreditato in busta nel corso del ${a.presentata}</div>
-        </div>
-        <div class="eboll-chev">›</div>
-      </div>` : '';
-    })()}
-
     <!-- SCOMPOSIZIONE LORDO anno per anno -->
     <div class="section-lbl"><span>Dove va il lordo · anno per anno</span></div>
     <div class="card">
@@ -182,10 +155,6 @@ export const renderStipendi = async (root) => {
 
   const nb = root.querySelector('#nuova-busta');
   if (nb) nb.addEventListener('click', () => navigate('stipendio-nuovo'));
-  const vfi = root.querySelector('#vedi-fisco');
-  if (vfi) vfi.addEventListener('click', () => navigate('stipendi-fisco'));
-  const vdh = root.querySelector('#vedi-dich-home');
-  if (vdh) vdh.addEventListener('click', () => navigate('stipendi-dichiarazioni'));
   const vf = root.querySelector('#vedi-fondo');
   if (vf) vf.addEventListener('click', () => navigate('stipendi-fondo'));
   const vt = root.querySelector('#vedi-tutte');
@@ -195,11 +164,6 @@ export const renderStipendi = async (root) => {
     el.addEventListener('click', () => navigate('stipendio-dettaglio', { id: el.dataset.stip })));
 };
 
-const _fiscoTotHTML = () => {
-  const t = fiscoTotale();
-  return `Imposte pagate: <b class="num">${fmtEUR(t.pagato)}</b> — restituite col 730 <b class="num">${fmtEUR(t.rimborso)}</b> (${t.quotaRestituita}%). Rimaste allo Stato: ${fmtEUR(t.netto)}.`;
-};
-
 // riga riepilogo totale versato al fondo (sotto le barre)
 const _fondoTotHTML = () => {
   const t = versamentoFondoTotale();
@@ -207,279 +171,25 @@ const _fondoTotHTML = () => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PAGINA FISCO: quanto hai pagato di imposte e quanto ti è tornato indietro
-// ═══════════════════════════════════════════════════════════════════════════
-export const renderStipendiFisco = async (root) => {
-  document.getElementById('view-title').textContent = 'Fisco e rimborsi';
-  const t = fiscoTotale();
-  const perAnno = fiscoAnnuale();
-  const rimborsi = elencoRimborsi();
-  const quota = (v) => t.pagato ? Math.round(v / t.pagato * 100) : 0;
-
-  root.innerHTML = `
-    <div class="net-card" style="margin-top:4px">
-      <div class="lbl2">Imposte pagate sul lavoro</div>
-      <div class="num" style="font-size:30px;font-weight:750">${fmtEUR(t.pagato)}</div>
-      <div class="meta" style="margin-top:4px">di cui <b style="color:var(--up)">${fmtEUR(t.rimborso)}</b> tornati indietro col 730 (${t.quotaRestituita}%)</div>
-    </div>
-
-    <div class="section-lbl"><span>Cosa hai pagato</span></div>
-    <div class="card">
-      ${[['IRPEF', t.irpef, SEG_FISCO[0].colore],
-         ['Addizionale regionale', t.addReg, SEG_FISCO[1].colore],
-         ['Addizionale comunale', t.addCom, SEG_FISCO[2].colore],
-         ['Imposta sostitutiva sui premi', t.sost, '#FF8A3D'],
-         ['IRPEF a tassazione separata', t.sep, '#E2001A']]
-        .filter(x => x[1]).map(([nome, val, col]) => `
-        <div class="fr-row">
-          <div class="fr-head">
-            <span class="fr-nome"><span class="stip-dot" style="background:${col}"></span> ${nome}</span>
-            <span class="fr-val num">${fmtEUR(val)}</span>
-          </div>
-          <div class="fr-bar"><div class="fr-fill" style="width:${quota(val)}%;background:${col}"></div></div>
-          <div class="fr-sub">${quota(val)}% delle imposte pagate</div>
-        </div>`).join('')}
-    </div>
-
-    <div class="section-lbl"><span>Trattenuto e dovuto</span><span class="act" id="vedi-dich">Dichiarazioni ›</span></div>
-    <div class="card" style="padding:4px 14px">
-      ${verificaFiscale().map(v => v.fonte !== '730' ? `
-        <div class="paniere-anno-riga">
-          <span class="num anno">${v.anno} <span class="meta">${escapeHtml(v.datori.join(' + '))}</span></span>
-          <b class="num">${v.irpefTrattenuta == null ? '—' : fmtEUR(v.irpefTrattenuta)}</b>
-          <span class="delta num">730 non ancora presentato</span>
-        </div>` : `
-        <div class="paniere-anno-riga">
-          <span class="num anno">${v.anno} <span class="meta">${escapeHtml(v.datori.join(' + '))}</span></span>
-          <b class="num">${fmtEUR(v.impostaNetta)}</b>
-          <span class="delta ${v.eccedenza > 100 ? 'ko' : 'ok'} num">${v.eccedenza > 0 ? '+' + fmtEUR(v.eccedenza) : 'in linea'}</span>
-        </div>
-        <div class="fr-sub" style="margin:-4px 0 8px">dovuta ${fmtEUR(v.impostaNetta)} · trattenuta ${fmtEUR(v.irpefTrattenuta)}${v.eccedenza > 0 ? ` · restituiti ${fmtEUR(v.rimborso)} nel ${v.presentata}` : ''} · aliquota reale ${v.aliquotaReale.toFixed(1)}%${v.piuDatori ? ' · due datori' : ''}${Math.abs(v.scartoArchivio) > 1 ? ` · <span style="color:var(--warn)">somma buste ${fmtEUR(v.sommaIrpef)}</span>` : ''}</div>
-      `).join('')}
-      <div class="eprice-note" style="margin:4px 0 10px">La colonna centrale è l'imposta <b>davvero dovuta</b> secondo il 730, non quella trattenuta. A destra quanto il datore ha trattenuto in più: non è un errore suo — applica gli scaglioni al solo stipendio e non conosce le tue detrazioni edilizie — ma sono soldi che restano fermi all'erario fino al rimborso dell'anno dopo.</div>
-    </div>
-
-    <div class="section-lbl"><span>Rimborsi 730 ricevuti</span></div>
-    <div class="card" style="padding:4px 14px">
-      ${rimborsi.length ? rimborsi.map(r => `
-        <div class="paniere-anno-riga">
-          <span class="num anno">${MESI3[r.mese - 1]} ${r.anno}</span>
-          <b class="num" style="color:var(--up)">+${fmtEUR(r.importo)}</b>
-        </div>
-        <div class="fr-sub" style="margin:-4px 0 8px">${escapeHtml(r.datore)}${r.annoImposta ? ` · conguaglio dell'anno d'imposta ${r.annoImposta}` : ''}</div>
-      `).join('') : '<div class="empty">Nessun rimborso registrato</div>'}
-    </div>
-
-    <div class="section-lbl"><span>Anno per anno</span></div>
-    <div class="card" style="padding:4px 14px" data-noline>
-      ${perAnno.map(a => `
-        <div class="paniere-anno-riga">
-          <span class="num anno">${a.anno}</span>
-          <b class="num">${fmtEUR(a.pagato)}</b>
-          <span class="delta ${a.rimborso ? 'ok' : ''} num">${a.rimborso ? '+' + fmtEUR(a.rimborso) : '—'}</span>
-        </div>
-        <div class="fr-sub" style="margin:-4px 0 8px">IRPEF ${fmtEUR(a.irpef)}${a.addReg ? ` · reg. ${fmtEUR(a.addReg)}` : ''}${a.addCom ? ` · com. ${fmtEUR(a.addCom)}` : ''}${a.rimborso ? ` · rimborso ricevuto ${fmtEUR(a.rimborso)}` : ''}</div>
-      `).join('')}
-    </div>
-
-    <div class="card">
-      <div class="meta">La colonna a destra è il <b>rimborso incassato in quell'anno</b>: il 730 restituisce
-      quasi sempre imposte dell'anno precedente, quindi non confrontarlo con l'IRPEF della stessa riga.
-      Dove la busta lo dichiara, sotto il rimborso trovi l'anno d'imposta a cui si riferisce.
-      Il rimborso è un credito che ti viene accreditato in busta: non riduce le trattenute del mese,
-      per questo lo tengo separato.</div>
-    </div>
-  `;
-
-  root.querySelector('#vedi-dich')?.addEventListener('click', () => navigate('stipendi-dichiarazioni'));
-};
-
-// ═══════════════════════════════════════════════════════════════════════════
-// PAGINA DICHIARAZIONI (730)
+// PAGINA FONDO PENSIONE (Cometa + TFR): quanto è stato versato e quanto dedotto.
 //
-// Su un telefono una pagina lunga non si consulta: si scorre e si perde. Quindi qui
-// ogni blocco si presenta con UNA riga — il numero che conta e la frase che lo spiega —
-// e si apre al tocco. Chiusa, la pagina sta in una schermata; aperta, dice tutto.
-// Lo stesso schema della sezione Categorie, per non inventare un'interazione nuova.
+// Il VERSATO lo sanno le buste; il DEDOTTO lo sa solo il 730. Le due cose stanno
+// insieme qui perché è qui che ci si ragiona: la domanda "conviene versare di più?"
+// nasce guardando il fondo, non guardando le tasse.
+// Il montante (il valore attuale della posizione) non c'è: era un dato copiato a mano
+// dall'estratto conto e vecchio di mesi, cioè peggio di nessun dato.
 // ═══════════════════════════════════════════════════════════════════════════
-let _annoDich = null;
-let _apertiDich = { fondo: false, crediti: false, cassa: false, passi: false };
+let _annoDed = null;
+let _apertoDettaglioFondo = false;
 
-const _blocco = (k, nome, imp, sotto, corpo, colore) => `
-  <div class="card" style="padding:0;overflow:hidden">
-    <div class="dich-head ${_apertiDich[k] ? 'on' : ''}" data-dich="${k}">
-      <div class="b">
-        <div class="r1"><span class="nm">${nome}</span><span class="imp num"${colore ? ` style="color:${colore}"` : ''}>${imp}</span></div>
-        <div class="r2">${sotto}</div>
-      </div>
-      <div class="dich-chev">›</div>
-    </div>
-    <div class="dich-body ${_apertiDich[k] ? 'on' : ''}" data-dichbody="${k}">${corpo}</div>
-  </div>`;
-
-export const renderStipendiDichiarazioni = async (root) => {
-  document.getElementById('view-title').textContent = 'Dichiarazioni';
-  const anni = DICHIARAZIONI.map(d => d.anno).sort((a, b) => b - a);
-  if (_annoDich == null || !anni.includes(_annoDich)) _annoDich = anni[0];
-  const s = saldoDichiarazioni();
-  const pf = plafondFondo();
-  const ultimoPf = pf.serie[pf.serie.length - 1];
-  const cred = creditiFuturi(anni[0] + 1);
-  const cassa = cassaRealeAnnuale().slice().reverse();
-  const scalino = cred.righe.length > 1 ? cred.righe[0].tot - cred.righe[1].tot : 0;
-
-  // ── FONDO PENSIONE: corpo ────────────────────────────────────────────────
-  const corpoFondo = `
-    <div class="fr-row">
-      <div class="fr-head">
-        <span class="fr-nome">Plafond arretrato da prima occupazione</span>
-        <span class="fr-val num" style="color:var(--up)">${fmtEUR(pf.residuo)}</span>
-      </div>
-      <div class="fr-sub">Nei primi cinque anni di adesione a Cometa (${pf.primiCinqueAnni[0]}-${pf.primiCinqueAnni[4]}) hai dedotto ${fmtEUR(pf.dedottoNeiPrimiCinque)} sui ${fmtEUR(pf.tettoOrdinario * 5)} possibili. Quel margine non è perso: si recupera fino al ${pf.scadenza}, al massimo ${fmtEUR(pf.incrementoAnnuo)} l'anno.</div>
-    </div>
-    <div class="fr-row">
-      <div class="fr-head">
-        <span class="fr-nome">Tetto deducibile quest'anno</span>
-        <span class="fr-val num">${fmtEUR(pf.tettoAnnuo)}</span>
-      </div>
-      <div class="fr-sub">${fmtEUR(pf.tettoOrdinario)} di tetto ordinario + ${fmtEUR(pf.incrementoAnnuo)} di recupero. L'incremento non è mai stato chiesto: dal ${pf.primiCinqueAnni[4] + 1} in poi il rigo E28 del 730 è vuoto.</div>
-    </div>
-    <div class="section-lbl" style="margin:10px 0 6px"><span>Contributi dedotti · anno per anno</span></div>
-    ${pf.serie.slice().reverse().map(r => `
-      <div class="paniere-anno-riga">
-        <span class="num anno">${r.anno}</span>
-        <b class="num">${fmtEUR(r.dedotto)}</b>
-        <span class="delta num" style="color:var(--txt-3)">${r.quota}% del tetto</span>
-      </div>
-      ${r.primaOccupazione ? `<div class="fr-sub" style="margin:-4px 0 8px">di cui ${fmtEUR(r.primaOccupazione)} come prima occupazione</div>` : ''}
-    `).join('')}
-    <div class="eprice-note" style="margin:6px 0 10px">Sono i contributi versati a Cometa — la tua quota più quella del datore — che il 730 porta in deduzione dal reddito. Il TFR conferito non entra nel conto: non è deducibile e non consuma il tetto.</div>`;
-
-  // ── CREDITI FUTURI: corpo ────────────────────────────────────────────────
-  const corpoCrediti = `
-    ${cred.righe.map(r => `
-      <div class="paniere-anno-riga">
-        <span class="num anno">${r.anno}</span>
-        <b class="num">${fmtEUR(r.tot)}</b>
-        <span class="delta num" style="color:var(--txt-3)">${r.voci.length} ${r.voci.length === 1 ? 'rata' : 'rate'}</span>
-      </div>`).join('')}
-    <div class="eprice-note" style="margin:6px 0 10px">Rate di bonus edilizi e arredo già maturate: lo sconto arriva comunque, fino al ${cred.ultimoAnno}. Il salto è nel ${cred.righe[1] ? cred.righe[1].anno : ''}: finisce la rata grossa dell'intervento del 2017 e l'imposta netta risale di circa ${fmtEUR(scalino)} l'anno.</div>`;
-
-  // ── CASSA REALE: corpo ───────────────────────────────────────────────────
-  const corpoCassa = `
-    ${cassa.map(c => `
-      <div class="paniere-anno-riga">
-        <span class="num anno">${c.anno}${c.parziale ? ' <span class="meta">' + c.mesi + ' buste</span>' : ''}</span>
-        <b class="num">${fmtEUR(c.tot)}</b>
-        <span class="delta ${c.rimborsoIncassato ? 'ok' : ''} num">${c.rimborsoIncassato ? '+' + fmtEUR(c.rimborsoIncassato) : '—'}</span>
-      </div>
-      ${!c.rimborsoIncassato && c.rimborsoPrevisto ? `<div class="fr-sub" style="margin:-4px 0 8px">atteso ${fmtEUR(c.rimborsoPrevisto)} dal 730 sui redditi ${c.annoImpostaRimborso}</div>` : ''}
-    `).join('')}
-    <div class="eprice-note" style="margin:6px 0 10px">Il rimborso non è retribuzione e resta fuori dal netto, ma in banca ci arriva: qui le due cose sono rimesse insieme per dire quanto è entrato davvero in un anno solare.</div>`;
-
-  root.innerHTML = `
-    <div class="net-card" style="margin-top:4px">
-      <div class="lbl2">Trattenuto più del dovuto in ${s.anni} anni</div>
-      <div class="num" style="font-size:30px;font-weight:750">${fmtEUR(s.eccedenzaTotale)}</div>
-      <div class="meta" style="margin-top:4px">tutti restituiti col 730 · media ${fmtEUR(s.mediaAnnua)} l'anno</div>
-    </div>
-
-    <div class="section-lbl">
-      <span>Dal reddito al saldo</span>
-      <div class="eyear" id="dich-year">
-        <button id="dich-prev" aria-label="Anno precedente">‹</button>
-        <span class="num" id="dich-lbl">${_annoDich}</span>
-        <button id="dich-next" aria-label="Anno successivo">›</button>
-      </div>
-    </div>
-    <div class="card" id="dich-anno"></div>
-
-    <div class="section-lbl"><span>Fondo pensione · deduzione</span></div>
-    ${_blocco('fondo', `Dedotto nel ${ultimoPf.anno}`, fmtEUR(ultimoPf.dedotto),
-      `${ultimoPf.quota}% del tetto · ${fmtEUR(ultimoPf.nonUsato)} di contributi che potevi ancora dedurre`,
-      corpoFondo)}
-
-    <div class="section-lbl"><span>Detrazioni edilizie già acquisite</span></div>
-    ${_blocco('crediti', 'Ancora da incassare', fmtEUR(cred.residuoTotale),
-      `${fmtEUR(cred.righe[0].tot)} nel ${cred.righe[0].anno}, poi scende · ultima rata nel ${cred.ultimoAnno}`,
-      corpoCrediti, 'var(--up)')}
-
-    <div class="section-lbl"><span>Cassa reale · netto più rimborsi</span></div>
-    ${_blocco('cassa', `Entrato nel ${cassa[0].anno}`, fmtEUR(cassa[0].tot),
-      `${cassa[0].parziale ? `anno in corso, ${cassa[0].mesi} buste · ` : ''}netto ${fmtEUR(cassa[0].netto)}${cassa[0].rimborsoIncassato ? ` · rimborso 730 ${fmtEUR(cassa[0].rimborsoIncassato)}` : (cassa[0].rimborsoPrevisto ? ` · attesi ${fmtEUR(cassa[0].rimborsoPrevisto)} dal 730` : '')}`,
-      corpoCassa)}
-  `;
-
-  // ── blocco ANNO: tre righe sempre visibili, il resto a scomparsa ─────────
-  const disAnno = () => {
-    const w = waterfallAnno(_annoDich);
-    const cont = root.querySelector('#dich-anno');
-    const max = Math.max(...w.passi.map(p => Math.abs(p.val)), 1);
-    const col = { base: '#2E9BFF', giu: '#FF3B5C', tappa: '#8B96AB', saldo: '#22E39A' };
-    const riga = (p) => `
-      <div class="fr-row">
-        <div class="fr-head">
-          <span class="fr-nome"><span class="stip-dot" style="background:${col[p.tipo]}"></span> ${escapeHtml(p.nome)}</span>
-          <span class="fr-val num" style="${p.val < 0 ? 'color:var(--down)' : ''}">${p.val < 0 ? '−' : ''}${fmtEUR(Math.abs(p.val))}</span>
-        </div>
-        <div class="fr-bar"><div class="fr-fill" style="width:${Math.round(Math.abs(p.val) / max * 100)}%;background:${col[p.tipo]}"></div></div>
-      </div>`;
-    // le tre righe che rispondono alla domanda "quanto ho guadagnato, quanto dovevo,
-    // quanto mi hanno preso": il resto del percorso e' dettaglio, e sta sotto.
-    const chiave = ['complessivo', 'netta', 'rit'];
-    const sintesi = w.passi.filter(p => chiave.includes(p.k));
-    const resto = w.passi.filter(p => !chiave.includes(p.k));
-    cont.innerHTML = sintesi.map(riga).join('') + `
-      <div class="fr-head" style="padding-top:8px">
-        <span class="fr-nome" style="font-weight:700">${w.credito ? 'A credito' : 'A debito'}<span class="meta" style="font-weight:500"> · aliquota reale ${w.aliquotaReale.toFixed(1)}%</span></span>
-        <span class="fr-val num" style="font-size:16px;font-weight:750;color:var(--${w.credito ? 'up' : 'down'})">${fmtEUR(Math.abs(w.passi.find(p => p.k === 'saldo').val))}</span>
-      </div>
-      <div class="dich-head ${_apertiDich.passi ? 'on' : ''}" data-dich="passi" style="padding:8px 0 4px">
-        <div class="b"><div class="r2">Tutti i passaggi del 730</div></div>
-        <div class="dich-chev">›</div>
-      </div>
-      <div class="dich-body ${_apertiDich.passi ? 'on' : ''}" data-dichbody="passi" style="padding:6px 0 0">
-        ${resto.map(riga).join('')}
-        <div class="eprice-note" style="margin:6px 0 4px">${w.credito
-          ? `Il credito è stato rimborsato in busta nel ${w.presentata}: ${fmtEUR(w.rimborso)}. La differenza rispetto al saldo IRPEF sono i conguagli sulle addizionali.`
-          : 'Anno chiuso a debito.'}</div>
-      </div>`;
-  };
-
-  // Un gestore solo, in delega sulla pagina: cosi' vale anche per i blocchi che
-  // vengono ridisegnati quando si cambia anno, senza riagganciare niente.
-  root.addEventListener('click', (e) => {
-    const h = e.target.closest('[data-dich]');
-    if (!h) return;
-    const k = h.dataset.dich;
-    _apertiDich[k] = !_apertiDich[k];
-    h.classList.toggle('on', _apertiDich[k]);
-    root.querySelector(`[data-dichbody="${k}"]`)?.classList.toggle('on', _apertiDich[k]);
-  });
-
-  disAnno();
-  root.querySelector('#dich-prev').addEventListener('click', () => {
-    const i = anni.indexOf(_annoDich);
-    if (i < anni.length - 1) { _annoDich = anni[i + 1]; root.querySelector('#dich-lbl').textContent = _annoDich; disAnno(); }
-  });
-  root.querySelector('#dich-next').addEventListener('click', () => {
-    const i = anni.indexOf(_annoDich);
-    if (i > 0) { _annoDich = anni[i - 1]; root.querySelector('#dich-lbl').textContent = _annoDich; disAnno(); }
-  });
-};
-
-// ═══════════════════════════════════════════════════════════════════════════
-// PAGINA FONDO PENSIONE (Cometa + TFR): dettaglio per anno e per datore
-// ═══════════════════════════════════════════════════════════════════════════
 export const renderStipendiFondo = async (root) => {
   document.getElementById('view-title').textContent = 'Fondo pensione';
   const t = versamentoFondoTotale();
   const perAnno = dettaglioFondoAnnuale();
   const perDatore = dettaglioFondoPerDatore();
   const quota = (v) => t.tot ? Math.round(v / t.tot * 100) : 0;
-  // Il versato lo sanno le buste, il DEDOTTO lo sa solo il 730: le due pagine si parlano.
-  const pf = plafondFondo();
-  const ultimoPf = pf.serie[pf.serie.length - 1];
+  const anniDed = plafondFondo().anni;
+  if (_annoDed == null || !anniDed.includes(_annoDed)) _annoDed = anniDed[0];
 
   root.innerHTML = `
     <div class="net-card" style="margin-top:4px">
@@ -488,29 +198,22 @@ export const renderStipendiFondo = async (root) => {
       <div class="meta" style="margin-top:4px">${state.stipendi.length} buste · dal 2016 a oggi</div>
     </div>
 
-    <div class="card eboll" id="fondo-vedi-dich" style="cursor:pointer">
-      <div class="body" style="flex:1">
-        <div class="lbl2">Dedotto dal reddito nel ${ultimoPf.anno} (dal 730)</div>
-        <div class="num" style="font-size:20px;font-weight:750">${fmtEUR(ultimoPf.dedotto)} <span class="meta" style="font-weight:500">su ${fmtEUR(pf.tettoOrdinario)}</span></div>
-        <div class="meta" style="margin-top:4px">${fmtEUR(ultimoPf.nonUsato)} di contributi che potevi ancora dedurre · con il recupero da prima occupazione il tetto salirebbe a ${fmtEUR(pf.tettoAnnuo)}</div>
+    <div class="section-lbl">
+      <span>Quanto hai dedotto</span>
+      <div class="eyear" id="ded-year">
+        <button id="ded-prev" aria-label="Anno precedente">‹</button>
+        <span class="num" id="ded-lbl">${_annoDed}</span>
+        <button id="ded-next" aria-label="Anno successivo">›</button>
       </div>
-      <div class="eboll-chev">›</div>
     </div>
-
-    <div class="card" style="border-left:3px solid var(--up)">
-      <div class="lbl2">Quanto vale oggi (estratto conto Cometa)</div>
-      <div class="num" style="font-size:26px;font-weight:750">${fmtEUR(montante())}</div>
-      <div class="meta" style="margin-top:4px">${COMETA.quote.toLocaleString('it-IT')} quote × ${fmtEUR(COMETA.valoreQuota)} al ${COMETA.aggiornatoAl.split('-').reverse().join('/')} —
-      <b style="color:var(--up)">${rendimento().valore >= 0 ? '+' : ''}${fmtEUR(rendimento().valore)} (${rendimento().perc}%)</b> rispetto al versato.
-      Comparto Crescita da giugno 2022, prima Monetario Plus.</div>
-    </div>
+    <div class="card" id="ded-card" style="cursor:pointer"></div>
 
     <div class="section-lbl"><span>Da dove arriva</span></div>
     <div class="card">
       ${[['TFR devoluto', t.tfr, SEG_FONDO[0].colore, 'Il tuo TFR versato al fondo invece che in azienda'],
-         ['Cometa — quota tua', t.dip, SEG_FONDO[1].colore, 'Trattenuta dalla busta (4% dell\'imponibile)'],
-         ['Cometa — quota datore', t.az, SEG_FONDO[2].colore, 'Versata dall\'azienda, non esce dalla tua busta']]
-        .map(([nome, val, col, nota]) => `
+    ['Cometa — quota tua', t.dip, SEG_FONDO[1].colore, 'Trattenuta dalla busta (4% dell\'imponibile)'],
+    ['Cometa — quota datore', t.az, SEG_FONDO[2].colore, 'Versata dall\'azienda, non esce dalla tua busta']]
+    .map(([nome, val, col, nota]) => `
         <div class="fr-row">
           <div class="fr-head">
             <span class="fr-nome"><span class="stip-dot" style="background:${col}"></span> ${nome}</span>
@@ -538,22 +241,24 @@ export const renderStipendiFondo = async (root) => {
       <div class="estack" id="g-fondo-anno"></div>
     </div>
 
-    <div class="section-lbl"><span>Dettaglio per anno</span></div>
-    <div class="card" style="padding:4px 14px" data-noline>
-      ${perAnno.map(a => `
-        <div class="paniere-anno-riga">
-          <span class="num anno">${a.anno}</span>
-          <b class="num">${fmtEUR(a.tot)}</b>
-          <span class="delta num" style="color:var(--txt-3)">${a.mesi} buste</span>
+    <div class="card" style="padding:0;overflow:hidden">
+      <div class="dich-head ${_apertoDettaglioFondo ? 'on' : ''}" id="fondo-dett-head">
+        <div class="b">
+          <div class="r1"><span class="nm">Dettaglio per anno</span><span class="imp num">${perAnno.length} anni</span></div>
+          <div class="r2">gli stessi numeri del grafico, in cifre</div>
         </div>
-        <div class="fr-sub" style="margin:-4px 0 8px">TFR ${fmtEUR(a.tfr)} · tua ${fmtEUR(a.dip)} · datore ${fmtEUR(a.az)}</div>
-      `).join('')}
-    </div>
-
-    <div class="card">
-      <div class="meta">Quello che vedi qui è il <b>versato</b>, non il valore attuale della posizione:
-      Cometa investe i contributi, quindi il montante sul tuo estratto conto sarà diverso (di solito più alto).
-      Il TFR e la quota tua escono dalla busta; la quota del datore è un'aggiunta che non passa dal netto.</div>
+        <div class="dich-chev">›</div>
+      </div>
+      <div class="dich-body ${_apertoDettaglioFondo ? 'on' : ''}" id="fondo-dett-body">
+        ${perAnno.map(a => `
+          <div class="paniere-anno-riga">
+            <span class="num anno">${a.anno}</span>
+            <b class="num">${fmtEUR(a.tot)}</b>
+            <span class="delta num" style="color:var(--txt-3)">${a.mesi} buste</span>
+          </div>
+          <div class="fr-sub" style="margin:-4px 0 8px">TFR ${fmtEUR(a.tfr)} · tua ${fmtEUR(a.dip)} · datore ${fmtEUR(a.az)}</div>
+        `).join('')}
+      </div>
     </div>
   `;
 
@@ -562,7 +267,55 @@ export const renderStipendiFondo = async (root) => {
     versamentoFondoAnnuale().map(d => ({ label: `'${String(d.anno).slice(2)}`, valori: d.valori, tot: d.tot })),
     SEG_FONDO, v => fmtEUR(v), v => Math.round(v).toLocaleString('it-IT'),
   );
-  root.querySelector('#fondo-vedi-dich')?.addEventListener('click', () => navigate('stipendi-dichiarazioni'));
+
+  // ── barra della deduzione: due livelli ──────────────────────────────────
+  // Il pieno arriva al tetto ORDINARIO dell'anno (5.164,57 fino al 2025, 5.300 dal
+  // 2026). La parte tratteggiata è il margine in più che avresti chiedendo il recupero
+  // da prima occupazione: esiste per legge, ma solo se lo chiedi nel 730.
+  const disDed = () => {
+    const pf = plafondFondo(_annoDed);
+    const r = pf.riga;
+    const scala = r.tettoConRecupero;
+    const pcOrd = r.tetto / scala * 100;
+    const pcDed = Math.min(r.dedotto, scala) / scala * 100;
+    const c = root.querySelector('#ded-card');
+    c.innerHTML = `
+      <div class="fr-head">
+        <span class="fr-nome" style="font-weight:700">${r.dichiarato ? 'Dedotto dal reddito' : 'Ancora da dichiarare'}</span>
+        <span class="fr-val num" style="font-size:19px;font-weight:750;color:var(--up)">${fmtEUR(r.dedotto)}</span>
+      </div>
+      <div class="dedtrack">
+        <span class="ded-extra" style="left:${pcOrd}%;width:${100 - pcOrd}%"></span>
+        <span class="ded-fill" style="width:${pcDed}%"></span>
+        <span class="ded-mk" style="left:${pcOrd}%"></span>
+      </div>
+      <div class="dedscale">
+        <span>dedotto</span>
+        <span>tetto ${fmtEUR(r.tetto)}</span>
+        <span>con recupero ${fmtEUR(r.tettoConRecupero)}</span>
+      </div>
+      <div class="fr-sub" style="margin-top:8px">${r.dichiarato
+    ? `Il <b>${r.quota}%</b> del tetto ordinario: restano ${fmtEUR(r.nonUsato)} di contributi che potevi ancora dedurre nel ${r.anno}.`
+    : `Il 730 sui redditi ${r.anno} non è ancora stato presentato: il tetto dell'anno è ${fmtEUR(r.tetto)}.`}
+        La parte tratteggiata è il recupero da prima occupazione, fino a ${fmtEUR(r.tettoConRecupero)}. Tocca per il dettaglio.</div>`;
+  };
+  disDed();
+  root.querySelector('#ded-prev').addEventListener('click', () => {
+    const i = anniDed.indexOf(_annoDed);
+    if (i < anniDed.length - 1) { _annoDed = anniDed[i + 1]; root.querySelector('#ded-lbl').textContent = _annoDed; disDed(); }
+  });
+  root.querySelector('#ded-next').addEventListener('click', () => {
+    const i = anniDed.indexOf(_annoDed);
+    if (i > 0) { _annoDed = anniDed[i - 1]; root.querySelector('#ded-lbl').textContent = _annoDed; disDed(); }
+  });
+  root.querySelector('#ded-card').addEventListener('click', () => navigate('deduzione', { anno: _annoDed }));
+
+  const dh = root.querySelector('#fondo-dett-head');
+  dh.addEventListener('click', () => {
+    _apertoDettaglioFondo = !_apertoDettaglioFondo;
+    dh.classList.toggle('on', _apertoDettaglioFondo);
+    root.querySelector('#fondo-dett-body').classList.toggle('on', _apertoDettaglioFondo);
+  });
 };
 
 // ═══════════════════════════════════════════════════════════════════════════

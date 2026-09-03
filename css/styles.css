@@ -1535,3 +1535,31 @@ input:focus, input:focus-visible, select:focus, select:focus-visible, textarea:f
 .bilbody.on{display:block}
 .biltrack .seg.cp{background:#7B6CFF}
 .bilhead .entr .u{font-size:11.5px;color:var(--txt-3);font-weight:500}
+
+/* ═══ FISCO — righe d'anno che si aprono al tocco ═══
+   Una tabella fiscale piena di sigle (IRPEF, add. reg., add. com., sost.) su un
+   telefono non si legge e non si consulta. Qui la riga mostra l'anno e UN numero;
+   il resto sta dentro, per esteso, e si apre solo se lo chiedi. */
+.yrow{display:flex;align-items:baseline;gap:10px;padding:12px 2px;cursor:pointer;border-bottom:1px solid rgba(38,38,47,.55)}
+.yrow .anno{font-size:14.5px;font-weight:700;width:52px;flex:none}
+.yrow .meta{flex:1;font-size:11.5px}
+.yrow .val{margin-left:auto;font-size:15.5px;font-weight:750}
+.yrow .ch{color:var(--txt-3);font-size:16px;width:14px;text-align:center;flex:none;transition:transform .2s}
+.yrow.on{border-bottom-color:transparent}
+.yrow.on .ch{transform:rotate(90deg);color:var(--blue-2)}
+.ybody{display:none;padding:0 2px 12px}
+.ybody.on{display:block}
+.ybody .r{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;color:var(--txt-2);padding:4px 0}
+.ybody .r b{color:var(--txt);font-weight:650}
+
+/* ═══ DEDUZIONE — barra a due livelli ═══
+   Il pieno arriva al tetto ordinario dell'anno; la fascia tratteggiata e' il recupero
+   da prima occupazione, che esiste ma solo se lo chiedi nel 730. Due informazioni
+   diverse nella stessa barra, distinguibili senza leggere la legenda. */
+.dedtrack{position:relative;height:18px;border-radius:100px;background:var(--surface-3);overflow:hidden;margin:12px 0 6px}
+.ded-extra{position:absolute;top:0;bottom:0;background:repeating-linear-gradient(135deg,rgba(34,227,154,.28) 0 5px,transparent 5px 10px)}
+.ded-fill{position:absolute;top:0;bottom:0;left:0;border-radius:100px;background:linear-gradient(90deg,#22E39A,#5FC3FF);transition:width .45s ease}
+.ded-mk{position:absolute;top:0;bottom:0;width:2px;background:var(--txt);opacity:.7}
+.dedscale{display:flex;justify-content:space-between;font-size:11px;color:var(--txt-3)}
+.dedscale span:nth-child(2){position:relative;left:6px}
+.paniere-anno-riga.sel{background:var(--surface-2);border-radius:8px}
