@@ -23,6 +23,8 @@ export const state = {
   consumiMensili: [],     // consumo elettrico reale mese per mese (sezione Energia)
   obiettivi: [],          // obiettivi liquidità per anno [{anno, target}]
   panieri: [],            // panieri di voci per analisi [{id, nome, voci}]
+  strumenti: [],          // strumenti di investimento [{id, nome, contoId, chiavi, chiuso, eventi}]
+  natura: {},             // 'Macro›Cat' | 'Macro›Cat›Sub' -> 'B' (bisogno) | 'D' (desiderio)
   // indici derivati (ricalcolati a ogni refresh)
   _idxMovByMese: {},      // '2026-06' -> [movimenti]
   _idxContoByNome: {},    // nome conto -> conto
@@ -35,12 +37,13 @@ const _notify = () => _subs.forEach(fn => { try { fn(); } catch (e) { console.er
 
 // Ricarica tutto lo stato da IndexedDB e ricostruisce gli indici.
 export const refreshAll = async () => {
-  const [movimenti, conti, categorie, tag, ricorrenti, regole, snapshot, mutuoArr, finanziamenti, eventiMutuo, suggerimenti, bollette, obiettivi, panieri, stipendi, consumiMensili] =
+  const [movimenti, conti, categorie, tag, ricorrenti, regole, snapshot, mutuoArr, finanziamenti, eventiMutuo, suggerimenti, bollette, obiettivi, panieri, stipendi, consumiMensili, strumenti, natura] =
     await Promise.all([
       dbAll('movimenti'), dbAll('conti'), dbAll('categorie'), dbAll('tag'),
       dbAll('ricorrenti'), dbAll('regole'), dbAll('snapshot'), dbAll('mutuo'),
       dbAll('finanziamenti'), dbAll('eventiMutuo'), dbAll('suggerimenti'), dbAll('bollette'),
       dbAll('obiettivi'), dbAll('panieri'), dbAll('stipendi'), dbAll('consumiMensili'),
+      dbAll('strumenti'), dbAll('natura'),
     ]);
 
   state.movimenti = movimenti;
@@ -59,6 +62,8 @@ export const refreshAll = async () => {
   state.panieri = panieri;
   state.stipendi = stipendi;
   state.consumiMensili = consumiMensili;
+  state.strumenti = strumenti;
+  state.natura = Object.fromEntries(natura.map(n => [n.chiave, n.valore]));
 
   _buildIndexes();
   _notify();

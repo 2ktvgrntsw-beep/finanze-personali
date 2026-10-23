@@ -4,7 +4,7 @@
 
 import { state, refreshAll } from '../core/store.js';
 import { dbGet, dbAdd, dbDelete, safeWrite } from '../core/db.js';
-import { contoDiTrasferimento, eInvestimento, strumentoDiTrasferimento } from '../services/attribuzioneInvestimenti.js';
+import { strumentiDelConto, versato } from '../services/strumentiService.js';
 import { costruisciSparkline, agganciaSparkline } from '../core/sparkline.js';
 import { fmtEUR, fmtEUR0, escapeHtml, todayISO, nomeMese } from '../core/utils.js';
 import { iconaMacro, UI_SVG } from '../core/icons.js';
@@ -139,7 +139,7 @@ export const renderPatrimonio = async (root) => {
 
     <div class="section-lbl"><span>Sezioni</span></div>
     <div class="btn-row" style="flex-wrap:wrap;gap:10px">
-      <button class="btn btn-secondary" data-go="conti" style="flex:1 1 45%">Conti</button>
+      <button class="btn btn-secondary" data-go="conti" style="flex:1 1 45%">Conti e strumenti</button>
       <button class="btn btn-secondary" data-go="mutuo" style="flex:1 1 45%">Mutuo</button>
       <button class="btn btn-secondary" data-go="finanziamenti" style="flex:1 1 45%">Finanziamenti</button>
       <button class="btn btn-secondary" data-go="investimenti" style="flex:1 1 45%">Investimenti</button>
@@ -431,28 +431,14 @@ function _contiCollassabiliHTML() {
     const aperto = _gruppiAperti.has(tipo);
 
     // per gli investimenti: strumenti annidati SOTTO il conto di riferimento.
-    // L'attribuzione conto/strumento usa la FONTE UNICA (attribuzioneInvestimenti.js),
-    // condivisa con la pagina di dettaglio: così i numeri non possono divergere.
-    let strumentiPerConto = {};
-    if (tipo === 'investimenti') {
-      for (const m of state.movimenti) {
-        if (!eInvestimento(m, state.conti)) continue;
-        const conto = contoDiTrasferimento(m, state.conti);
-        if (!conto) continue;  // non attribuibile: lo salto (evita "Altro" rumoroso)
-        const strum = strumentoDiTrasferimento(m, conto);
-        strumentiPerConto[conto] = strumentiPerConto[conto] || {};
-        strumentiPerConto[conto][strum] = (strumentiPerConto[conto][strum] || 0) + m.imp;
-      }
-    }
-    const strumentiDi = (contoNome, espanso) => {
-      const s = strumentiPerConto[contoNome];
-      if (!s) return '';
-      const lista = Object.entries(s).sort((a, b) => b[1] - a[1]);
+    // Fonte unica: strumentiService (gli stessi numeri della pagina Investimenti).
+    const strumentiDi = (conto, espanso) => {
+      const lista = strumentiDelConto(conto, { anche_chiusi: false }).sort((a, b) => versato(b) - versato(a));
       if (!lista.length) return '';
-      return `<div class="strumenti-annidati coll${espanso ? ' open' : ''}" data-strum-di="${escapeHtml(contoNome)}">` + lista.map(([nome, v]) => `
-        <div class="conto-riga strumento-riga" data-strumento="${escapeHtml(nome)}">
-          <div class="conto-nome">${escapeHtml(nome)}</div>
-          <div class="conto-saldo num">${fmtEUR(v)}</div>
+      return `<div class="strumenti-annidati coll${espanso ? ' open' : ''}" data-strum-di="${escapeHtml(conto.nome)}">` + lista.map(s => `
+        <div class="conto-riga strumento-riga" data-strumento="${s.id}">
+          <div class="conto-nome">${escapeHtml(s.nome)}</div>
+          <div class="conto-saldo num">${fmtEUR(versato(s))}</div>
           <div class="conto-chev">›</div>
         </div>`).join('') + `</div>`;
     };
@@ -469,7 +455,7 @@ function _contiCollassabiliHTML() {
         </div>
         <div class="gruppo-body coll${aperto ? ' open' : ''}">
         ${conti.map(c => {
-          const haStrum = tipo === 'investimenti' && !!strumentiPerConto[c.nome];
+          const haStrum = tipo === 'investimenti' && strumentiDelConto(c, { anche_chiusi: false }).length > 0;
           const espanso = _contiEspansi.has(c.nome);
           return `
           <div class="conto-riga${haStrum ? ' conto-espandibile' : ''}" data-conto="${c.id}"${haStrum ? ` data-espandi="${escapeHtml(c.nome)}" role="button" aria-expanded="${espanso}"` : ''}>
@@ -477,7 +463,7 @@ function _contiCollassabiliHTML() {
             <div class="conto-saldo num">${fmtEUR(saldoStimato(c))}</div>
             <div class="conto-chev${haStrum && espanso ? ' giu' : ''}">›</div>
           </div>
-          ${haStrum ? strumentiDi(c.nome, espanso) : ''}`;
+          ${haStrum ? strumentiDi(c, espanso) : ''}`;
         }).join('')}
         </div>
       </div>`;

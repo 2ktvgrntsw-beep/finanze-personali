@@ -11,15 +11,30 @@ import { saveMovimento, deleteMovimento } from '../services/movimentiService.js'
 import { saveRicorrente } from '../services/ricorrentiService.js';
 import { suggerisciPerTesto, suggerisciTag } from '../services/suggerimentiService.js';
 import { apriSelettoreCategoria, apriSheet, conferma } from './shared.js';
+import { strumentoById, risolviStrumento, creaStrumento, allineaStrumenti } from '../services/strumentiService.js';
+import { _normDesc } from '../core/seed.js';
 import { toast } from '../core/utils.js';
 
 let d = null;
 
 const nuovaBozza = () => ({
   id: null, tipo: 'spesa', imp: 0, impStr: '0',
-  macro: '', cat: '', sub: '', conto: '', contoDest: '',
+  macro: '', cat: '', sub: '', conto: '', contoDest: '', strumentoId: null,
   desc: '', tag: [], data: todayISO(), ripeti: null,
 });
+
+// conto di destinazione di tipo investimenti? (allora serve lo strumento)
+const _contoInv = (nome) => state.conti.find(c => c.nome === nome && c.tipo === 'investimenti') || null;
+// strumento proposto: quello risolto dalla classificazione, altrimenti l'ultimo usato nel conto
+const _strumentoProposto = () => {
+  const c = _contoInv(d.contoDest);
+  if (!c) return null;
+  const r = risolviStrumento({ tipo: 'trasferimento', contoDest: d.contoDest, cat: d.cat, sub: d.sub, strumentoId: d.strumentoId });
+  if (r) return r.id;
+  const ultimo = state.movimenti.filter(m => m.tipo === 'trasferimento' && m.contoDest === c.nome && m.strumentoId)
+    .sort((a, b) => b.data.localeCompare(a.data))[0];
+  return ultimo ? ultimo.strumentoId : null;
+};
 
 export const renderInserimento = async (root, params = {}) => {
   if (params.ric) {
@@ -33,7 +48,7 @@ export const renderInserimento = async (root, params = {}) => {
         ricEdit: r.id,
         tipo: r.tipo || 'spesa', imp: r.imp, impStr: String(r.imp).replace('.', ','),
         macro: r.macro || '', cat: r.cat || '', sub: r.sub || '',
-        conto: r.conto || '', contoDest: r.contoDest || '',
+        conto: r.conto || '', contoDest: r.contoDest || '', strumentoId: r.strumentoId || null,
         desc: r.desc || r.nome || '', tag: Array.isArray(r.tag) ? r.tag : [],
         data: r.prossima || todayISO(),
         ripeti: {
@@ -68,6 +83,7 @@ const _render = (root) => {
   const contoRow = isTrasf ? `
     <div class="frow"><div class="fic">${UI_SVG.conto}</div><div class="fval" id="pick-conto">${d.conto ? escapeHtml(d.conto) : '<span class="fph">Da conto</span>'}</div></div>
     <div class="frow"><div class="fic">➡️</div><div class="fval" id="pick-conto-dest">${d.contoDest ? escapeHtml(d.contoDest) : '<span class="fph">A conto</span>'}</div></div>
+    ${_contoInv(d.contoDest) ? `<div class="frow"><div class="fic">${UI_SVG.investimento}</div><div class="fval" id="pick-strumento">${strumentoById(d.strumentoId) ? escapeHtml(strumentoById(d.strumentoId).nome) : '<span class="fph">Strumento</span>'}</div></div>` : ''}
   ` : `
     <div class="frow"><div class="fic">${UI_SVG.conto}</div><div class="fval" id="pick-conto">${d.conto ? escapeHtml(d.conto) : '<span class="fph">Conto</span>'}</div></div>
     <div class="frow"><div class="fic act">${UI_SVG.tag}</div><div class="fval" id="pick-cat">${d.macro ? escapeHtml(catLabel) : '<span class="fph">Seleziona categoria</span>'}</div>${d.macro ? '<div class="fclear" id="clear-cat">✕</div>' : ''}</div>
@@ -122,6 +138,8 @@ const _render = (root) => {
   root.querySelector('#pick-conto').addEventListener('click', () => { _chiudiTastierino(root); _pickConto(root, 'conto'); });
   const pcd = root.querySelector('#pick-conto-dest');
   if (pcd) pcd.addEventListener('click', () => { _chiudiTastierino(root); _pickConto(root, 'contoDest'); });
+  const pst = root.querySelector('#pick-strumento');
+  if (pst) pst.addEventListener('click', () => { _chiudiTastierino(root); _pickStrumento(root); });
 
   // categoria
   const pc = root.querySelector('#pick-cat');
@@ -178,6 +196,14 @@ const _mostraTendina = (root) => {
     const s = sugg[parseInt(el.dataset.sugg)]; const c = s.classificazione;
     d.desc = s.desc; d.macro = c.macro || d.macro; d.cat = c.cat || ''; d.sub = c.sub || '';
     d.tipo = c.tipo || d.tipo; if (c.conto) d.conto = c.conto;
+    if (d.tipo === 'trasferimento') {
+      // la destinazione non è nel suggerimento: la prendo dall'ultimo movimento uguale
+      const k = _normDesc(s.desc);
+      const ultimo = state.movimenti.filter(m => m.tipo === 'trasferimento' && m.contoDest && _normDesc(m.desc) === k)
+        .sort((a, b) => b.data.localeCompare(a.data))[0];
+      if (ultimo) { d.contoDest = ultimo.contoDest; d.strumentoId = ultimo.strumentoId || null; }
+      d.strumentoId = _strumentoProposto();
+    }
     _render(root);
   }));
 };
@@ -186,7 +212,31 @@ const _pickConto = (root, campo) => {
   const conti = state.conti.filter(c => c.attivo !== false);
   apriSheet(campo === 'contoDest' ? 'A quale conto' : 'Da quale conto', '', (body, chiudi) => {
     body.innerHTML = conti.map(c => `<div class="mov" data-c="${escapeHtml(c.nome)}"><div class="ic">${UI_SVG.conto}</div><div class="body"><div class="d1">${escapeHtml(c.nome)}</div><div class="d2">${c.tipo}</div></div></div>`).join('');
-    body.querySelectorAll('[data-c]').forEach(el => el.addEventListener('click', () => { d[campo] = el.dataset.c; chiudi(); _render(root); }));
+    body.querySelectorAll('[data-c]').forEach(el => el.addEventListener('click', () => {
+      d[campo] = el.dataset.c;
+      if (campo === 'contoDest') { d.strumentoId = null; d.strumentoId = _strumentoProposto(); }
+      chiudi(); _render(root);
+    }));
+  });
+};
+
+// Strumento del conto investimento di destinazione (+ creazione al volo)
+const _pickStrumento = (root) => {
+  const c = _contoInv(d.contoDest);
+  if (!c) return;
+  const lista = state.strumenti.filter(s => s.contoId === c.id && !s.chiuso);
+  apriSheet(`Strumento · ${c.nome}`, `
+    ${lista.map(s => `<div class="mov" data-s="${s.id}"><div class="ic">${UI_SVG.investimento}</div><div class="body"><div class="d1">${escapeHtml(s.nome)}</div></div></div>`).join('')}
+    <label class="meta" style="margin-top:12px">Oppure un nuovo strumento</label>
+    <input id="ns-nome" placeholder="Es. PAC ETF World" class="sheet-input" autocomplete="off">
+    <button class="btn btn-secondary" id="ns-ok">Crea e usa</button>
+  `, (body, chiudi) => {
+    body.querySelectorAll('[data-s]').forEach(el => el.addEventListener('click', () => { d.strumentoId = el.dataset.s; chiudi(); _render(root); }));
+    body.querySelector('#ns-ok').addEventListener('click', async () => {
+      try { const s = await creaStrumento({ nome: body.querySelector('#ns-nome').value, contoId: c.id }); d.strumentoId = s.id; }
+      catch (e) { toast(e.message); return; }
+      chiudi(); _render(root);
+    });
   });
 };
 
@@ -290,6 +340,9 @@ const _apriTastierino = (root) => {
 const _salva = async () => {
   if (d.imp <= 0) { toast('Inserisci un importo'); return; }
   if (d.tipo === 'trasferimento' && (!d.conto || !d.contoDest)) { toast('Scegli i conti'); return; }
+  if (d.tipo === 'trasferimento' && d.conto === d.contoDest) { toast('I due conti devono essere diversi'); return; }
+  if (d.tipo === 'trasferimento' && _contoInv(d.contoDest) && !strumentoById(d.strumentoId)) { toast('Scegli lo strumento'); return; }
+  const strumentoId = d.tipo === 'trasferimento' && _contoInv(d.contoDest) ? d.strumentoId : null;
   if (d.tipo !== 'trasferimento' && !d.macro) { toast('Scegli una categoria'); return; }
 
   // ── MODIFICA RICORRENZA: aggiorna solo la ricorrenza, nessun movimento nuovo ──
@@ -300,7 +353,7 @@ const _salva = async () => {
         ...r,
         nome: d.desc || r.nome, tipo: d.tipo, imp: d.imp,
         macro: d.macro, cat: d.cat, sub: d.sub,
-        conto: d.conto, contoDest: d.contoDest, tag: d.tag, desc: d.desc,
+        conto: d.conto, contoDest: d.contoDest, strumentoId, tag: d.tag, desc: d.desc,
         frequenza: d.ripeti ? d.ripeti.frequenza : r.frequenza,
         fineTipo: d.ripeti ? d.ripeti.fineTipo : r.fineTipo,
         fineData: d.ripeti ? d.ripeti.fineData : r.fineData,
@@ -317,12 +370,15 @@ const _salva = async () => {
   const eraModifica = !!d.id;
   const ok = await safeWrite(() => saveMovimento({
     id: d.id, tipo: d.tipo, imp: d.imp, data: d.data,
-    macro: d.macro, cat: d.cat, sub: d.sub, conto: d.conto, contoDest: d.contoDest,
+    macro: d.macro, cat: d.cat, sub: d.sub, conto: d.conto, contoDest: d.contoDest, strumentoId,
     desc: d.desc, tag: d.tag,
   }), eraModifica ? 'Modifiche non salvate' : 'Movimento non salvato');
   // se la scrittura è fallita, NON navigo: l'utente vede il toast e può riprovare
   // senza perdere ciò che ha inserito.
   if (!ok) return;
+
+  // un prelievo da conto investimento inserito a mano: va tenuto allineato al versato
+  if (wasTrasf) { try { await allineaStrumenti(); } catch (e) { console.warn(e); } }
 
   // crea la ricorrenza se richiesta — ANCHE in modifica (bug precedente: solo su nuovo)
   if (d.ripeti) {
@@ -335,7 +391,7 @@ const _salva = async () => {
     const okRic = await safeWrite(() => saveRicorrente({
       nome: d.desc || d.macro, tipo: d.tipo, frequenza: d.ripeti.frequenza,
       imp: d.imp, macro: d.macro, cat: d.cat, sub: d.sub,
-      conto: d.conto, contoDest: d.contoDest, tag: d.tag, desc: d.desc,
+      conto: d.conto, contoDest: d.contoDest, strumentoId, tag: d.tag, desc: d.desc,
       dataInizio: d.ripeti.dataInizio, prossima,
       generati: copreMovimento ? 1 : 0,   // il movimento manuale conta come prima occorrenza
       fineTipo: d.ripeti.fineTipo, fineData: d.ripeti.fineData, fineConteggio: d.ripeti.fineConteggio,

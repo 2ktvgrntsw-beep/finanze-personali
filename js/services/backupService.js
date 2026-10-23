@@ -6,13 +6,14 @@
 
 import { dbAll, dbAdd, dbGet, dbBulkPut, dbClear } from '../core/db.js';
 import { refreshAll } from '../core/store.js';
+import { dopoRipristino } from './strumentiService.js';
 
 const CHIAVE_BACKUP = '_backup_auto';
 const CHIAVE_ULTIMO_EXCEL = '_ultimo_backup_excel';
 // TUTTI gli store con dati dell'utente ('meta' esclusa: contiene flag interni e il
 // backup automatico stesso). Se manca uno store qui, i suoi dati NON sopravvivono
 // al ripristino: è già successo con l'obiettivo liquidità, non deve ripetersi.
-const STORE_DATI = ['movimenti', 'conti', 'categorie', 'tag', 'ricorrenti', 'regole', 'snapshot', 'mutuo', 'finanziamenti', 'eventiMutuo', 'suggerimenti', 'bollette', 'obiettivi', 'panieri', 'stipendi', 'consumiMensili'];
+const STORE_DATI = ['movimenti', 'conti', 'categorie', 'tag', 'ricorrenti', 'regole', 'snapshot', 'mutuo', 'finanziamenti', 'eventiMutuo', 'suggerimenti', 'bollette', 'obiettivi', 'panieri', 'stipendi', 'consumiMensili', 'strumenti', 'natura'];
 
 // Salva una copia interna di tutti i dati (chiamata a ogni avvio, dopo il refresh).
 export const salvaBackupAuto = async () => {
@@ -107,5 +108,7 @@ export const importaJSON = async (file) => {
     }
   }
   await refreshAll();
+  // backup di prima degli strumenti: migrazione rifatta su questi dati
+  try { await dopoRipristino(dati); } catch (e) { console.error('Allineamento strumenti dopo il ripristino non riuscito:', e); }
   return { movimenti: (dati.movimenti || []).length, preservati };
 };

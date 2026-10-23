@@ -69,6 +69,7 @@ export const sottocategorieDiUsate = (macro, cat, soloSpese = false) => {
 // a: movimenti, ricorrenze, classificazione rate di mutuo e finanziamenti.
 // ═══════════════════════════════════════════════════════════════════════════
 import { dbBulkPut, dbAll } from '../core/db.js';
+import { rinominaChiaviNatura, eliminaChiaviNatura } from './naturaService.js';
 
 // Quanti movimenti usano questo nodo (macro / macro+cat / macro+cat+sub)
 export const contaMovimentiNodo = (macro, cat = '', sub = '') => {
@@ -117,6 +118,8 @@ export const rinominaNodo = async (livello, macro, cat, sub, nuovoNome, propagaM
     return c.macro === macro && c.cat === cat && c.sub === sub;
   }).map(c => ({ ...c, [livello === 'macro' ? 'macro' : livello === 'cat' ? 'cat' : 'sub']: nuovoNome }));
   if (righe.length) await dbBulkPut('categorie', righe);
+  // bisogno/desiderio segue il nuovo nome
+  await rinominaChiaviNatura(livello, macro, cat, sub, nuovoNome);
 
   // propagazione a movimenti/ricorrenti/prestiti
   let toccati = 0;
@@ -155,6 +158,8 @@ export const eliminaNodo = async (livello, macro, cat, sub, riassegnaA = null) =
     return c.macro === macro && c.cat === cat && c.sub === sub;
   });
   for (const r of daEliminare) await dbDelete('categorie', r.id);
+  // se i movimenti restano (nessuna riassegnazione) la loro natura resta valida
+  if (riassegnaA) await eliminaChiaviNatura(livello, macro, cat, sub);
   await refreshAll();
   return riassegnati;
 };

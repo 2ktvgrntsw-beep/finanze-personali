@@ -13,8 +13,9 @@ import { abilitaSwipeIndietro } from './shared.js';
 import { spesePerAnno, aggregaPerLivello, soloSpese } from '../services/movimentiService.js';
 import { panieriSezioneHTML, bindPanieri } from './panieri.js';
 import { listaMacro, categoriaHaSub } from '../services/categorieService.js';
+import { renderBisogni } from './bisogni.js';
 
-let _tab = 'categoria';   // 'categoria' | 'anno' | 'tag'
+let _tab = 'categoria';   // 'categoria' | 'anno' | 'tag' | 'bisogni'
 let _annoSel = String(new Date().getFullYear());
 // stato drill per la vista "categoria nel tempo"
 let _cMacro = '', _cCat = '', _cSub = '', _cAnno = '', _cTipo = 'spesa';
@@ -29,6 +30,8 @@ export const renderAnalisi = async (root, params = {}) => {
   _cMacro = params.macro || '';
   _cCat = params.cat || '';
   _cSub = params.sub || '';
+  // un drill di categoria (anche da altre pagine) vive nella vista Categoria
+  if (_cMacro) _tab = 'categoria';
   // senza drill attivo, l'header torna pulito (titolo e back nascosti)
   if (!_cMacro) {
     const vt0 = document.getElementById('view-title');
@@ -43,6 +46,7 @@ export const renderAnalisi = async (root, params = {}) => {
       <button data-t="categoria" class="${_tab === 'categoria' ? 'on' : ''}">Categoria</button>
       <button data-t="anno" class="${_tab === 'anno' ? 'on' : ''}">Anno</button>
       <button data-t="tag" class="${_tab === 'tag' ? 'on' : ''}">Tag</button>
+      <button data-t="bisogni" class="${_tab === 'bisogni' ? 'on' : ''}">Bisogni</button>
     </div>`;
     headSeg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
       _tab = b.dataset.t;
@@ -55,6 +59,7 @@ export const renderAnalisi = async (root, params = {}) => {
   const body = root.querySelector('#analisi-body');
   if (_tab === 'categoria') _renderCategoriaTempo(body, root);
   else if (_tab === 'anno') _renderAnno(body, root);
+  else if (_tab === 'bisogni') renderBisogni(body);
   else _renderTag(body, root);
 };
 

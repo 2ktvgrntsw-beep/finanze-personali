@@ -13,6 +13,17 @@ import { apriSheet, apriSelettoreCategoria, conferma } from './shared.js';
 import { UI_SVG } from '../core/icons.js';
 import { safeWrite } from '../core/db.js';
 import { toast } from '../core/utils.js';
+import { macroDiSpesa, naturaCategoria, eccezioneSub, impostaNaturaCategoria, alternaEccezioneSub } from '../services/naturaService.js';
+import { scegliNatura } from './bisogni.js';
+
+// etichetta bisogno/desiderio (solo per le macro di spesa)
+const _pill = (v, attrs) => {
+  const stile = v === 'B' ? 'background:rgba(29,158,117,.18);color:#5DCAA5'
+    : v === 'D' ? 'background:rgba(216,90,48,.18);color:#F0997B'
+    : 'background:rgba(245,166,35,.16);color:var(--warn)';
+  const testo = v === 'B' ? 'Bisogno' : v === 'D' ? 'Desiderio' : 'Da classificare';
+  return `<span class="natura-pill" ${attrs} role="button" style="font-size:11px;font-weight:600;padding:3px 9px;border-radius:8px;white-space:nowrap;cursor:pointer;${stile}">${testo}</span>`;
+};
 
 const _aperte = new Set();      // macro espanse
 const _aperteCat = new Set();   // categorie espanse ("macro|cat")
@@ -23,6 +34,7 @@ export const renderCategorie = async (root) => {
 
   root.innerHTML = `
     <p class="meta" style="margin:12px 4px">Tocca per aprire l'albero, la matita per rinominare o eliminare. Le rinomine aggiornano anche i movimenti passati.</p>
+    <p class="meta" style="margin:0 4px 12px">Tocca <b>Bisogno</b>/<b>Desiderio</b> per cambiarlo. Le sottocategorie seguono la categoria; toccane una per farne un'eccezione.</p>
     ${macros.map(macro => {
       const cats = categorieDi(macro);
       const aperta = _aperte.has(macro);
@@ -42,12 +54,16 @@ export const renderCategorie = async (root) => {
               return `
                 <div class="cat-riga" data-togglecat="${escapeHtml(kCat)}">
                   <div class="cat-riga-nome" style="flex:1">${escapeHtml(cat)}${subs.length ? ` <span class="meta">· ${subs.length} sub</span>` : ''}</div>
+                  ${macroDiSpesa(macro) ? _pill(naturaCategoria(macro, cat), `data-nat-cat="${escapeHtml(kCat)}"`) : ''}
                   <div class="cat-gest" data-gest-cat="${escapeHtml(kCat)}" role="button" aria-label="Gestisci categoria">${UI_SVG.matita}</div>
                   ${subs.length ? `<div class="cat-acc-chev">${catAperta ? '⌄' : '›'}</div>` : '<div class="cat-acc-chev" style="opacity:.25">·</div>'}
                 </div>
                 ${catAperta && subs.length ? subs.map(s => `
                   <div class="cat-riga cat-riga-sub">
                     <div class="cat-riga-nome" style="flex:1;color:var(--txt-2)">${escapeHtml(s)}</div>
+                    ${macroDiSpesa(macro) && naturaCategoria(macro, cat) ? (eccezioneSub(macro, cat, s)
+                      ? _pill(eccezioneSub(macro, cat, s), `data-nat-sub="${escapeHtml(macro)}|${escapeHtml(cat)}|${escapeHtml(s)}"`)
+                      : `<span class="natura-pill meta" data-nat-sub="${escapeHtml(macro)}|${escapeHtml(cat)}|${escapeHtml(s)}" role="button" style="font-size:11px;cursor:pointer;white-space:nowrap">come categoria</span>`) : ''}
                     <div class="cat-gest" data-gest-sub="${escapeHtml(macro)}|${escapeHtml(cat)}|${escapeHtml(s)}" role="button" aria-label="Gestisci sottocategoria">${UI_SVG.matita}</div>
                     <div class="cat-acc-chev" style="opacity:0">·</div>
                   </div>`).join('') : ''}`;
@@ -78,6 +94,21 @@ export const renderCategorie = async (root) => {
     e.stopPropagation(); const [ma, ca, su] = el.dataset.gestSub.split('|'); _gestisciNodo(root, 'sub', ma, ca, su);
   }));
   root.querySelector('#nuova').addEventListener('click', () => _nuovaCategoria(root, macros));
+  // bisogno/desiderio: categoria (alterna, o sceglie se da classificare) ed eccezioni
+  root.querySelectorAll('[data-nat-cat]').forEach(el => el.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const [ma, ca] = el.dataset.natCat.split('|');
+    const attuale = naturaCategoria(ma, ca);
+    if (!attuale) { scegliNatura(ca, async (v) => { await impostaNaturaCategoria(ma, ca, v); renderCategorie(root); }); return; }
+    await impostaNaturaCategoria(ma, ca, attuale === 'B' ? 'D' : 'B');
+    renderCategorie(root);
+  }));
+  root.querySelectorAll('[data-nat-sub]').forEach(el => el.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const [ma, ca, su] = el.dataset.natSub.split('|');
+    await alternaEccezioneSub(ma, ca, su);
+    renderCategorie(root);
+  }));
 };
 
 // Sheet di gestione di un nodo (macro/cat/sub): rinomina propagata, elimina con scelte
@@ -145,6 +176,13 @@ const _nuovaCategoria = (root, macros) => {
     <label class="meta">Sottocategoria (opzionale)</label>
     <input id="nc-sub" list="sub-list" placeholder="Es. Luce" class="sheet-input" autocomplete="off">
     <datalist id="sub-list"></datalist>
+    <div id="nc-nat-wrap" style="display:none">
+      <label class="meta">È un bisogno o un desiderio?</label>
+      <div class="btn-row" style="margin:6px 0 4px">
+        <button class="btn btn-secondary" data-nc-nat="B">Bisogno</button>
+        <button class="btn btn-secondary" data-nc-nat="D">Desiderio</button>
+      </div>
+    </div>
     <button class="btn btn-primary" id="nc-ok" style="margin-top:8px">Aggiungi</button>
   `, (body, chiudi) => {
     const inMacro = body.querySelector('#nc-macro');
@@ -168,13 +206,32 @@ const _nuovaCategoria = (root, macros) => {
     inMacro.addEventListener('change', aggiornaCat);
     inCat.addEventListener('input', aggiornaSub);
     inCat.addEventListener('change', aggiornaSub);
+    // bisogno/desiderio: richiesto per una CATEGORIA NUOVA di una macro di spesa
+    let natura = null;
+    const natWrap = body.querySelector('#nc-nat-wrap');
+    const serveNatura = () => {
+      const m = inMacro.value.trim(), c = inCat.value.trim();
+      return !!(m && c && macroDiSpesa(m) && !naturaCategoria(m, c));
+    };
+    const aggiornaNat = () => { natWrap.style.display = serveNatura() ? '' : 'none'; };
+    [inMacro, inCat].forEach(x => { x.addEventListener('input', aggiornaNat); x.addEventListener('change', aggiornaNat); });
+    body.querySelectorAll('[data-nc-nat]').forEach(b => b.addEventListener('click', () => {
+      natura = b.dataset.ncNat;
+      body.querySelectorAll('[data-nc-nat]').forEach(x => x.classList.toggle('btn-primary', x === b));
+      body.querySelectorAll('[data-nc-nat]').forEach(x => x.classList.toggle('btn-secondary', x !== b));
+    }));
 
     body.querySelector('#nc-ok').addEventListener('click', async () => {
       const macro = inMacro.value.trim();
       const cat = inCat.value.trim();
       const sub = body.querySelector('#nc-sub').value.trim();
       if (!macro) { toast('Inserisci la macrocategoria'); return; }
-      const ok = await safeWrite(() => saveCategoria({ macro, cat, sub }), 'Categoria non salvata');
+      const chiedeNatura = serveNatura();
+      if (chiedeNatura && !natura) { toast('Scegli se è un bisogno o un desiderio'); return; }
+      const ok = await safeWrite(async () => {
+        await saveCategoria({ macro, cat, sub });
+        if (chiedeNatura) await impostaNaturaCategoria(macro, cat, natura);
+      }, 'Categoria non salvata');
       if (!ok) return;
       _aperte.add(macro);
       chiudi(); toast('Categoria aggiunta'); renderCategorie(root);

@@ -1563,3 +1563,11 @@ input:focus, input:focus-visible, select:focus, select:focus-visible, textarea:f
 .dedscale{display:flex;justify-content:space-between;font-size:11px;color:var(--txt-3)}
 .dedscale span:nth-child(2){position:relative;left:6px}
 .paniere-anno-riga.sel{background:var(--surface-2);border-radius:8px}
+
+
+/* v3.38 — righe dentro le card (Investimenti, dettaglio strumento, Conti e strumenti,
+   Bisogni): niente rientro da gruppo patrimonio, prima riga senza bordo */
+.card .conto-riga{padding:11px 2px;gap:10px}
+.card .conto-riga:first-child{border-top:0}
+.card .conto-riga .conto-nome{flex:1;min-width:0;font-size:14.5px;color:var(--txt)}
+.card .conto-riga .conto-saldo{font-size:14.5px;white-space:nowrap}

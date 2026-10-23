@@ -18,6 +18,8 @@ import { state } from '../js/core/store.js';
 import { round2 } from '../js/core/utils.js';
 import { bilancioAnnuale, candidatiUnaTantum, TAG_UNA_TANTUM } from '../js/services/bilancioService.js';
 import { deduzioniAnno, detrazioniAnnuali, attesoAnno } from '../js/services/fiscoService.js';
+import { pianoMigrazione, versato, versatoConto, risolviStrumento, risultatiRealizzati } from '../js/services/strumentiService.js';
+import { naturaDi, aggregaNatura } from '../js/services/naturaService.js';
 
 let falliti = 0, passati = 0;
 const ok = (nome, cond, extra = '') => {
@@ -359,6 +361,68 @@ console.log('\nsezione fisco: deduzioni e detrazioni');
   ok('il 2026 non e\' ancora dichiarato', att.dichiarato === false);
   ok('lo scalino verso l\'anno dopo e\' dichiarato',
     vicino(att.scalino, att.totale - att.prossimoAnno, 0.01));
+}
+
+
+console.log('\nstrumenti di investimento');
+{
+  // Conto con saldo dichiarato al 1/7 (3.631) e versamenti che non lo coprono tutto:
+  // la differenza diventa una riga iniziale sullo strumento più vecchio, e il versato
+  // del conto resta quello che l'utente vedeva prima della migrazione.
+  const conti = [
+    { id: 'L', nome: 'Banca', tipo: 'liquidita', saldo_iniziale: 1000, data_saldo: '2026-01-01' },
+    { id: 'R', nome: 'Broker', tipo: 'investimenti', saldo_iniziale: 3631, data_saldo: '2026-07-01' },
+  ];
+  const tr = (id, data, imp, sub) => ({ id, data, annomese: data.slice(0, 7), tipo: 'trasferimento', macro: 'Investimenti', cat: 'Azioni/ETF', sub, conto: 'Banca', contoDest: 'Broker', imp });
+  const movimenti = [
+    tr('a1', '2025-08-15', 1437.5, 'Azioni'),
+    tr('p1', '2026-03-26', 1860, 'PAC'),
+    tr('p2', '2026-07-01', 86, 'PAC'),      // stesso giorno del saldo: conta DOPO, come l'app
+    tr('p3', '2026-09-16', 851.5, 'PAC'),
+  ];
+  const { strumenti, collegamenti } = pianoMigrazione(conti, movimenti);
+  ok('due strumenti, uno per sottocategoria', strumenti.length === 2);
+  ok('tutti i trasferimenti collegati', collegamenti.length === 4);
+  const az = strumenti.find(s => s.nome === 'Azioni');
+  const ini = az.eventi.find(e => e.tipo === 'iniziale');
+  ok('riga iniziale sullo strumento più vecchio', !!ini && vicino(ini.v, 333.5, 0.001), ini ? String(ini.v) : 'assente');
+  state.conti = conti;
+  state.movimenti = movimenti.map(m => ({ ...m, strumentoId: collegamenti.find(k => k.movId === m.id).strumentoId }));
+  state.strumenti = strumenti;
+  ok('versato del conto invariato dopo la migrazione', vicino(versatoConto(conti[1]), 3631 + 86 + 851.5, 0.001), String(versatoConto(conti[1])));
+  ok('risoluzione per chiave storica', risolviStrumento({ tipo: 'trasferimento', contoDest: 'Broker', cat: 'Azioni/ETF', sub: 'PAC' }).nome === 'PAC');
+  // spostamento: A perde il versato tolto, B registra l'arrivato, la differenza è realizzata
+  const pac = strumenti.find(s => s.nome === 'PAC');
+  az.eventi.push({ id: 'e1', tipo: 'sposta-out', data: '2026-10-01', v: -1771, ris: 0, legame: 'L1' });
+  pac.eventi.push({ id: 'e2', tipo: 'sposta-in', data: '2026-10-01', v: 1900, ris: 129, legame: 'L1' });
+  ok('A svuotato dallo spostamento', vicino(versato(az), 0, 0.001));
+  ok('B riceve quanto arrivato', vicino(versato(pac), 1860 + 86 + 851.5 + 1900, 0.001));
+  ok('risultato realizzato = riga iniziale + spostamento', vicino(risultatiRealizzati().reduce((a, r) => a + r.ris, 0), 333.5 + 129, 0.001));
+}
+
+console.log('\nbisogni e desideri');
+{
+  state.natura = { 'Casa›Utenze': 'B', 'Casa›Utenze›Abbonamenti TV': 'D', 'Viaggi›Vacanze': 'D' };
+  ok('la sottocategoria eredita dalla categoria', naturaDi('Casa', 'Utenze', 'Gas') === 'B');
+  ok("l'eccezione vince sulla categoria", naturaDi('Casa', 'Utenze', 'Abbonamenti TV') === 'D');
+  ok('senza etichetta: da classificare', naturaDi('Altro', 'Spese Varie', '') === null);
+  const sp = (id, data, macro, cat, sub, imp) => ({ id, data, annomese: data.slice(0, 7), tipo: 'spesa', macro, cat, sub, imp });
+  state.movimenti = [
+    sp('s1', '2026-01-05', 'Casa', 'Utenze', 'Gas', 25), sp('s2', '2026-01-10', 'Casa', 'Utenze', 'Abbonamenti TV', 19),
+    sp('s3', '2026-02-01', 'Viaggi', 'Vacanze', 'Volo', 300), sp('s4', '2026-02-02', 'Altro', 'Spese Varie', '', 10),
+    { ...sp('t1', '2026-02-03', 'Investimenti', '', '', 500), tipo: 'trasferimento' },
+  ];
+  const a = aggregaNatura(['2026-01', '2026-02']);
+  ok('bisogni per mese', a.B[0] === 25 && a.B[1] === 0);
+  ok('desideri per mese (eccezione inclusa)', a.D[0] === 19 && a.D[1] === 300);
+  ok('da classificare a parte, trasferimenti esclusi', a.N[1] === 10);
+  state.movimenti = []; state.strumenti = []; state.natura = {}; state.conti = [];
+}
+
+console.log('\nservice worker: nuovi file in cache');
+{
+  const sw = readFileSync(new URL('../service-worker.js', import.meta.url), 'utf8');
+  for (const f of ['strumentiService.js', 'naturaService.js', 'operazioniInvestimento.js', 'bisogni.js']) ok(`${f} in cache`, sw.includes(f));
 }
 
 console.log(`\n${passati} passati, ${falliti} falliti\n`);

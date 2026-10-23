@@ -23,6 +23,7 @@ export const saveRicorrente = async (r) => {
     imp: round2(r.imp || 0),
     macro: r.macro || '', cat: r.cat || '', sub: r.sub || '',
     conto: r.conto || '', contoDest: r.contoDest || '',
+    strumentoId: r.strumentoId || null,   // trasferimenti verso un investimento
     tag: r.tag || [],
     desc: r.desc || '',
     // per le regole a soglia
@@ -110,7 +111,7 @@ export const generaScaduti = async () => {
             id: idGen,
             data: cursore, tipo: r.tipo, imp: importo,
             macro: r.macro, cat: r.cat, sub: r.sub,
-            conto: r.conto, contoDest: r.contoDest, tag: r.tag,
+            conto: r.conto, contoDest: r.contoDest, tag: r.tag, strumentoId: r.strumentoId || null,
             desc: r.desc || r.nome, note: 'Generato da ricorrenza', origine: 'ricorrenza',
           });
           generati++;

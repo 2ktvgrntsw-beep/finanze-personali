@@ -23,6 +23,8 @@ export const saveMovimento = async (m) => {
     imp: round2(m.imp),
     origine: m.origine || 'utente',
   };
+  // collegamento allo strumento di investimento (solo trasferimenti)
+  if (obj.tipo === 'trasferimento' && m.strumentoId) obj.strumentoId = m.strumentoId;
   await dbAdd('movimenti', obj);
   // l'app impara da ogni inserimento (descrizione -> classificazione)
   if (obj.desc && obj.origine === 'utente') await apprendiDaMovimento(obj);

@@ -56,7 +56,7 @@ export const renderImpostazioni = async (root) => {
 
     <div class="section-lbl"><span>Gestione</span></div>
     <div class="card" style="padding:0">
-      <div class="patrow" id="go-conti" style="cursor:pointer"><div class="icon">${UI_SVG.conto}</div><div class="body"><div class="row1"><span class="name">Conti</span><span class="meta num">${nConti}</span></div></div><div class="chev">›</div></div>
+      <div class="patrow" id="go-conti" style="cursor:pointer"><div class="icon">${UI_SVG.conto}</div><div class="body"><div class="row1"><span class="name">Conti e strumenti</span><span class="meta num">${nConti}</span></div></div><div class="chev">›</div></div>
       <div class="divider"></div>
       <div class="patrow" id="go-cat" style="cursor:pointer"><div class="icon" style="background:var(--surface-2)">${UI_SVG.tag}</div><div class="body"><div class="row1"><span class="name">Categorie</span><span class="meta num">${state.categorie.length}</span></div></div><div class="chev">›</div></div>
     </div>

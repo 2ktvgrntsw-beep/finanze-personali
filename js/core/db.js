@@ -4,7 +4,8 @@
 // aggiungere store/indici senza perdere i dati esistenti dell'utente.
 
 const DB_NAME = 'FinanzePersonaliDB';
-const DB_VERSION = 5;   // v5: store 'consumiMensili' (consumo elettrico reale mese per mese)
+const DB_VERSION = 6;   // v6: store 'strumenti' (strumenti di investimento) e 'natura' (bisogno/desiderio)
+                        // v5: store 'consumiMensili' (consumo elettrico reale mese per mese)
                         // v4: store 'stipendi' (buste paga per la sezione Stipendi)
                         // v3: store 'obiettivi' (liquidità per anno) e 'panieri' (analisi)
 
@@ -42,6 +43,8 @@ const STORES = {
   consumiMensili: { keyPath: 'id', indexes: [ // consumo elettrico REALE per mese ('AAAA-MM')
                       { name: 'anno', keyPath: 'anno' },
                   ]},
+  strumenti:      { keyPath: 'id' },          // strumenti di investimento dentro i conti 'investimenti'
+  natura:         { keyPath: 'chiave' },      // bisogno/desiderio per categoria ('Macro›Cat') o eccezione ('Macro›Cat›Sub')
 };
 
 let _db = null;

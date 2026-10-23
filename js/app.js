@@ -12,6 +12,8 @@ import { ensureContoDefault } from './services/contiService.js';
 import { generaScaduti } from './services/ricorrentiService.js';
 import { sincronizzaPrestiti } from './services/prestitiService.js';
 import { salvaBackupAuto, rilevaPerdita, ripristinaBackupAuto } from './services/backupService.js';
+import { migraStrumentiSeNecessario, migraPlusvalenzeSeNecessario, allineaStrumenti } from './services/strumentiService.js';
+import { migraNaturaSeNecessario } from './services/naturaService.js';
 import { toast } from './core/utils.js';
 
 // Componenti (schermate)
@@ -158,6 +160,16 @@ const boot = async () => {
     await ensureContoDefault();
     await sincronizzaPrestiti();        // crea/aggiorna le ricorrenze di mutuo e finanziamenti
     await generaScaduti();             // genera movimenti da ricorrenze scadute (solo dal presente)
+
+    // STRUMENTI DI INVESTIMENTO e BISOGNI/DESIDERI (v3.38): migrazioni una tantum
+    // (flag in meta) + allineamento idempotente a ogni avvio. Un errore qui non deve
+    // impedire l'avvio: l'app resta usabile col calcolo precedente.
+    try {
+      await migraStrumentiSeNecessario();
+      await migraPlusvalenzeSeNecessario();
+      await allineaStrumenti();
+      await migraNaturaSeNecessario();
+    } catch (e) { console.error('Migrazione strumenti/natura non riuscita:', e); }
 
     costruisciChrome();
     registraRotte();
