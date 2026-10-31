@@ -39,6 +39,7 @@ import { renderFisco, renderFiscoDichiarazioni } from './components/fisco.js';
 import { renderDeduzione } from './components/deduzione.js';
 import { renderStipendioForm } from './components/stipendiForm.js';
 import { renderBilancio } from './components/bilancio.js';
+import { renderBisogni } from './components/bisogni.js';
 import { renderPaniere } from './components/panieri.js';
 import { renderBollettaForm, renderBollettaDettaglio, renderBolletteStorico } from './components/energiaBollette.js';
 
@@ -82,6 +83,7 @@ const registraRotte = () => {
   registerRoute('fisco-dichiarazioni', renderFiscoDichiarazioni);
   registerRoute('deduzione', (root, params) => renderDeduzione(root, params));
   registerRoute('bilancio', renderBilancio);
+  registerRoute('bisogni', renderBisogni);
   registerRoute('stipendio-nuovo', (root, params) => renderStipendioForm(root, params));
   registerRoute('paniere', renderPaniere);
   registerRoute('bolletta-nuova', renderBollettaForm);

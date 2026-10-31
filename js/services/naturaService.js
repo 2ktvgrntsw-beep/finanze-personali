@@ -146,3 +146,40 @@ export const migraNaturaSeNecessario = async () => {
   await refreshAll();
   return righe.length;
 };
+
+// ─── tetto dei desideri, in % delle entrate ─────────────────────────────────
+// Vive nello store 'natura' (così viaggia nel backup) sotto una chiave che non può
+// essere una categoria: niente separatore '›'.
+const CHIAVE_TETTO = '__tettoDesideri';
+export const tettoDesideri = () => {
+  const v = state.natura[CHIAVE_TETTO];
+  return typeof v === 'number' && v > 0 ? v : null;
+};
+export const impostaTettoDesideri = async (pct) => {
+  if (pct == null) await dbDelete('natura', CHIAVE_TETTO);
+  else {
+    if (!(pct > 0 && pct <= 100)) throw new Error('Inserisci una percentuale fra 1 e 100');
+    await dbAdd('natura', { chiave: CHIAVE_TETTO, valore: round2(pct) });
+  }
+  await refreshAll();
+};
+
+// Spese fra due date (incluse) raggruppate per voce: la categoria, oppure
+// "categoria › sottocategoria" quando la sottocategoria è un'eccezione.
+// Ritorna { B, D, N, voci: [{ chiave, macro, cat, sub, etichetta, nat, imp }] }.
+export const vociTra = (da, a) => {
+  const voci = new Map();
+  const tot = { B: 0, D: 0, N: 0 };
+  for (const m of state.movimenti) {
+    if (m.tipo !== 'spesa' || m.data < da || m.data > a) continue;
+    const nat = naturaDi(m.macro, m.cat, m.sub) || 'N';
+    tot[nat] += m.imp;
+    const ecc = m.sub && eccezioneSub(m.macro, m.cat, m.sub);
+    const sub = ecc ? m.sub : '';
+    const chiave = [m.macro, m.cat, sub].join(SEP);
+    const v = voci.get(chiave) || { chiave, macro: m.macro, cat: m.cat, sub, etichetta: sub ? `${m.cat} › ${sub}` : (m.cat || m.macro), nat, imp: 0 };
+    v.imp += m.imp;
+    voci.set(chiave, v);
+  }
+  return { B: round2(tot.B), D: round2(tot.D), N: round2(tot.N), voci: [...voci.values()].map(v => ({ ...v, imp: round2(v.imp) })) };
+};

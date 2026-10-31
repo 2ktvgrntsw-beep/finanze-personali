@@ -19,8 +19,9 @@
 // "straordinario" non sono la stessa cosa.
 
 import { state, contoByNome } from '../core/store.js';
-import { round2 } from '../core/utils.js';
+import { round2, todayISO } from '../core/utils.js';
 import { calcolaPiano } from './prestitiService.js';
+import { naturaDi, vociTra } from './naturaService.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LA RATA DEL MUTUO NON E' UNA SPESA SOLA: sono due cose incollate.
@@ -54,6 +55,16 @@ import { calcolaPiano } from './prestitiService.js';
 export const TAG_UNA_TANTUM = 'una tantum';
 export const SOGLIA_CANDIDATO = 2000;
 
+// RISCONTRO STIPENDI. Si confronta solo lo stipendio vero (Entrate › Stipendio)
+// col netto del cedolino + addebiti in busta (il "netto guadagnato" dell'app).
+// Buoni pasto e welfare stanno anch'essi sotto Stipendio ma NON sono nel netto del
+// cedolino: contarli faceva comparire 2.624 € di "scarto" inesistente nel 2026.
+// Il confronto è mese per mese: un totale annuo nascondeva quali mesi non tornano.
+// Sotto i 50 € al mese è arrotondamento o un piccolo addebito non registrato.
+export const SOGLIA_SCARTO_MESE = 50;
+const _NON_NEL_NETTO = /buon[io]\s*pasto|welfare|ticket/i;
+const _eStipendioDaBusta = (m) => m.cat === 'Stipendio' && !_NON_NEL_NETTO.test(m.sub || '');
+
 const _anno = (m) => m.data.slice(0, 4);
 const _mese = (m) => Number(m.data.slice(5, 7));
 const _isUnaTantum = (m) => (m.tag || []).some(t => String(t).toLowerCase() === TAG_UNA_TANTUM);
@@ -72,7 +83,7 @@ const _pianoMutuo = () => {
   if (!p || !p.importo_iniziale || !p.rata || !p.durata_mesi) return null;
   const perMese = {};
   for (const r of calcolaPiano(p, state.eventiMutuo || [])) {
-    perMese[r.data.slice(0, 7)] = { capitale: r.quotaCapitale, interessi: r.quotaInteressi, rata: r.rata };
+    perMese[r.data.slice(0, 7)] = { capitale: r.quotaCapitale, interessi: r.quotaInteressi, rata: r.rata, data: r.data };
   }
   return { chiave: { macro: p.macro || '', cat: p.cat || '', sub: p.sub || '' }, perMese };
 };
@@ -88,9 +99,12 @@ export const bilancioAnnuale = () => {
 
   const per = {};
   const riga = (a) => (per[a] = per[a] || {
-    anno: a, entrate: 0, entrateStraordinarie: 0, stipendiRegistrati: 0,
+    anno: a, entrate: 0, entrateStraordinarie: 0, stipendiRegistrati: 0, extraStipendio: 0, stipMese: {},
     speso: 0, spesoStraordinario: 0, accantonato: 0, nMov: 0,
     rateMutuo: 0, capitaleMutuo: 0, interessiMutuo: 0, rateMancanti: 0, straordinari: [],
+    // speso per natura (bisogno/desiderio/da classificare) e quota capitale del mutuo
+    // per natura: il capitale esce dallo speso, quindi esce anche dalla sua natura
+    spesoNat: { B: 0, D: 0, N: 0 }, capitaleNat: { B: 0, D: 0, N: 0 },
   });
 
   for (const m of state.movimenti) {
@@ -101,9 +115,15 @@ export const bilancioAnnuale = () => {
     if (m.tipo === 'entrata') {
       r.entrate += m.imp;
       if (straord) r.entrateStraordinarie += m.imp;
-      if (m.cat === 'Stipendio') r.stipendiRegistrati += m.imp;
+      if (_eStipendioDaBusta(m)) {
+        r.stipendiRegistrati += m.imp;
+        const am = m.data.slice(0, 7);
+        r.stipMese[am] = (r.stipMese[am] || 0) + m.imp;
+      } else if (m.cat === 'Stipendio') r.extraStipendio += m.imp;
     } else if (m.tipo === 'spesa') {
       r.speso += m.imp;
+      const nat = naturaDi(m.macro, m.cat, m.sub) || 'N';
+      r.spesoNat[nat] += m.imp;
       if (straord) r.spesoStraordinario += m.imp;
       // rata del mutuo: la abbino alla rata del piano dello STESSO MESE e ne prendo
       // lo split esatto. Un mese si abbina una volta sola: se per errore ci fossero
@@ -116,6 +136,7 @@ export const bilancioAnnuale = () => {
           const fattore = rata.rata > 0 ? m.imp / rata.rata : 1;
           r.rateMutuo += m.imp;
           r.capitaleMutuo += rata.capitale * fattore;
+          r.capitaleNat[naturaDi(m.macro, m.cat, m.sub) || 'N'] += rata.capitale * fattore;
           r.interessiMutuo += rata.interessi * fattore;
         }
       }
@@ -128,8 +149,12 @@ export const bilancioAnnuale = () => {
   // Rate previste dal piano che nel registro non hanno trovato un movimento: non
   // entrano nei conti (dal conto non e' uscito niente) ma vanno dichiarate.
   if (piano) {
+    const oggi = todayISO();
     for (const am of Object.keys(piano.perMese)) {
       if (mesiAbbinati.has(am)) continue;
+      // una rata non ancora scaduta non "manca": prima contava anche novembre e
+      // dicembre dell'anno in corso, e il Bilancio segnalava due rate inesistenti
+      if (piano.perMese[am].data > oggi) continue;
       const a = am.slice(0, 4);
       if (!per[a]) continue;            // anni fuori dall'archivio: non e' un buco
       per[a].rateMancanti++;
@@ -137,11 +162,17 @@ export const bilancioAnnuale = () => {
   }
 
   // netto delle buste paga dello stesso anno: serve solo come riscontro
-  const nettoBuste = {};
+  const nettoBuste = {}, nettoBusteMese = {};
   for (const b of state.stipendi) {
     const a = String(b.anno);
-    nettoBuste[a] = (nettoBuste[a] || 0) + (b.netto || 0) + (b.addebiti_netti || 0);
+    const v = (b.netto || 0) + (b.addebiti_netti || 0);
+    nettoBuste[a] = (nettoBuste[a] || 0) + v;
+    const am = `${a}-${String(b.mese).padStart(2, '0')}`;
+    nettoBusteMese[am] = (nettoBusteMese[am] || 0) + v;
   }
+  const stipMese = {};
+  for (const r of Object.values(per)) for (const [am, v] of Object.entries(r.stipMese)) stipMese[am] = v;
+  const riscontro = _riscontroStipendi(stipMese, nettoBusteMese);
 
   return Object.values(per).map(r => {
     const entrate = round2(r.entrate);
@@ -167,12 +198,21 @@ export const bilancioAnnuale = () => {
       // il tasso al netto delle una tantum: è quello che dice come vivi davvero
       tassoOrdinario: entrateOrd > 0 ? round2(risparmiatoOrd / entrateOrd * 100) : null,
       entrateStraordinarie: round2(r.entrateStraordinarie),
+      entrateOrdinarie: entrateOrd,
+      // lo speso diviso per natura, SENZA la quota capitale del mutuo (come lo speso)
+      bisogni: round2(r.spesoNat.B - r.capitaleNat.B),
+      desideri: round2(r.spesoNat.D - r.capitaleNat.D),
+      nonClassificato: round2(r.spesoNat.N - r.capitaleNat.N),
       spesoStraordinario: round2(r.spesoStraordinario),
       straordinari: r.straordinari.sort((a, b) => b.imp - a.imp),
       // riscontro con l'archivio buste paga
       stipendiRegistrati: round2(r.stipendiRegistrati),
+      extraStipendio: round2(r.extraStipendio),   // buoni pasto, welfare: non sono nel netto
       nettoBuste: buste,
       scartoBuste: buste ? round2(r.stipendiRegistrati - buste) : null,
+      // riscontro MESE PER MESE: solo i mesi che hanno un cedolino
+      mesiConCedolino: Object.keys(nettoBusteMese).filter(am => am.startsWith(r.anno)).length,
+      riscontroFuori: riscontro.filter(g => g.mesi[0].startsWith(r.anno)),
       nMov: r.nMov,
       inRosso: rimasto < 0,
     };
@@ -201,3 +241,50 @@ export const candidatiUnaTantum = () => state.movimenti
     && !_isUnaTantum(m))
   .map(m => ({ id: m.id, data: m.data, tipo: m.tipo, macro: m.macro, cat: m.cat, desc: m.desc, imp: round2(m.imp) }))
   .sort((a, b) => b.imp - a.imp);
+
+// Entrate fra due date (incluse), anche al netto delle una tantum: base del tetto
+// dei desideri, che si misura in % delle entrate.
+export const entrateTra = (da, a) => {
+  let tot = 0, straord = 0;
+  for (const m of state.movimenti) {
+    if (m.tipo !== 'entrata' || m.data < da || m.data > a) continue;
+    tot += m.imp;
+    if (_isUnaTantum(m)) straord += m.imp;
+  }
+  return { totali: round2(tot), ordinarie: round2(tot - straord) };
+};
+
+// Desideri in % delle entrate ordinarie (senza una tantum) fra due date: è la misura
+// del tetto dei desideri (pagina Bisogni e card in Analisi).
+export const quotaDesideriSuEntrate = (da, a) => {
+  const v = vociTra(da, a);
+  const e = entrateTra(da, a).ordinarie;
+  return { desideri: v.D, entrate: e, pct: e > 0 ? v.D / e * 100 : null, bisogni: v.B, nonClass: v.N };
+};
+
+// Riscontro mese per mese fra stipendio registrato e cedolino, su TUTTO l'archivio.
+// Un accredito che arriva il mese dopo (succedeva coi datori precedenti, e con
+// tredicesima/quattordicesima) crea due scarti opposti in due mesi vicini: non è un
+// errore, è uno sfasamento. Quindi i mesi consecutivi che si compensano vengono
+// sommati, e si segnala solo ciò che resta oltre la soglia.
+// Ritorna i gruppi che NON tornano: [{ mesi: ['2026-04'], registrato, cedolino, scarto }].
+const _riscontroStipendi = (stipMese, nettoBusteMese) => {
+  const mesi = Object.keys(nettoBusteMese).sort();
+  const voce = (am) => ({ am, reg: stipMese[am] || 0, ced: nettoBusteMese[am], s: (stipMese[am] || 0) - nettoBusteMese[am] });
+  const out = [];
+  for (let i = 0; i < mesi.length; i++) {
+    const v = voce(mesi[i]);
+    if (Math.abs(v.s) <= SOGLIA_SCARTO_MESE) continue;
+    const g = { mesi: [v.am], registrato: v.reg, cedolino: v.ced, scarto: v.s };
+    // allarga il gruppo finché il mese dopo compensa (segno opposto) e resta qualcosa
+    while (Math.abs(g.scarto) > SOGLIA_SCARTO_MESE && i + 1 < mesi.length) {
+      const n = voce(mesi[i + 1]);
+      if (Math.sign(n.s) === Math.sign(g.scarto) || Math.abs(n.s) <= SOGLIA_SCARTO_MESE) break;
+      g.mesi.push(n.am); g.registrato += n.reg; g.cedolino += n.ced; g.scarto += n.s; i++;
+    }
+    if (Math.abs(g.scarto) > SOGLIA_SCARTO_MESE) {
+      out.push({ mesi: g.mesi, registrato: round2(g.registrato), cedolino: round2(g.cedolino), scarto: round2(g.scarto) });
+    }
+  }
+  return out;
+};

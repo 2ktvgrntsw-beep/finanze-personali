@@ -30,7 +30,10 @@ export const renderMovimenti = async (root, params = {}) => {
   // set di movimenti SEMPRE limitato al periodo selezionato (mai tutto lo storico)
   const [anno, mese] = _mese.split('-');
   let movs;
-  if (_periodo === 'anno') {
+  if (params.da && params.a) {
+    // intervallo esplicito (es. dalla pagina Bisogni: ultimi 12 mesi)
+    movs = state.movimenti.filter(m => m.data >= params.da && m.data <= params.a);
+  } else if (_periodo === 'anno') {
     movs = state.movimenti.filter(m => m.data.startsWith(anno));
   } else if (_periodo === 'settimana') {
     const oggi = new Date(); const s = new Date(); s.setDate(oggi.getDate() - 6);
@@ -80,7 +83,8 @@ export const renderMovimenti = async (root, params = {}) => {
   const totaleFiltro = movs.filter(m => m.tipo === tipoSomma).reduce((s, m) => s + m.imp, 0);
 
   let cardsHTML = '';
-  if (haFiltri) {
+  const intervallo = !!(params.da && params.a);
+  if (haFiltri && !intervallo) {
     // totali per periodo (mese o anno) su tutto lo storico del filtro
     const perPeriodo = {};
     for (const m of state.movimenti) {
@@ -168,7 +172,7 @@ export const renderMovimenti = async (root, params = {}) => {
           <button class="arr" id="next">›</button>
           ${btnSeleziona}
         </div>` : `<div class="month-nav withsel" style="margin:6px 0"><div class="m">${labelPeriodo}</div>${btnSeleziona}</div>`}
-      ${haFiltri ? `<div class="filtro-badge">Filtro: <b>${escapeHtml(titolo)}</b> · ${movs.length} mov <span id="clear-filtro">✕</span></div>` : ''}
+      ${haFiltri ? `<div class="filtro-badge">Filtro: <b>${escapeHtml(titolo)}</b>${intervallo ? ` · ${params.da.split('-').reverse().join('/')} – ${params.a.split('-').reverse().join('/')}` : ''} · ${movs.length} mov <span id="clear-filtro">✕</span></div>` : ''}
       ${toolbarHTML}
       ${cardsHTML}
     </div>
@@ -177,7 +181,8 @@ export const renderMovimenti = async (root, params = {}) => {
 
   // IMPORTANTE: i listener passano SEMPRE params aggiornati (mese/periodo nuovi),
   // altrimenti il re-render rileggerebbe quelli vecchi e la navigazione resterebbe bloccata.
-  const vaiA = (nuovi) => renderMovimenti(root, { ...params, ...nuovi });
+  // cambiare periodo fa uscire dall'eventuale intervallo esplicito (da/a)
+  const vaiA = (nuovi) => { const { da, a, ...resto } = params; renderMovimenti(root, { ...resto, ...nuovi }); };
 
   // selettore periodo NELL'HEADER (compatto)
   const headSeg = document.getElementById('head-seg');

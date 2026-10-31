@@ -19,7 +19,9 @@ import { round2 } from '../js/core/utils.js';
 import { bilancioAnnuale, candidatiUnaTantum, TAG_UNA_TANTUM } from '../js/services/bilancioService.js';
 import { deduzioniAnno, detrazioniAnnuali, attesoAnno } from '../js/services/fiscoService.js';
 import { pianoMigrazione, versato, versatoConto, risolviStrumento, risultatiRealizzati } from '../js/services/strumentiService.js';
-import { naturaDi, aggregaNatura } from '../js/services/naturaService.js';
+import { naturaDi, aggregaNatura, vociTra } from '../js/services/naturaService.js';
+import { quotaDesideriSuEntrate, bilancioAnnuale as bilAnn } from '../js/services/bilancioService.js';
+import { calcolaPiano } from '../js/services/prestitiService.js';
 
 let falliti = 0, passati = 0;
 const ok = (nome, cond, extra = '') => {
@@ -417,6 +419,65 @@ console.log('\nbisogni e desideri');
   ok('desideri per mese (eccezione inclusa)', a.D[0] === 19 && a.D[1] === 300);
   ok('da classificare a parte, trasferimenti esclusi', a.N[1] === 10);
   state.movimenti = []; state.strumenti = []; state.natura = {}; state.conti = [];
+}
+
+
+console.log('\nbilancio diviso per natura e tetto dei desideri');
+{
+  // Il tetto vive nello store 'natura' con una chiave senza '›': non deve essere
+  // scambiato per una categoria, né cambiare la natura di nessuna spesa.
+  state.natura = { 'Casa›Utenze': 'B', 'Viaggi›Vacanze': 'D', '__tettoDesideri': 30 };
+  const sp = (id, data, macro, cat, imp, tag = []) => ({ id, data, annomese: data.slice(0, 7), tipo: 'spesa', macro, cat, sub: '', imp, tag });
+  const en = (id, data, imp, tag = []) => ({ id, data, annomese: data.slice(0, 7), tipo: 'entrata', macro: 'Entrate', cat: 'Stipendio', sub: '', imp, tag });
+  state.conti = []; state._idxContoByNome = {}; state.mutuo = null; state.stipendi = [];
+  state.movimenti = [
+    sp('a', '2025-03-01', 'Casa', 'Utenze', 100), sp('b', '2025-03-02', 'Viaggi', 'Vacanze', 300),
+    en('c', '2025-03-27', 2000), en('d', '2025-06-10', 10000, ['una tantum']),
+  ];
+  const v = vociTra('2025-01-01', '2025-12-31');
+  ok('la chiave del tetto non è una categoria', v.B === 100 && v.D === 300 && v.N === 0);
+  const q = quotaDesideriSuEntrate('2025-01-01', '2025-12-31');
+  ok('il tetto si misura sulle entrate SENZA una tantum', q.entrate === 2000 && vicino(q.pct, 15, 0.001), `${q.entrate} ${q.pct}`);
+  state.movimenti = []; state.natura = {};
+}
+
+
+console.log('\nbilancio: rate non ancora scadute e riscontro stipendi');
+{
+  // Il Bilancio del 2026 segnalava "2 rate mancanti": erano novembre e dicembre,
+  // non ancora scadute. Una rata futura non manca.
+  const anno = new Date().getFullYear();
+  const mutuo = { importo_iniziale: 20000, tasso: 2, durata_mesi: 36, rata: 573, data_inizio: `${anno}-01-28`, giorno_addebito: 28, quota_utente: 100, macro: 'Casa', cat: 'Affitto/Mutuo', sub: 'Rata Mutuo' };
+  const oggi = toISO(new Date());
+  const pagate = calcolaPiano(mutuo).filter(r => r.data <= oggi);
+  state.mutuo = mutuo; state.eventiMutuo = []; state.natura = {}; state.conti = []; state._idxContoByNome = {};
+  state.movimenti = pagate.map((r, i) => ({ id: 'r' + i, data: r.data, annomese: r.data.slice(0, 7), tipo: 'spesa', macro: 'Casa', cat: 'Affitto/Mutuo', sub: 'Rata Mutuo', imp: 573, tag: [] }));
+  state.stipendi = [];
+  const rr = bilAnn().find(x => x.anno === String(anno));
+  ok('nessuna rata mancante se mancano solo quelle future', rr && rr.rateMancanti === 0, rr ? String(rr.rateMancanti) : 'anno assente');
+
+  // Buoni pasto e welfare stanno sotto Stipendio ma non nel netto del cedolino:
+  // contarli faceva comparire 2.624 € di scarto inesistente. Il confronto è per mese.
+  const en = (id, data, sub, imp) => ({ id, data, annomese: data.slice(0, 7), tipo: 'entrata', macro: 'Entrate', cat: 'Stipendio', sub, imp, tag: [] });
+  state.mutuo = null;
+  state.movimenti = [
+    en('s1', '2025-03-31', 'Busta Paga', 2000), en('b1', '2025-03-12', 'Buoni Pasto', 120), en('w1', '2025-03-25', 'Welfare', 250),
+    en('s2', '2025-04-30', 'Busta Paga', 1900),
+  ];
+  state.stipendi = [
+    { anno: 2025, mese: 3, netto: 1795, addebiti_netti: 206 },
+    { anno: 2025, mese: 4, netto: 1970, addebiti_netti: 206 },
+  ];
+  const r25 = bilAnn().find(x => x.anno === '2025');
+  ok('buoni pasto e welfare fuori dal riscontro', r25.stipendiRegistrati === 3900 && r25.extraStipendio === 370);
+  ok('marzo torna, aprile no (−276 €)', r25.riscontroFuori.length === 1 && r25.riscontroFuori[0].mesi.join() === '2025-04' && r25.riscontroFuori[0].scarto === -276,
+    JSON.stringify(r25.riscontroFuori));
+  // Stipendio di maggio accreditato a giugno: due scarti opposti che si compensano
+  // non sono un errore, è uno sfasamento.
+  state.movimenti = [en('m1', '2025-06-02', 'Busta Paga', 2000), en('m2', '2025-06-30', 'Busta Paga', 2000)];
+  state.stipendi = [{ anno: 2025, mese: 5, netto: 2000, addebiti_netti: 0 }, { anno: 2025, mese: 6, netto: 2000, addebiti_netti: 0 }];
+  ok('accredito slittato al mese dopo: nessuna segnalazione', bilAnn().find(x => x.anno === '2025').riscontroFuori.length === 0);
+  state.movimenti = []; state.stipendi = [];
 }
 
 console.log('\nservice worker: nuovi file in cache');

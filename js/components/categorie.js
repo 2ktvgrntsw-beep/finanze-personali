@@ -18,8 +18,8 @@ import { scegliNatura } from './bisogni.js';
 
 // etichetta bisogno/desiderio (solo per le macro di spesa)
 const _pill = (v, attrs) => {
-  const stile = v === 'B' ? 'background:rgba(29,158,117,.18);color:#5DCAA5'
-    : v === 'D' ? 'background:rgba(216,90,48,.18);color:#F0997B'
+  const stile = v === 'B' ? 'background:rgba(123,108,255,.18);color:#9D8FFF'
+    : v === 'D' ? 'background:rgba(255,59,92,.14);color:#FF6B80'
     : 'background:rgba(245,166,35,.16);color:var(--warn)';
   const testo = v === 'B' ? 'Bisogno' : v === 'D' ? 'Desiderio' : 'Da classificare';
   return `<span class="natura-pill" ${attrs} role="button" style="font-size:11px;font-weight:600;padding:3px 9px;border-radius:8px;white-space:nowrap;cursor:pointer;${stile}">${testo}</span>`;

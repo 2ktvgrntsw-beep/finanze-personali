@@ -1571,3 +1571,35 @@ input:focus, input:focus-visible, select:focus, select:focus-visible, textarea:f
 .card .conto-riga:first-child{border-top:0}
 .card .conto-riga .conto-nome{flex:1;min-width:0;font-size:14.5px;color:var(--txt)}
 .card .conto-riga .conto-saldo{font-size:14.5px;white-space:nowrap}
+
+
+/* v3.39 — bisogni e desideri nella palette dell'app: i bisogni prendono il viola
+   (soldi "impegnati"), i desideri il rosso delle spese. Il capitale del mutuo, che
+   prima era viola, passa all'azzurro chiaro: è risparmio, come l'accantonato (blu). */
+:root{--bisogni:#7B6CFF;--desideri:var(--down);--capitale:#5FC3FF}
+.nat-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
+.sintesi-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0 2px}
+.sintesi-card{margin:0;padding:14px;cursor:pointer}
+.sintesi-big{font-size:26px;font-weight:750;margin:2px 0}
+/* v3.39 — Bilancio: grafico del tasso, tabella, dettaglio a cascata */
+.bil-ch{display:flex;align-items:stretch;gap:5px;margin-top:10px}
+.bil-col{flex:1;display:flex;flex-direction:column;align-items:center;cursor:pointer;min-width:0}
+.bil-col-v{font-size:10px;line-height:14px;white-space:nowrap}
+.bil-col-area{width:100%;display:flex;flex-direction:column;justify-content:flex-end;flex:none}
+.bil-col-bar{width:100%;background:var(--up);border-radius:3px 3px 0 0}
+.bil-col-neg{width:100%;border-top:1px solid var(--line);flex:none}
+.bil-col.on .bil-col-bar,.bil-col.on .bil-col-neg>div{outline:1.5px solid var(--txt);outline-offset:1px}
+.bil-ch-lbl{display:flex;gap:5px;margin-top:4px}
+.bil-ch-lbl span{flex:1;text-align:center;font-size:10px}
+.bil-tr{display:grid;grid-template-columns:52px 1fr 1fr 1fr 42px;gap:4px;align-items:center;padding:9px 4px;border-top:1px solid var(--line);font-size:13px;cursor:pointer}
+.bil-tr.h{border-top:0;color:var(--txt-2);font-size:11px;cursor:default}
+.bil-tr span{text-align:right;white-space:nowrap}
+.bil-tr span:first-child{text-align:left;font-weight:700}
+.bil-tr span i{display:block;font-style:normal;font-size:9.5px;font-weight:500;color:var(--txt-3)}
+.bil-tr.on{background:var(--surface-2);border-radius:10px;border-top-color:transparent}
+.bil-tr.on+.bil-tr{border-top-color:transparent}
+.bil-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.bil-nav .hbtn[disabled]{opacity:.3}
+.bil-cr{display:flex;justify-content:space-between;align-items:center;padding:7px 0;font-size:14px;gap:10px}
+.bil-cbar{height:7px;border-radius:4px;margin:0 0 4px}
+.bil-tot{border-top:1px solid var(--line);margin-top:6px;padding-top:10px;font-weight:600}

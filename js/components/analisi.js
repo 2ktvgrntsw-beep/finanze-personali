@@ -13,9 +13,11 @@ import { abilitaSwipeIndietro } from './shared.js';
 import { spesePerAnno, aggregaPerLivello, soloSpese } from '../services/movimentiService.js';
 import { panieriSezioneHTML, bindPanieri } from './panieri.js';
 import { listaMacro, categoriaHaSub } from '../services/categorieService.js';
-import { renderBisogni } from './bisogni.js';
+import { bilancioAnnuale, quotaDesideriSuEntrate } from '../services/bilancioService.js';
+import { tettoDesideri } from '../services/naturaService.js';
+import { todayISO } from '../core/utils.js';
 
-let _tab = 'categoria';   // 'categoria' | 'anno' | 'tag' | 'bisogni'
+let _tab = 'categoria';   // 'categoria' | 'anno' | 'tag'
 let _annoSel = String(new Date().getFullYear());
 // stato drill per la vista "categoria nel tempo"
 let _cMacro = '', _cCat = '', _cSub = '', _cAnno = '', _cTipo = 'spesa';
@@ -46,7 +48,6 @@ export const renderAnalisi = async (root, params = {}) => {
       <button data-t="categoria" class="${_tab === 'categoria' ? 'on' : ''}">Categoria</button>
       <button data-t="anno" class="${_tab === 'anno' ? 'on' : ''}">Anno</button>
       <button data-t="tag" class="${_tab === 'tag' ? 'on' : ''}">Tag</button>
-      <button data-t="bisogni" class="${_tab === 'bisogni' ? 'on' : ''}">Bisogni</button>
     </div>`;
     headSeg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
       _tab = b.dataset.t;
@@ -59,7 +60,6 @@ export const renderAnalisi = async (root, params = {}) => {
   const body = root.querySelector('#analisi-body');
   if (_tab === 'categoria') _renderCategoriaTempo(body, root);
   else if (_tab === 'anno') _renderAnno(body, root);
-  else if (_tab === 'bisogni') renderBisogni(body);
   else _renderTag(body, root);
 };
 
@@ -70,15 +70,15 @@ const _renderCategoriaTempo = (body, root) => {
   // se non ho ancora scelto una macro, mostro la griglia di scelta
   if (!_cMacro) {
     body.innerHTML = `
+      ${_cardSintesiHTML()}
       <p class="meta" style="margin:14px 4px">Scegli una categoria e guarda come è cambiata negli anni.</p>
       <div class="cat-grid" style="margin-top:6px">
         ${macros.map(m => `<div class="cat-cell" data-macro="${escapeHtml(m)}"><div class="ci">${iconaMacro(m)}</div><span>${escapeHtml(m)}</span></div>`).join('')}
       </div>
-      ${panieriSezioneHTML()}
-      <button class="btn btn-secondary btn-lg" id="apri-bilancio" style="margin:20px auto 10px;display:block">Bilancio</button>`;
+      ${panieriSezioneHTML()}`;
     body.querySelectorAll('[data-macro]').forEach(el => el.addEventListener('click', () => { location.hash = buildHash('analisi', { macro: el.dataset.macro }); }));
     bindPanieri(body);
-    body.querySelector('#apri-bilancio').addEventListener('click', () => navigate('bilancio'));
+    body.querySelectorAll('[data-sintesi]').forEach(el => el.addEventListener('click', () => navigate(el.dataset.sintesi)));
     return;
   }
 
@@ -432,4 +432,32 @@ const _renderTag = (body, root) => {
   }));
   const tr = body.querySelector('#tag-reset');
   if (tr) tr.addEventListener('click', () => { _tagSel.clear(); _tagQuery = ''; renderAnalisi(root); });
+};
+
+// Due card affiancate in cima ad Analisi: le viste di sintesi, sempre sull'ANNO IN CORSO.
+const _cardSintesiHTML = () => {
+  const anno = String(new Date().getFullYear());
+  const b = bilancioAnnuale().find(r => r.anno === anno);
+  const q = quotaDesideriSuEntrate(`${anno}-01-01`, todayISO());
+  const tetto = tettoDesideri();
+  const sopra = tetto != null && q.pct != null && q.pct > tetto;
+  const spese = q.bisogni + q.desideri + q.nonClass;
+  return `
+    <div class="sintesi-grid">
+      <div class="card sintesi-card" data-sintesi="bilancio" role="button">
+        <div class="meta">Bilancio ${anno}</div>
+        <div class="num sintesi-big" style="color:${b && b.tasso < 0 ? 'var(--down)' : 'var(--up)'}">${b && b.tasso != null ? Math.round(b.tasso) + '%' : '—'}</div>
+        <div class="meta">risparmiato da gennaio</div>
+        <div class="meta num" style="margin-top:4px">${b ? fmtEUR0(b.risparmiato) : ''}</div>
+      </div>
+      <div class="card sintesi-card" data-sintesi="bisogni" role="button">
+        <div class="meta">Desideri ${anno}</div>
+        <div class="num sintesi-big" style="color:${sopra ? 'var(--down)' : 'var(--txt)'}">${q.pct != null ? Math.round(q.pct) + '%' : '—'}</div>
+        <div class="meta">delle entrate${tetto ? ` · tetto ${Math.round(tetto)}%` : ''}</div>
+        <div style="display:flex;height:6px;border-radius:3px;overflow:hidden;margin-top:8px;background:var(--surface-3)">
+          <div style="width:${spese ? q.bisogni / spese * 100 : 0}%;background:var(--bisogni)"></div>
+          <div style="width:${spese ? q.desideri / spese * 100 : 0}%;background:var(--desideri)"></div>
+        </div>
+      </div>
+    </div>`;
 };
