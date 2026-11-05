@@ -1,9 +1,12 @@
 // bisogni.js — Bisogni e desideri (pagina a sé, ci si arriva dalla card in Analisi).
 //
-// Cosa deve dire, nell'ordine scelto da Lorenzo:
-//  1. dove posso tagliare: i desideri per categoria, col confronto col periodo prima;
-//  2. se sto rispettando il tetto: desideri in % delle ENTRATE (al netto delle una tantum);
-//  3. come è cambiata la quota negli anni, perché non scappi di mano.
+// Ordine della pagina (scelto da Lorenzo, 3.40):
+//  1. bisogni/desideri del periodo, col grafico per mese nella stessa card (tocca un
+//     mese e la card mostra quello);
+//  2. il tetto: desideri in % delle ENTRATE (al netto delle una tantum), col grafico
+//     degli anni e la linea del tetto nella stessa card;
+//  3. elenco dei bisogni e "da classificare";
+//  4. in fondo "Dove tagliare": i desideri per voce, col confronto col periodo prima.
 // La rata del mutuo qui conta INTERA (è la spesa che esce dal conto); nel Bilancio
 // invece la quota capitale è risparmio e sta a parte. Scelta voluta, detta in pagina.
 //
@@ -132,6 +135,16 @@ const _disegna = (root) => {
       </div>
       <div class="meta">${_eur0(quota.desideri)} di desideri su ${_eur0(quota.entrate)} di entrate${tetto ? (sopra ? ` · <span style="color:var(--down)">${_eur0(quota.desideri - quota.entrate * tetto / 100)} sopra il tetto</span>` : ` · margine ${_eur0(quota.entrate * tetto / 100 - quota.desideri)}`) : ''}</div>
       <div class="meta" style="font-size:11px;margin-top:4px;opacity:.8">Entrate senza le una tantum (le vendite e simili marcate nel Bilancio).</div>
+      <div class="meta" style="margin:16px 0 10px">Desideri negli anni · % delle entrate</div>
+      <div style="position:relative;display:flex;align-items:flex-end;gap:5px;height:120px">
+        ${tetto ? `<div style="position:absolute;left:0;right:0;bottom:${tetto / maxQ * 100}%;border-top:1.5px dashed var(--txt-2)"></div>` : ''}
+        ${quote.map(q => `<div data-anno="${q.anno}" style="flex:1;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;cursor:pointer">
+          <span class="num" style="font-size:10px;color:${tetto && q.pct > tetto ? 'var(--down)' : 'var(--txt-2)'}">${Math.round(q.pct)}</span>
+          <div style="width:100%;height:${q.pct / maxQ * 100}%;background:var(--desideri);border-radius:3px 3px 0 0;opacity:${q.parziale ? .5 : 1};${_periodo === q.anno ? 'outline:1.5px solid var(--txt);outline-offset:1px;' : ''}"></div>
+        </div>`).join('')}
+      </div>
+      <div style="display:flex;gap:5px;margin-top:4px">${quote.map(q => `<span class="meta" style="flex:1;text-align:center;font-size:10px">${q.anno.slice(2)}</span>`).join('')}</div>
+      <div class="meta" style="margin-top:8px">${tetto ? 'La linea tratteggiata è il tetto. ' : ''}Più chiari gli anni parziali. Tocca un anno per aprirlo.</div>
     </div>`;
 
   const daClass = daClassificare();
@@ -157,14 +170,7 @@ const _disegna = (root) => {
           <div class="meta">${pct(D)}%${sel === null ? ` · ${_eur0(D / P.nMesi)}/mese` : ''}</div></div>
       </div>
       ${N ? `<div class="meta" style="margin-top:10px">Da classificare: <b class="num">${_eur0(N)}</b></div>` : ''}
-    </div>
-
-    ${cardTetto}
-
-    ${blocco('D', 'Dove tagliare')}
-
-    <div class="card">
-      <div class="meta">Per mese · tocca una barra${sel !== null ? ', di nuovo per tornare al periodo' : ''}</div>
+      <div class="meta" style="margin-top:16px">Per mese · tocca una barra${sel !== null ? ', di nuovo per tornare al periodo' : ''}</div>
       <div style="display:flex;align-items:flex-end;gap:4px;height:120px;margin-top:10px">
         ${P.mesi.map((am, i) => `<div data-bar="${i}" style="flex:1;height:100%;display:flex;flex-direction:column;justify-content:flex-end;cursor:pointer;border-radius:3px;${sel === i ? 'outline:1.5px solid var(--accent);outline-offset:2px;' : ''}">
           <div style="height:${agg.N[i] / max * 100}%;background:var(--txt-3)"></div>
@@ -175,18 +181,7 @@ const _disegna = (root) => {
       <div style="display:flex;gap:4px;margin-top:4px">${P.mesi.map(am => `<span class="meta" style="flex:1;text-align:center;font-size:10.5px">${nomeMese(+am.slice(5) - 1).slice(0, 1).toUpperCase()}</span>`).join('')}</div>
     </div>
 
-    <div class="section-lbl"><span>Desideri negli anni</span><span>% delle entrate</span></div>
-    <div class="card">
-      <div style="position:relative;display:flex;align-items:flex-end;gap:5px;height:120px">
-        ${tetto ? `<div style="position:absolute;left:0;right:0;bottom:${tetto / maxQ * 100}%;border-top:1.5px dashed var(--txt-2)"></div>` : ''}
-        ${quote.map(q => `<div data-anno="${q.anno}" style="flex:1;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;cursor:pointer">
-          <span class="num" style="font-size:10px;color:${tetto && q.pct > tetto ? 'var(--down)' : 'var(--txt-2)'}">${Math.round(q.pct)}</span>
-          <div style="width:100%;height:${q.pct / maxQ * 100}%;background:var(--desideri);border-radius:3px 3px 0 0;opacity:${q.parziale ? .5 : 1};${_periodo === q.anno ? 'outline:1.5px solid var(--txt);outline-offset:1px;' : ''}"></div>
-        </div>`).join('')}
-      </div>
-      <div style="display:flex;gap:5px;margin-top:4px">${quote.map(q => `<span class="meta" style="flex:1;text-align:center;font-size:10px">${q.anno.slice(2)}</span>`).join('')}</div>
-      <div class="meta" style="margin-top:8px">${tetto ? 'La linea tratteggiata è il tetto. ' : ''}Più chiari gli anni parziali. Tocca un anno per aprirlo.</div>
-    </div>
+    ${cardTetto}
 
     ${blocco('B', 'Bisogni')}
 
@@ -195,6 +190,8 @@ const _disegna = (root) => {
       <div class="card" style="padding:4px 14px">
         ${daClass.map(c => `<div class="conto-riga" data-classifica="${escapeHtml(c.macro)}${SEP}${escapeHtml(c.cat)}"><div class="conto-nome">${escapeHtml(c.cat)}<div class="meta" style="font-size:11.5px;margin-top:2px">${escapeHtml(c.macro)}</div></div><div class="conto-saldo num">${_eur0(c.imp)}</div><div class="conto-chev">›</div></div>`).join('')}
       </div>` : ''}
+
+    ${blocco('D', 'Dove tagliare')}
 
     <p class="meta" style="margin:10px 4px;line-height:1.5">Qui la rata del mutuo conta intera, perché è quello che esce dal conto. Nel Bilancio la sua quota capitale è risparmio e sta a parte, per questo i bisogni lì risultano più bassi.</p>
     <button class="btn btn-secondary" id="vai-categorie">Cambia le etichette in Categorie</button>
