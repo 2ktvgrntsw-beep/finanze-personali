@@ -16,6 +16,15 @@
 //   differenza appartiene proprio a dicembre. Cosi' l'anno torna al centesimo.
 // 'rimborso_730' e' un CREDITO (soldi tornati indietro), non una trattenuta.
 
+// Correzioni Cometa quota datore (3.42): la somma delle righe "Ctr.prev.compl.deducib."
+// dei cedolini deve tornare con la previdenza dedotta nel 730. Mancavano le quote datore
+// della seconda busta (13ma "AGG.") o delle quote welfare versate a Cometa:
+//   2022-12 +47,30 (AGG) · 2023-10 +39,98 (welfare) · 2023-12 +50,42 (AGG)
+//   2024-07 +49,00 (base di luglio, c'era solo quella di giugno) · 2024-12 +38,58 (AGG)
+//   2025-06 +2,01 (welfare) · 2025-12 +10,00 (aggiuntivo della AGG)
+// Dopo: 2022 2.354,21 · 2023 2.883,47 · 2024 2.972,54 · 2025 3.174,49 = 730 all'euro.
+// 2017-2021 tornavano già (scarti sotto 0,50 € = arrotondamento del 730).
+
 export const STIPENDI_SEED = [
   {
     "id": "2016-04-Marposs",
@@ -3382,7 +3391,7 @@ export const STIPENDI_SEED = [
     "rimborso_730_anno": null,
     "tfr_a_fondo_pensione": 458.12,
     "cometa_dipendente": 265.3,
-    "cometa_azienda": 47.3,
+    "cometa_azienda": 94.6,
     "altre_trattenute": null,
     "premi_detassati": 0.0,
     "tredicesima_inclusa": true,
@@ -3776,7 +3785,7 @@ export const STIPENDI_SEED = [
     "rimborso_730_anno": null,
     "tfr_a_fondo_pensione": 328.78,
     "cometa_dipendente": 190.39,
-    "cometa_azienda": 50.42,
+    "cometa_azienda": 90.4,
     "altre_trattenute": null,
     "premi_detassati": 764.84,
     "tredicesima_inclusa": false,
@@ -3853,7 +3862,7 @@ export const STIPENDI_SEED = [
     "rimborso_730_anno": null,
     "tfr_a_fondo_pensione": 487.19,
     "cometa_dipendente": 282.13,
-    "cometa_azienda": 50.42,
+    "cometa_azienda": 100.84,
     "altre_trattenute": 64.63,
     "premi_detassati": 0.0,
     "tredicesima_inclusa": true,
@@ -4176,7 +4185,7 @@ export const STIPENDI_SEED = [
     "rimborso_730_anno": null,
     "tfr_a_fondo_pensione": 279.67,
     "cometa_dipendente": 421.2,
-    "cometa_azienda": 29.54,
+    "cometa_azienda": 78.54,
     "altre_trattenute": 211.0,
     "premi_detassati": 0.0,
     "tredicesima_inclusa": false,
@@ -4372,7 +4381,7 @@ export const STIPENDI_SEED = [
     "rimborso_730_anno": null,
     "tfr_a_fondo_pensione": 442.82,
     "cometa_dipendente": 256.44,
-    "cometa_azienda": 59.0,
+    "cometa_azienda": 97.58,
     "altre_trattenute": 9.36,
     "premi_detassati": 799.86,
     "tredicesima_inclusa": true,
@@ -4608,7 +4617,7 @@ export const STIPENDI_SEED = [
     "rimborso_730_anno": null,
     "tfr_a_fondo_pensione": 569.87,
     "cometa_dipendente": 330.0,
-    "cometa_azienda": 59.64,
+    "cometa_azienda": 61.65,
     "altre_trattenute": 214.16,
     "premi_detassati": 0.0,
     "tredicesima_inclusa": false,
@@ -4843,7 +4852,7 @@ export const STIPENDI_SEED = [
     "rimborso_730_anno": null,
     "tfr_a_fondo_pensione": 563.68,
     "cometa_dipendente": 326.46,
-    "cometa_azienda": 109.28,
+    "cometa_azienda": 119.28,
     "altre_trattenute": null,
     "premi_detassati": 1356.07,
     "tredicesima_inclusa": true,

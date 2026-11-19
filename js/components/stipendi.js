@@ -227,7 +227,7 @@ export const renderStipendiFondo = async (root) => {
     <div class="section-lbl"><span>Chi ha versato</span></div>
     <div class="card" style="padding:4px 14px" data-noline>
       ${perDatore.map(f => `
-        <div class="paniere-anno-riga">
+        <div class="paniere-anno-riga bp-riga">
           <span class="fr-nome"><span class="stip-dot" style="background:${f.colore}"></span> ${escapeHtml(f.datore)}</span>
           <b class="num">${fmtEUR(f.tot)}</b>
         </div>
@@ -281,7 +281,7 @@ export const renderStipendiFondo = async (root) => {
     const c = root.querySelector('#ded-card');
     c.innerHTML = `
       <div class="fr-head">
-        <span class="fr-nome" style="font-weight:700">${r.dichiarato ? 'Dedotto dal reddito' : 'Ancora da dichiarare'}</span>
+        <span class="fr-nome" style="font-weight:700">${r.dichiarato ? 'Dedotto dal reddito' : 'Versato finora'}</span>
         <span class="fr-val num" style="font-size:19px;font-weight:750;color:var(--up)">${fmtEUR(r.dedotto)}</span>
       </div>
       <div class="dedtrack">
@@ -290,14 +290,14 @@ export const renderStipendiFondo = async (root) => {
         <span class="ded-mk" style="left:${pcOrd}%"></span>
       </div>
       <div class="dedscale">
-        <span>dedotto</span>
+        <span>${r.dichiarato ? 'dedotto' : 'versato'}</span>
         <span>tetto ${fmtEUR(r.tetto)}</span>
         <span>con recupero ${fmtEUR(r.tettoConRecupero)}</span>
       </div>
       <div class="fr-sub" style="margin-top:8px">${r.dichiarato
-    ? `Il <b>${r.quota}%</b> del tetto ordinario: restano ${fmtEUR(r.nonUsato)} di contributi che potevi ancora dedurre nel ${r.anno}.`
-    : `Il 730 sui redditi ${r.anno} non è ancora stato presentato: il tetto dell'anno è ${fmtEUR(r.tetto)}.`}
-        La parte tratteggiata è il recupero da prima occupazione, fino a ${fmtEUR(r.tettoConRecupero)}. Tocca per il dettaglio.</div>`;
+    ? `Il <b>${r.quota}%</b> del tetto ordinario: restano ${fmtEUR(r.nonUsato)} di contributi che potevi ancora dedurre nel ${r.anno}.
+        La parte tratteggiata è il recupero da prima occupazione, fino a ${fmtEUR(r.tettoConRecupero)}. Tocca per il dettaglio.`
+    : `Da buste paga (${r.nBuste}) · ${r.quota}% del tetto`}</div>`;
   };
   disDed();
   root.querySelector('#ded-prev').addEventListener('click', () => {
@@ -452,18 +452,18 @@ export const renderStipendioDettaglio = async (root, params) => {
       ${(() => {
         const t = dettaglioTrattenute(b);
         const righe = t.voci.map(v => `
-          <div class="paniere-anno-riga">
+          <div class="paniere-anno-riga bp-riga">
             <span class="fr-nome"><span class="stip-dot" style="background:${v.colore}"></span> ${v.nome}</span>
             <b class="num">${fmtEUR(v.val)}</b>
           </div>`).join('');
         const res = Math.abs(t.residuo) > 0.02 ? `
-          <div class="paniere-anno-riga">
+          <div class="paniere-anno-riga bp-riga">
             <span class="fr-nome"><span class="stip-dot" style="background:#5A6274"></span> Non dettagliato</span>
             <b class="num">${fmtEUR(t.residuo)}</b>
           </div>` : '';
         return (righe || res) ? righe + res + `
           <div class="divider"></div>
-          <div class="paniere-anno-riga"><span class="fr-nome"><b>Totale trattenute</b></span><b class="num">${fmtEUR(t.totale)}</b></div>`
+          <div class="paniere-anno-riga bp-riga"><span class="fr-nome"><b>Totale trattenute</b></span><b class="num">${fmtEUR(t.totale)}</b></div>`
           : '<div class="empty" style="padding:8px 0">Dettaglio non disponibile per questa busta</div>';
       })()}
     </div>
@@ -472,11 +472,11 @@ export const renderStipendioDettaglio = async (root, params) => {
     ${(b.imponibile_inps || b.imponibile_irpef || b.irpef_lorda) ? `
     <div class="section-lbl"><span>Imponibili e imposta</span></div>
     <div class="card" style="padding:4px 14px">
-      ${b.imponibile_inps ? `<div class="paniere-anno-riga"><span class="fr-nome">Imponibile INPS</span><b class="num">${fmtEUR(b.imponibile_inps)}</b></div>` : ''}
-      ${b.imponibile_irpef ? `<div class="paniere-anno-riga"><span class="fr-nome">Imponibile IRPEF</span><b class="num">${fmtEUR(b.imponibile_irpef)}</b></div>` : ''}
-      ${b.irpef_lorda ? `<div class="paniere-anno-riga"><span class="fr-nome">IRPEF lorda</span><b class="num">${fmtEUR(b.irpef_lorda)}</b></div>` : ''}
-      ${b.detrazioni ? `<div class="paniere-anno-riga"><span class="fr-nome">Detrazioni</span><b class="num" style="color:var(--up)">−${fmtEUR(b.detrazioni)}</b></div>` : ''}
-      ${b.irpef_netta ? `<div class="paniere-anno-riga"><span class="fr-nome">IRPEF trattenuta</span><b class="num">${fmtEUR(b.irpef_netta)}</b></div>` : ''}
+      ${b.imponibile_inps ? `<div class="paniere-anno-riga bp-riga"><span class="fr-nome">Imponibile INPS</span><b class="num">${fmtEUR(b.imponibile_inps)}</b></div>` : ''}
+      ${b.imponibile_irpef ? `<div class="paniere-anno-riga bp-riga"><span class="fr-nome">Imponibile IRPEF</span><b class="num">${fmtEUR(b.imponibile_irpef)}</b></div>` : ''}
+      ${b.irpef_lorda ? `<div class="paniere-anno-riga bp-riga"><span class="fr-nome">IRPEF lorda</span><b class="num">${fmtEUR(b.irpef_lorda)}</b></div>` : ''}
+      ${b.detrazioni ? `<div class="paniere-anno-riga bp-riga"><span class="fr-nome">Detrazioni</span><b class="num" style="color:var(--up)">−${fmtEUR(b.detrazioni)}</b></div>` : ''}
+      ${b.irpef_netta ? `<div class="paniere-anno-riga bp-riga"><span class="fr-nome">IRPEF trattenuta</span><b class="num">${fmtEUR(b.irpef_netta)}</b></div>` : ''}
     </div>` : ''}
 
     ${b.quadratura_annuale ? `<div class="card" style="border-left:3px solid var(--violet)">

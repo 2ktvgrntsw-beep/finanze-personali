@@ -493,11 +493,25 @@ export const rimborsoAtteso = () => {
 // Plafond del fondo pensione per un anno: quanto del tetto deducibile e' stato usato e
 // quanto vale l'extra da prima occupazione mai richiesto. Il tetto ordinario cambia per
 // anno (5.164,57 fino al 2025, 5.300 dal 2026), quindi va sempre chiesto per anno.
+// Anno senza 730 (quello in corso): il dedotto lo stimo dalle buste, sommando quota
+// tua + quota datore, che è esattamente la riga "Ctr.prev.compl.deducib." del cedolino.
+// Gli anni dichiarati restano sul dato del 730/CU.
+const _rigaDedotto = (a) => {
+  const r = plafondAnno(a);
+  if (r.dichiarato) return { ...r, fonte: 'cu' };
+  const buste = state.stipendi.filter(s => Number(s.anno) === a);
+  const ded = round2(buste.reduce((x, s) => x + (s.cometa_dipendente || 0) + (s.cometa_azienda || 0), 0));
+  return {
+    ...r, fonte: 'buste', nBuste: buste.length, dedotto: ded,
+    nonUsato: round2(r.tetto - ded), quota: r.tetto ? Math.round(ded / r.tetto * 100) : 0,
+  };
+};
+
 export const plafondFondo = (anno) => {
   const a = Number(anno) || new Date().getFullYear();
   return {
     ...plafondPrimaOccupazione(a),
-    riga: plafondAnno(a),
+    riga: _rigaDedotto(a),
     serie: seriePlafond(),
     anni: anniPlafond(),
     tettoOrdinario: plafondOrdinarioDi(a),
@@ -524,7 +538,9 @@ export const dettaglioTrattenute = (b) => {
     ['Imposta sostitutiva (premi)', b.imposta_sostitutiva, '#FF8A3D'],
     ['IRPEF tassazione separata', b.irpef_tass_separata, '#E2001A'],
     ['Cometa — quota tua', b.cometa_dipendente, '#22E39A'],
-    ['Altre (mensa, ticket, auto…)', b.altre_trattenute, '#9AA7BD'],
+    // le buste del seed hanno 'altre_trattenute'; quelle inserite a mano o da PDF hanno
+    // solo gli addebiti in busta (auto, mensa, ticket): sono la stessa cosa
+    ['Altre (mensa, ticket, auto…)', b.altre_trattenute ?? b.addebiti_netti, '#9AA7BD'],
   ].filter(v => v[1]).map(([nome, val, colore]) => ({ nome, val: round2(val), colore }));
   const residuo = round2(b.trattenute - voci.reduce((s, v) => s + v.val, 0));
   return { voci, residuo, totale: round2(b.trattenute) };
@@ -534,13 +550,24 @@ export const dettaglioTrattenute = (b) => {
 // CRUD buste paga (inserimento manuale o import PDF).
 // L'id è composito 'AAAA-MM-datore': nei mesi di passaggio convivono due buste.
 // ─────────────────────────────────────────────────────────────────────────────
+export const CAMPI_FISCALI_FACOLTATIVI = [
+  'contributi_inps', 'imponibile_inps', 'imponibile_irpef', 'irpef_lorda', 'detrazioni',
+  'irpef_netta', 'addizionale_regionale', 'addizionale_comunale', 'imposta_sostitutiva',
+];
+
 export const salvaStipendio = async (b) => {
   const anno = +b.anno, mese = +b.mese;
   const netto = round2(b.netto || 0);
   const trattenute = round2(b.trattenute || 0);
   // il lordo è SEMPRE coerente con l'identità di busta: lordo = netto + trattenute
   const lordo = round2(netto + trattenute);
+  // Modificando una busta già esistente (anche una del seed) parto dal record com'era:
+  // i campi che il form non mostra (conguagli, trattamento integrativo, quadratura
+  // annuale, fonte…) prima si perdevano al primo "Salva". Ora restano.
+  const base = b.base ? { ...b.base } : {};
+  delete base.manuale;
   const rec = {
+    ...base,
     id: `${anno}-${String(mese).padStart(2, '0')}-${b.datore}`,
     periodoId: `${anno}-${String(mese).padStart(2, '0')}`,
     anno, mese, datore: b.datore,
@@ -552,19 +579,24 @@ export const salvaStipendio = async (b) => {
     tfr_a_fondo_pensione: round2(b.tfr_a_fondo_pensione || 0),
     cometa_dipendente: round2(b.cometa_dipendente || 0),
     cometa_azienda: round2(b.cometa_azienda || 0),
-    premi_detassati: round2(b.premi_detassati || 0),
-    rimborso_fiscale_escluso: round2(b.rimborso_fiscale_escluso || 0),
+    premi_detassati: round2((b.premi_detassati ?? base.premi_detassati) || 0),
+    rimborso_fiscale_escluso: round2((b.rimborso_fiscale_escluso ?? base.rimborso_fiscale_escluso) || 0),
     // rimborso 730: credito accreditato in busta, tenuto fuori da netto e lordo
     rimborso_730: round2(b.rimborso_730 || 0),
     rimborso_730_anno: b.rimborso_730_anno || null,
     tredicesima_inclusa: !!b.tredicesima_inclusa,
     cessazione: !!b.cessazione,
     manuale: true,   // inserita/modificata da te: il seed non la tocca
-    voci_notevoli: b.voci_notevoli || [],
+    voci_notevoli: b.voci_notevoli || base.voci_notevoli || [],
   };
-  for (const k of ['contributi_inps', 'irpef_netta', 'addizionale_regionale', 'addizionale_comunale']) {
+  // campi facoltativi: valorizzati → salvati; lasciati vuoti → tolti (anche se c'erano)
+  for (const k of CAMPI_FISCALI_FACOLTATIVI) {
     if (b[k] != null && b[k] !== '') rec[k] = round2(b[k]);
+    else delete rec[k];
   }
+  // "Altre (mensa, ticket, auto…)" nel dettaglio trattenute: se hai corretto gli
+  // addebiti a mano, il vecchio valore del seed non vale più
+  if (b.base && round2(b.base.addebiti_netti || 0) !== rec.addebiti_netti) delete rec.altre_trattenute;
   await dbAdd('stipendi', rec);
   await refreshAll();
   return rec;

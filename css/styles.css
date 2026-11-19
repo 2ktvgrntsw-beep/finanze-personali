@@ -1603,3 +1603,20 @@ input:focus, input:focus-visible, select:focus, select:focus-visible, textarea:f
 .bil-cr{display:flex;justify-content:space-between;align-items:center;padding:7px 0;font-size:14px;gap:10px}
 .bil-cbar{height:7px;border-radius:4px;margin:0 0 4px}
 .bil-tot{border-top:1px solid var(--line);margin-top:6px;padding-top:10px;font-weight:600}
+
+/* ── Busta paga: form e dettaglio (3.41) ──
+   Etichetta (con nota piccola sotto) a sinistra, importo a destra allineato. Prima
+   etichetta e campo stavano impilati in una riga alta 46px e si sovrapponevano. */
+.bp-card{padding:2px 14px}
+.bp-campo{display:flex;align-items:center;gap:12px;min-height:50px;padding:8px 0;border-bottom:1px solid var(--line);cursor:text}
+.bp-campo:last-child{border-bottom:0}
+.bp-lbl{flex:1;min-width:0;font-size:14.5px;color:var(--txt);line-height:1.3}
+.bp-lbl small{display:block;font-size:11.5px;color:var(--txt-3);margin-top:2px}
+.bp-in{flex:none;width:128px;height:38px;padding:0 10px;border-radius:10px;border:1px solid var(--line);background:var(--surface-2);color:var(--txt);font-family:var(--font);font-size:15px;text-align:right;outline:none}
+.bp-in:focus{border-color:var(--accent)}
+.bp-in.pdf{border-color:rgba(46,155,255,.55);background:rgba(46,155,255,.08)}
+.bp-sel{width:150px;text-align:left;text-align-last:right;appearance:none;-webkit-appearance:none}
+.bp-campo input[type=checkbox]{width:20px;height:20px;flex:none}
+.bp-nota{font-size:12.5px;color:var(--txt-2);padding:10px 0 8px;border-top:1px solid var(--line)}
+.bp-riga .fr-nome{flex:1;min-width:0}
+.bp-riga b{flex:none;text-align:right}

@@ -196,6 +196,26 @@ export const parseBusta = (testo, totaliPos = null) => {
     r.contributi_inps = Math.round(((ivs || 0) + (ivsAgg || 0) + (cigs || 0)) * 100) / 100;
   }
   r.irpef_netta = primoPerEtichetta(righe, /Ritenute\s*IRPEF/i);
+
+  // IMPONIBILI E IMPOSTA del mese. Sul cedolino Zucchetti stanno fra le voci fiscali:
+  //   "Z00000 Contributo IVS 4.179,00 % 9,19000 384,05"  → la BASE (primo importo) è
+  //      l'imponibile INPS del mese, l'ultimo importo è il contributo;
+  //   "F02000 Imponibile IRPEF 3.615,09" e "F02010 IRPEF lorda 1.034,49".
+  // In fondo alla busta ci sono anche "Imp. INPS" e "Imp. IRPEF" PROGRESSIVI dell'anno,
+  // con il valore sulla riga sotto: sono un'altra cosa e qui non li prendo (la regex
+  // vuole "Imponibile", non "Imp.").
+  const rigaIvs = righe.find(x => /Contributo\s*IVS(?!\s*agg)/i.test(x));
+  const baseIvs = rigaIvs && rigaIvs.match(/IVS\s+(-?\d{1,3}(?:\.\d{3})*,\d{2})/i);
+  if (baseIvs) r.imponibile_inps = numIt(baseIvs[1]);
+  r.imponibile_irpef = primoPerEtichetta(righe, /Imponibile\s*IRPEF/i);
+  r.irpef_lorda = primoPerEtichetta(righe, /IRPEF\s*lorda/i);
+  // detrazioni: solo se c'è la voce sul cedolino (con i redditi alti spesso non c'è,
+  // e allora IRPEF lorda = ritenute). Non la ricavo per differenza: i conguagli la
+  // sporcherebbero.
+  r.detrazioni = primoPerEtichetta(righe, /^\S*\s*Detrazion[ie]\s*(lav|dip|per\s*lav|spett|tot)/i);
+  // premi di risultato tassati al 5-10% (dicembre, marzo…): base e imposta sostitutiva
+  r.premi_detassati = primoPerEtichetta(righe, /Premi\/?\s*altre\s*somme\s*detassati/i);
+  r.imposta_sostitutiva = primoPerEtichetta(righe, /Imposta\s*sost\.?\s*premi/i);
   r.addizionale_regionale = primoPerEtichetta(righe, /Addizionale\s*regionale/i);
   const com = primoPerEtichetta(righe, /Addizionale\s*comunale/i);
   const comAcc = primoPerEtichetta(righe, /Acconto\s*addiz\.?\s*comunale/i);
@@ -219,6 +239,14 @@ export const parseBusta = (testo, totaliPos = null) => {
   if (fuori(r.cometa_dipendente, 5, 2000)) delete r.cometa_dipendente;
   if (fuori(r.cometa_azienda, 5, 500)) delete r.cometa_azienda;
   if (fuori(r.tfr_a_fondo_pensione, 20, 20000)) delete r.tfr_a_fondo_pensione;
+  if (fuori(r.imponibile_inps, 100, 90000)) delete r.imponibile_inps;
+  if (fuori(r.imponibile_irpef, 100, 90000)) delete r.imponibile_irpef;
+  if (fuori(r.irpef_lorda, 10, 30000)) delete r.irpef_lorda;
+  if (fuori(r.detrazioni, 1, 5000)) delete r.detrazioni;
+  if (fuori(r.premi_detassati, 1, 30000)) delete r.premi_detassati;
+  if (fuori(r.imposta_sostitutiva, 0.5, 5000)) delete r.imposta_sostitutiva;
+  // l'IRPEF lorda non può superare il suo imponibile
+  if (r.imponibile_irpef != null && r.irpef_lorda != null && r.irpef_lorda > r.imponibile_irpef) delete r.irpef_lorda;
   // coerenza finale: lordo - trattenute deve dare il netto
   if (r.lordo != null && r.trattenute != null && r.netto != null &&
       Math.abs(r.lordo - r.trattenute - r.netto) > 0.05) {

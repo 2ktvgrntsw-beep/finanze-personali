@@ -46,11 +46,11 @@ export const renderDeduzione = async (root, params = {}) => {
 
     root.querySelector('#ded2-body').innerHTML = `
       <div class="net-card" style="margin-top:2px">
-        <div class="lbl2">${r.dichiarato ? `Dedotto nel ${r.anno}` : `Tetto del ${r.anno}`}</div>
-        <div class="num" style="font-size:30px;font-weight:750">${fmtEUR(r.dichiarato ? r.dedotto : r.tetto)}</div>
+        <div class="lbl2">${r.dichiarato ? `Dedotto nel ${r.anno}` : `Versato finora nel ${r.anno}`}</div>
+        <div class="num" style="font-size:30px;font-weight:750">${fmtEUR(r.dedotto)}</div>
         <div class="meta" style="margin-top:4px">${r.dichiarato
     ? `${r.quota}% del tetto ordinario di ${fmtEUR(r.tetto)}`
-    : 'il 730 di quest\'anno non è ancora stato presentato'}</div>
+    : `da buste paga · ${r.quota}% del tetto di ${fmtEUR(r.tetto)}`}</div>
       </div>
 
       <div class="card">
@@ -60,7 +60,7 @@ export const renderDeduzione = async (root, params = {}) => {
           <span class="ded-mk" style="left:${pcOrd}%"></span>
         </div>
         <div class="dedscale">
-          <span>dedotto ${fmtEUR(r.dedotto)}</span>
+          <span>${r.dichiarato ? 'dedotto' : 'versato'} ${fmtEUR(r.dedotto)}</span>
           <span>tetto ${fmtEUR(r.tetto)}</span>
           <span>con recupero ${fmtEUR(scala)}</span>
         </div>

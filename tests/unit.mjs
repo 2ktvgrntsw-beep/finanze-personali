@@ -480,6 +480,55 @@ console.log('\nbilancio: rate non ancora scadute e riscontro stipendi');
   state.movimenti = []; state.stipendi = [];
 }
 
+console.log('\nbusta paga da PDF: imponibili e IRPEF (3.41)');
+{
+  // Righe vere della busta Schneider di agosto 2026. Prima il parser non leggeva
+  // imponibili e IRPEF lorda: le buste caricate da PDF restavano senza, e il form non
+  // permetteva nemmeno di scriverli a mano.
+  const { parseBusta } = await import('../js/services/pdfBustaPaga.js');
+  const testo = [
+    'Agosto 2026',
+    '* Z00000 Contributo IVS 4.179,00 % 9,19000 384,05',
+    '* Z00071 Contributo CIGS 4.179,00 % 0,30000 12,53',
+    'F02000 Imponibile IRPEF 3.615,09',
+    'F02010 IRPEF lorda 1.034,49',
+    'F03020 Ritenute IRPEF 1.034,49',
+    'Imp. INPS', '40.295,00', 'Imp. IRPEF', '34.809,53',
+  ].join('\n');
+  const r = parseBusta(testo);
+  ok('imponibile INPS = base del contributo IVS', r.imponibile_inps === 4179);
+  ok('imponibile IRPEF del mese (non il progressivo annuo)', r.imponibile_irpef === 3615.09);
+  ok('IRPEF lorda letta', r.irpef_lorda === 1034.49);
+  ok('contributi INPS = IVS + CIGS', r.contributi_inps === 396.58);
+  ok('nessuna detrazione inventata se la voce non c\'è', r.detrazioni == null);
+  const dic = parseBusta('Dicembre 2025\nF03300 Premi/altre somme detassati 1.356,07\nF03310 Imposta sost.premi/altSomme 67,80\nOneriDed Imponibile IRPEF lorda Detrazioni IRPEF trattenuta');
+  ok('premi detassati e imposta sostitutiva letti', dic.premi_detassati === 1356.07 && dic.imposta_sostitutiva === 67.8);
+  ok('la riga di intestazione senza importi non dà valori', dic.imponibile_irpef == null && dic.irpef_lorda == null);
+}
+
+console.log('\nCometa: buste = 730, anno per anno (3.42)');
+{
+  // La quota deducibile di ogni cedolino è quota tua + quota datore. Nel 2022-2025 le
+  // buste in app erano più basse del 730 (fino a 90 €/anno): mancavano le quote datore
+  // della busta AGG di dicembre e le quote welfare versate a Cometa.
+  const { STIPENDI_SEED } = await import('../js/core/stipendiSeedData.js');
+  const { DICHIARAZIONI } = await import('../js/core/dichiarazioni.js');
+  for (const d of DICHIARAZIONI.filter(x => x.anno >= 2017)) {
+    const buste = STIPENDI_SEED.filter(s => s.anno === d.anno)
+      .reduce((x, s) => x + (s.cometa_dipendente || 0) + (s.cometa_azienda || 0), 0);
+    const dich = (d.cometaOrdinario || 0) + (d.cometaPrimaOccupazione || 0);
+    ok(`${d.anno}: buste ${buste.toFixed(2)} = 730 ${dich} (all'euro)`, Math.abs(buste - dich) < 0.5);
+  }
+  // anno senza 730: il dedotto viene dalle buste
+  const { plafondFondo } = await import('../js/services/stipendiService.js');
+  const anno = Math.max(...DICHIARAZIONI.map(x => x.anno)) + 1;
+  state.stipendi = [{ anno, mese: 1, cometa_dipendente: 160, cometa_azienda: 60 }, { anno, mese: 2, cometa_dipendente: 160, cometa_azienda: 60 }];
+  const r = plafondFondo(anno).riga;
+  ok('anno non dichiarato: dedotto dalle buste', r.fonte === 'buste' && r.dedotto === 440 && r.nBuste === 2);
+  ok('anno dichiarato: dedotto dal 730', plafondFondo(2025).riga.fonte === 'cu');
+  state.stipendi = [];
+}
+
 console.log('\nservice worker: nuovi file in cache');
 {
   const sw = readFileSync(new URL('../service-worker.js', import.meta.url), 'utf8');
