@@ -69,7 +69,7 @@ js/core/
   seed*.js            logica di seed/migrazione dei dati di app
   *SeedData.js        dati seed (stipendi, bollette, consumi mensili)
   dichiarazioni.js    730 per anno, scaglioni IRPEF storici, plafond previdenza
-  fiscoUfficiale.js, cometaEstrattoConto.js   dati fiscali/previdenziali ufficiali
+  fiscoUfficiale.js   dati fiscali ufficiali (CU)
 js/services/          logica di dominio (movimenti, conti, patrimonio, prestiti,
                       ricorrenti, bilancio, fisco, natura, strumenti, stipendi,
                       energia, panieri, suggerimenti, backup, excel, pdf*)

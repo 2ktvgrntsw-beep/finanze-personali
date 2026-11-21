@@ -535,5 +535,31 @@ console.log('\nservice worker: nuovi file in cache');
   for (const f of ['strumentiService.js', 'naturaService.js', 'operazioniInvestimento.js', 'bisogni.js']) ok(`${f} in cache`, sw.includes(f));
 }
 
+console.log('\nnessun file orfano');
+{
+  // Ogni modulo in js/ deve essere raggiungibile da app.js seguendo gli import.
+  // cometaEstrattoConto.js e' rimasto nel repository (e nella cache del telefono)
+  // per mesi dopo che la schermata che lo usava era stata tolta.
+  const radice = new URL('../', import.meta.url);
+  const tutti = [];
+  const scorri = (d) => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      const u = new URL(e.name + (e.isDirectory() ? '/' : ''), d);
+      if (e.isDirectory()) scorri(u); else if (e.name.endsWith('.js')) tutti.push(u.href);
+    }
+  };
+  scorri(new URL('js/', radice));
+  const visti = new Set(), coda = [new URL('js/app.js', radice).href];
+  while (coda.length) {
+    const f = coda.pop();
+    if (visti.has(f)) continue;
+    visti.add(f);
+    const src = readFileSync(new URL(f), 'utf8');
+    for (const m of src.matchAll(/(?:import\s[^;]*?from\s*|import\s*\(\s*)['"]([^'"]+)['"]/g)) coda.push(new URL(m[1], f).href);
+  }
+  const orfani = tutti.filter(f => !visti.has(f)).map(f => f.slice(radice.href.length));
+  ok('ogni modulo in js/ e\' usato dall\'app', orfani.length === 0, orfani.join(', '));
+}
+
 console.log(`\n${passati} passati, ${falliti} falliti\n`);
 process.exit(falliti ? 1 : 0);

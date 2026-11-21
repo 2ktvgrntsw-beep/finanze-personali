@@ -47,4 +47,4 @@ numero nuovo, altrimenti i telefoni continuano a servire il codice vecchio dalla
 - `data/storico.js` — storico precaricato
 - `css/styles.css` — tema
 
-Versione: 2.2 · Schema dati: 2.0 (compatibile con backup 2.0/2.1)
+La versione corrente è in `js/core/version.js` (visibile in Impostazioni).

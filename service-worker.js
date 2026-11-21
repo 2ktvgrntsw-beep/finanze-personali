@@ -3,7 +3,7 @@
 // l'app dopo un deploy, basta incrementare CACHE_VERSION: il vecchio cache viene
 // eliminato e i file ricaricati.
 
-const CACHE_VERSION = 'finanze-v3.42.0';
+const CACHE_VERSION = 'finanze-v3.43.0';
 
 const ASSETS = [
   './',
@@ -29,7 +29,6 @@ const ASSETS = [
   './js/core/stipendiSeedData.js',
   './js/core/fiscoUfficiale.js',
   './js/core/dichiarazioni.js',
-  './js/core/cometaEstrattoConto.js',
   './js/services/energiaService.js',
   './js/services/pdfBolletta.js',
   './js/services/pdfBustaPaga.js',
