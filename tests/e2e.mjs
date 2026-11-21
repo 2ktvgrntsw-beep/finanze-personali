@@ -274,6 +274,59 @@ try {
       await context.setOffline(false);
     }
   }
+  console.log('\npagina Spese: grafico del ritmo del mese');
+  {
+    // Data fissata e movimenti successivi tolti: la pagina com'era quel giorno.
+    const apriAl = async (data) => {
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'it-IT', timezoneId: 'Europe/Rome', serviceWorkers: 'block' });
+      await ctx.route(url => !url.href.startsWith(BASE), r => r.abort());
+      const p = await ctx.newPage();
+      const err = [];
+      p.on('pageerror', e => err.push(e.message));
+      await p.clock.setFixedTime(new Date(`${data}T10:00:00`));
+      await p.goto(BASE);
+      await attendiAvvio(p);
+      await p.evaluate(async (oggi) => {
+        const { dbAll, dbDelete } = await import('./js/core/db.js');
+        for (const m of await dbAll('movimenti')) if (m.data > oggi) await dbDelete('movimenti', m.id);
+      }, data);
+      await p.reload();
+      await attendiAvvio(p);
+      return { p, ctx, err };
+    };
+    const euro = (t) => Number((t || '').replace(/[^\d,]/g, '').replace(',', '.'));
+
+    const { p, ctx, err } = await apriAl('2026-06-18');
+    const info = await p.evaluate(() => ({
+      card: !!document.querySelector('.ritmo-card'),
+      vecchi: !!document.querySelector('#spark-toggle, .pace, #spark-wrap'),
+      tit: document.querySelector('.ritmo-tit')?.innerText || '',
+      sub: document.querySelector('.ritmo-sub')?.innerText || '',
+      totale: document.querySelector('.big-spese')?.innerText || '',
+      badge: document.querySelector('.hero-spese .delta')?.className || '',
+      sopra: document.querySelector('.ritmo-svg .rc')?.classList.contains('sopra'),
+    }));
+    ok('il grafico del ritmo e\' visibile senza toccare niente', info.card);
+    ok('vecchio grafico, pulsante e barretta sono spariti', !info.vecchi);
+    ok('la frase dice come chiude il mese', /chiudi giugno intorno a/.test(info.tit), info.tit);
+    const finora = euro((info.sub.match(/finora ([^,]+)/) || [])[1]);
+    ok('"finora" coincide col totale del riquadro', Math.round(finora) === Math.round(euro(info.totale)), `${finora} vs ${info.totale}`);
+    ok('grafico e percentuale dicono la stessa cosa', info.sopra === info.badge.includes('worse'), `${info.badge} / sopra=${info.sopra}`);
+    const box = await p.locator('.ritmo-svg').boundingBox();
+    await p.mouse.click(box.x + box.width * 0.4, box.y + box.height / 2);
+    const tip = await p.locator('.ritmo-tip').innerText();
+    ok('toccando il grafico compare il giorno', /\d+\/06/.test(tip) && /di solito/.test(tip), tip.replace(/\n/g, ' '));
+    await p.click('#prev');
+    await p.waitForTimeout(100);
+    ok('un mese passato mostra il riepilogo', /maggio chiuso a/i.test(await p.locator('.ritmo-tit').innerText()));
+    ok('nessun errore JavaScript', err.length === 0, err.join(' | '));
+    await ctx.close();
+
+    const inizio = await apriAl('2026-06-02');
+    ok('nei primi giorni la percentuale tace ma il grafico c\'e\'',
+      !(await inizio.p.$('.hero-spese .delta')) && !!(await inizio.p.$('.ritmo-card')));
+    await inizio.ctx.close();
+  }
 } catch (e) {
   falliti++;
   console.log(`  FAIL eccezione nel collaudo — ${e.stack || e.message}`);

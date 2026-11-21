@@ -123,21 +123,7 @@ body{
  .delta.flat{color:var(--txt-2)}
 
 
-/* -------------------------------------------------- Barra "dove sto col mese" */
 
-.pace{margin-top:12px;background:var(--surface);border-radius:var(--r-md);padding:14px 16px;border:1px solid rgba(38,38,47,.6)}
-
-.pace .top{display:flex;justify-content:space-between;font-size:12.5px;color:var(--txt-2);margin-bottom:9px}
-
-.pace .top b{color:var(--txt)}
-
-.pace .track{height:8px;background:var(--surface-3);border-radius:100px;overflow:hidden;position:relative}
-
-.pace .track>.fill{display:block;height:100%;border-radius:100px;background:linear-gradient(90deg,var(--accent),var(--accent-2));transition:width .5s ease}
-
-.pace .track>.marker{position:absolute;top:-3px;height:14px;width:2px;background:var(--txt);border-radius:2px}
-
-.pace .cap{font-size:11px;color:var(--txt-3);margin-top:8px}
 
 
 /* -------------------------------------------------- Indicatore investito (riga) */
@@ -716,11 +702,6 @@ button,.hbtn,.numpad button,.seg button,.mov,.catrow,.chip,.frow .fval,.type-swi
 .gruppo-head,.cat-acc-head,.cat-riga,.sub-chip,.cat-gest,.month-nav .arr,a{touch-action:manipulation}
 
 
-/* barra pace ridotta a filo + quadrupla card compatta */
-
-.pace.pace-slim{padding:6px 2px 2px}
-
-.pace.pace-slim .track{height:5px}
 
 .triple.quad{/* flex: le 4 celle si dividono lo spazio */}
 
@@ -1134,23 +1115,8 @@ input[type=date].sheet-input{-webkit-appearance:none;appearance:none}
 .rio-frecce button:active:not(:disabled){background:var(--surface-3)}
 
 
-/* ═══ COCKPIT — grafico spese a scomparsa (toggle con icona) ═══ */
+/* ═══ COCKPIT — riquadro spese ═══ */
 .hero-spese{position:relative;background:linear-gradient(160deg,var(--surface-2) 0%,var(--surface) 100%);border:1px solid var(--line);border-radius:20px;padding:18px 20px 16px;margin:8px 0 4px;overflow:hidden}
-
-.spark-toggle{position:absolute;top:14px;right:14px;z-index:5;width:34px;height:34px;border-radius:10px;
-  background:var(--surface-3);border:1px solid var(--line);color:var(--txt-2);display:grid;place-items:center;cursor:pointer;padding:0}
-
-.spark-toggle svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-
-.spark-toggle.on{background:rgba(46,155,255,.16);border-color:rgba(46,155,255,.45);color:var(--blue-2)}
-
-.spark-toggle:active{transform:scale(.94)}
-
-/* wrap collassabile */
-
-.spark-wrap{display:none}
-
-.spark-wrap.open{display:block;animation:sparkIn .22s ease}
 
 @keyframes sparkIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
 
@@ -1503,11 +1469,6 @@ input:focus, input:focus-visible, select:focus, select:focus-visible, textarea:f
 .dich-body{display:none;padding:2px 14px 4px;border-top:1px solid var(--line)}
 .dich-body.on{display:block}
 
-/* Barra "dove sto col mese": la scala arriva al 200% del mese tipico, non al 100%.
-   Oltre il 100% il riempimento vira sul rosso pieno — e' l'unico momento in cui
-   quella barra ha davvero qualcosa da dire. */
-.pace.over .track>.fill{background:linear-gradient(90deg,var(--accent-2),var(--down,#FF3B5C))}
-.pace.over .track{box-shadow:inset 0 0 0 1px rgba(255,59,92,.35)}
 
 /* ═══ BILANCIO — barre ORIZZONTALI, una riga per anno ═══
    Verticali si confrontavano male: dieci anni uno accanto all'altro su uno schermo da
@@ -1620,3 +1581,37 @@ input:focus, input:focus-visible, select:focus, select:focus-visible, textarea:f
 .bp-nota{font-size:12.5px;color:var(--txt-2);padding:10px 0 8px;border-top:1px solid var(--line)}
 .bp-riga .fr-nome{flex:1;min-width:0}
 .bp-riga b{flex:none;text-align:right}
+
+/* ═══ RITMO DEL MESE — spesa accumulata giorno per giorno vs mese tipico ═══ */
+.ritmo-card{margin-top:12px;padding:16px 14px 12px}
+.ritmo-tit{font-size:15px;font-weight:600;color:var(--txt);line-height:1.3}
+.ritmo-tit b{font-weight:750}
+.ritmo-sub{font-size:12px;color:var(--txt-2);margin-top:3px}
+.ritmo-graf{position:relative;margin-top:10px}
+.ritmo-svg{width:100%;height:auto;display:block;touch-action:pan-y}
+.ritmo-svg .rg{stroke:var(--line);stroke-width:1}
+.ritmo-svg .ry,.ritmo-svg .rx{fill:var(--txt-3);font-size:9.5px;font-family:var(--font)}
+.ritmo-svg .ry{text-anchor:end}
+.ritmo-svg .rx{text-anchor:middle}
+.ritmo-svg .rf{fill:rgba(139,150,171,.13);stroke:none}
+.ritmo-svg .rt{fill:none;stroke:var(--txt-2);stroke-width:1.6}
+.ritmo-svg .rpr{fill:none;stroke:var(--violet-2);stroke-width:1.3;stroke-dasharray:3 3;opacity:.7}
+.ritmo-svg .ro{stroke:var(--txt-3);stroke-width:1;stroke-dasharray:2 3}
+.ritmo-svg .rp{fill:none;stroke:var(--accent);stroke-width:1.6;stroke-dasharray:4 4;opacity:.8}
+.ritmo-svg .rpd{fill:var(--bg);stroke:var(--accent);stroke-width:1.6}
+.ritmo-svg .rc{fill:none;stroke:var(--accent);stroke-width:2.6;stroke-linejoin:round}
+.ritmo-svg .rcd{fill:var(--accent)}
+.ritmo-svg .rc.sopra{stroke:var(--warn)}
+.ritmo-svg .rcd.sopra{fill:var(--warn)}
+.ritmo-svg .rsel{stroke:var(--blue-2);stroke-width:1;opacity:0}
+.ritmo-svg .rsel.on{opacity:.6}
+.ritmo-tip{position:absolute;top:-4px;transform:translateX(-50%);background:rgba(8,11,18,.95);border:1px solid var(--line);
+  border-radius:10px;padding:6px 9px;font-size:11.5px;color:var(--txt-2);display:flex;flex-direction:column;gap:1px;
+  white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .12s}
+.ritmo-tip.on{opacity:1}
+.ritmo-tip b{color:var(--txt);font-weight:700}
+.ritmo-leg{display:flex;gap:14px;font-size:11.5px;color:var(--txt-2);margin-top:6px;padding-left:4px}
+.ritmo-leg i{display:inline-block;width:14px;height:0;vertical-align:middle;margin-right:5px;border-top:2.6px solid var(--accent)}
+.ritmo-leg i.lc.sopra{border-color:var(--warn)}
+.ritmo-leg i.lt{border-top:6px solid rgba(139,150,171,.3)}
+.ritmo-leg i.lpr{border-top:1.5px dashed var(--violet-2)}

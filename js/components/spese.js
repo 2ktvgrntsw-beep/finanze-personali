@@ -2,19 +2,18 @@
 // Vista per periodo (Settimana/Mese/Anno) delle spese per categoria, con drill-down.
 
 import { state, movimentiDelMese } from '../core/store.js';
-import { fmtEUR, fmtEUR0, fmtPct, nomeMese, annomese, todayISO, toISO, toAnnomese, escapeHtml } from '../core/utils.js';
+import { fmtEUR, fmtEUR0, fmtPct, nomeMese, annomese, todayISO, toISO, escapeHtml } from '../core/utils.js';
 import { iconaMacro } from '../core/icons.js';
 import { navigate } from '../core/router.js';
-import { costruisciSparkline, agganciaSparkline } from '../core/sparkline.js';
 import {
-  totaliPeriodo, aggregaPerLivello, baselineSpeseMensile, soloSpese,
+  totaliPeriodo, aggregaPerLivello, soloSpese,
 } from '../services/movimentiService.js';
 import { calcolaDelta } from './shared.js';
+import { ritmoMese } from '../services/ritmoService.js';
 
 // stato locale della schermata (periodo selezionato)
 let _periodo = 'mese';                 // 'settimana' | 'mese' | 'anno'
 let _meseCorrente = annomese(todayISO());
-let _sparkAperto = false;              // grafico andamento spese: nascosto di default, apribile dall'icona
 
 const mesePrec = (am) => { const [a, m] = am.split('-').map(Number); const d = new Date(a, m - 2, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
 const meseSucc = (am) => { const [a, m] = am.split('-').map(Number); const d = new Date(a, m, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
@@ -45,39 +44,21 @@ export const renderSpese = async (root) => {
   // Delta rispetto al mese tipico (solo in vista mese).
   //
   // Nel mese IN CORSO il confronto e' col RITMO, non col totale: il 2 del mese sei
-  // sempre a -95% di un mese intero, e leggerlo come un risultato e' fuorviante in un
-  // verso quanto lo era la vecchia media in quello opposto. Quindi il riferimento
-  // viene ridotto in proporzione ai giorni trascorsi: "in linea" significa che stai
-  // andando al passo del tuo mese tipico.
+  // sempre a -95% di un mese intero. Il riferimento e' quanto spendi di solito ENTRO
+  // QUESTO GIORNO del mese (ritmoService), non una quota lineare del mese tipico: se
+  // il mutuo parte il 1°, il mese tipico e' gia' alto il giorno 2, e la retta faceva
+  // sembrare ogni inizio mese uno sforamento. A mese chiuso il riferimento coincide
+  // col mese tipico di sempre (mediana degli ultimi 12 mesi).
   const meseInCorso = _periodo === 'mese' && _meseCorrente === annomese(todayISO());
   const giorno = new Date().getDate();
-  const giorniMese = new Date(parseInt(anno), parseInt(mese), 0).getDate();
-  const quotaTempo = meseInCorso ? giorno / giorniMese : 1;
+  const ritmo = _periodo === 'mese' ? ritmoMese(_meseCorrente) : null;
 
   // Nei primissimi giorni il rapporto e' troppo nervoso per dire qualcosa: una spesa
-  // sola il giorno 2 vale il 60% del ritmo. Meglio tacere e lasciar parlare la barra.
+  // sola il giorno 2 vale il 60% del ritmo. Meglio tacere e lasciar parlare il grafico.
   let deltaHTML = '';
-  if (_periodo === 'mese' && !(meseInCorso && giorno < 4)) {
-    const media = baselineSpeseMensile(_meseCorrente);
-    const d = calcolaDelta(tot.spese, media * quotaTempo);
+  if (ritmo && ritmo.giorno && !(meseInCorso && giorno < 4)) {
+    const d = calcolaDelta(tot.spese, ritmo.tipicoAOggi);
     if (d) deltaHTML = `<div class="delta ${d.classe} num">${meseInCorso ? d.testo.replace('mese tipico', 'ritmo abituale') : d.testo}</div>`;
-  }
-
-  // barra "dove sto col mese": solo il filo con la tacca, niente testi (compatta)
-  let paceHTML = '';
-  if (meseInCorso) {
-    const pctTempo = Math.round(giorno / giorniMese * 100);
-    const media = baselineSpeseMensile(_meseCorrente);
-    const pctSpeso = media > 0 ? Math.round(tot.spese / media * 100) : 0;
-    // La barra NON si ferma al 100%. Tapparla li' voleva dire spegnere l'informazione
-    // proprio nel mese in cui stai sforando: adesso oltre il mese tipico continua a
-    // crescere (fino a 200%, poi satura) e cambia colore, cosi' si vede di quanto.
-    const oltre = pctSpeso > 100;
-    const largh = Math.min(pctSpeso, 200) / 2;   // 200% = barra piena
-    paceHTML = `
-      <div class="pace pace-slim ${oltre ? 'over' : ''}" title="Speso ${pctSpeso}% del mese tipico · giorno ${giorno}/${giorniMese}">
-        <div class="track"><span class="fill" style="width:${oltre ? largh : pctSpeso / 2}%"></span><span class="marker" style="left:${pctTempo / 2}%"></span></div>
-      </div>`;
   }
 
   // lista categorie a barre
@@ -106,7 +87,6 @@ export const renderSpese = async (root) => {
       </div>` : `<div class="month-nav"><div class="m">${labelPeriodo}</div></div>`}
 
     <div class="hero-spese">
-      ${_periodo === 'mese' ? '<button class="spark-toggle" id="spark-toggle" title="Andamento spese" aria-label="Mostra andamento"><svg viewBox="0 0 24 24"><path d="M4 18l5-6 4 4 6-8"/><path d="M3 21h18"/></svg></button>' : ''}
       <div class="cell-spese-main" data-tot="spesa" style="cursor:pointer">
         <div class="cap">${_periodo === 'anno' ? 'Spese ' + anno : _periodo === 'mese' ? 'Spese di ' + nomeMese(parseInt(mese) - 1).toLowerCase() : 'Spese'}</div>
         <div class="big-spese num">${fmtEUR(tot.spese)}</div>
@@ -119,9 +99,7 @@ export const renderSpese = async (root) => {
       </div>
     </div>
 
-    ${_periodo === 'mese' ? `<div class="spark-wrap ${_sparkAperto ? 'open' : ''}" id="spark-wrap">${_sparklineCard(_meseCorrente)}</div>` : ''}
-
-    ${paceHTML}
+    ${ritmo ? _ritmoCard(ritmo, nomeMese(parseInt(mese) - 1), nomeMese((parseInt(mese) + 10) % 12)) : ''}
 
 
     <div class="section-lbl"><span>Per categoria</span></div>
@@ -168,64 +146,101 @@ export const renderSpese = async (root) => {
     navigate('movimenti', { tipo: el.dataset.tot, periodo: _periodo, mese: _meseCorrente });
   }));
 
-  // sparkline interattivo: attacca il tocco (solo se presente, cioè in vista mese)
-  _agganciaSparkline(root);
-
-  // toggle grafico andamento (icona nella card spese)
-  const sparkToggle = root.querySelector('#spark-toggle');
-  const sparkWrap = root.querySelector('#spark-wrap');
-  if (sparkToggle && sparkWrap) {
-    sparkToggle.classList.toggle('on', _sparkAperto);
-    sparkToggle.addEventListener('click', (e) => {
-      e.stopPropagation();
-      _sparkAperto = !_sparkAperto;
-      sparkWrap.classList.toggle('open', _sparkAperto);
-      sparkToggle.classList.toggle('on', _sparkAperto);
-    });
-  }
-
+  // grafico del ritmo: tocco/trascinamento mostra il giorno
+  if (ritmo) _agganciaRitmo(root.querySelector('.ritmo-card'), ritmo, mese);
 };
 
-// ═══ SPARKLINE spese ultimi 6 mesi (additivo, puramente visivo) ═══
-// Ritorna { mesi:[{label,mese,val}], min, max } per gli ultimi 6 mesi fino a quello dato.
-const _datiSparkline = (meseRif) => {
-  const [y, m] = meseRif.split('-').map(Number);
-  const out = [];
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date(y, m - 1 - i, 1);
-    const am = toAnnomese(d);
-    const t = totaliPeriodo(movimentiDelMese(am));
-    const idxMese = parseInt(am.slice(5, 7), 10) - 1;
-    out.push({ label: nomeMese(idxMese).slice(0, 3), mese: am, val: t.spese || 0 });
-  }
-  const vals = out.map(o => o.val);
-  return { mesi: out, min: Math.min(...vals), max: Math.max(...vals) };
+// ═══ RITMO DEL MESE ═══
+// Spesa accumulata giorno per giorno contro la fascia del mese tipico (ritmoService).
+// Sostituisce l'andamento degli ultimi 6 mesi (fino alla 3.44), che disegnava il mese
+// in corso come se fosse finito: a metà mese mostrava un crollo che non c'era, in
+// contraddizione col "+x% vs ritmo abituale" del riquadro sopra.
+const G = { W: 320, H: 168, L: 34, R: 10, T: 12, B: 24 };
+const _k = (n) => n >= 1000 ? (Math.round(n / 100) / 10).toString().replace('.', ',') + 'k' : String(Math.round(n));
+const _scala = (r) => {
+  const yMax = Math.max(1, ...r.cumulato, ...r.p75, ...(r.precedente || []), r.proiezione) * 1.08;
+  return {
+    yMax,
+    x: (d) => G.L + (r.giorni > 1 ? (d - 1) / (r.giorni - 1) : 0) * (G.W - G.L - G.R),
+    y: (v) => G.T + (1 - v / yMax) * (G.H - G.T - G.B),
+  };
 };
 
-const _sparklineCard = (meseRif) => {
-  const d = _datiSparkline(meseRif);
-  if (d.max <= 0) return '';   // niente dati, niente grafico
-  const punti = d.mesi.map(o => ({ label: o.label, valore: o.val }));
-  const { svg, dataAttr } = costruisciSparkline(punti, {
-    vw: 300, vh: 96, padX: 10, padTop: 14, padBot: 26,
-    idLinea: 'spkl', idArea: 'spka',
-    coloreLinea0: '#2E9BFF', coloreLinea1: '#7B6CFF',   // blu -> viola (identità Spese)
-    larghezzaLinea: 2.2,
-    mostraEtichette: true, mostraDots: true, mostraUltimoPunto: false,
-  });
-  return `<div class="card spark-card">
-    <div class="spark-title">Andamento spese · ultimi 6 mesi</div>
-    <div class="spark" ${dataAttr}>
-      ${svg}
-      <div class="spark-vline"></div>
-      <div class="spark-tip"></div>
+const _ritmoCard = (r, nomeM, nomePrec) => {
+  if (!r.giorno || !r.nMesiRif) return '';   // mese futuro o nessuno storico: niente da confrontare
+  const { yMax, x, y } = _scala(r);
+  const linea = (arr) => arr.map((v, i) => `${i ? 'L' : 'M'}${x(i + 1).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
+  const fascia = linea(r.p75) + ' ' + r.p25.map((v, i) => [i, v]).reverse()
+    .map(([i, v]) => `L${x(i + 1).toFixed(1)} ${y(v).toFixed(1)}`).join(' ') + ' Z';
+  const passo = yMax > 4000 ? 2000 : yMax > 2000 ? 1000 : 500;
+  let griglia = '';
+  for (let v = 0; v < yMax; v += passo) {
+    griglia += `<line x1="${G.L}" x2="${G.W - G.R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="rg"/>`
+      + `<text x="${G.L - 6}" y="${(y(v) + 3.5).toFixed(1)}" class="ry">${_k(v)}</text>`;
+  }
+  const ticks = [1, 10, 20, r.giorni].map(d => `<text x="${x(d).toFixed(1)}" y="${G.H - 6}" class="rx">${d}</text>`).join('');
+  const xs = x(r.giorno), ys = y(r.speso);
+  const sopra = r.speso > r.tipicoAOggi;
+  const proiez = r.chiuso ? '' : `<path d="M${xs.toFixed(1)} ${ys.toFixed(1)} L${x(r.giorni).toFixed(1)} ${y(r.proiezione).toFixed(1)}" class="rp"/>`
+    + `<circle cx="${x(r.giorni).toFixed(1)}" cy="${y(r.proiezione).toFixed(1)}" r="3" class="rpd"/>`;
+  const oggi = r.chiuso ? '' : `<line x1="${xs.toFixed(1)}" x2="${xs.toFixed(1)}" y1="${G.T}" y2="${G.H - G.B}" class="ro"/>`;
+  const titolo = r.chiuso
+    ? `${nomeM} chiuso a <b class="num">${fmtEUR0(r.speso)}</b>`
+    : `A questo ritmo chiudi ${nomeM.toLowerCase()} intorno a <b class="num">${fmtEUR0(Math.round(r.proiezione / 10) * 10)}</b>`;
+  const sotto = `di solito ${fmtEUR0(r.tipicoFine)}`
+    + (r.chiuso ? '' : ` · finora ${fmtEUR0(r.speso)}, di solito a oggi ${fmtEUR0(r.tipicoAOggi)}`);
+  return `<div class="card ritmo-card">
+    <div class="ritmo-tit">${titolo}</div>
+    <div class="ritmo-sub num">${sotto}</div>
+    <div class="ritmo-graf">
+      <svg viewBox="0 0 ${G.W} ${G.H}" class="ritmo-svg" role="img" aria-label="Spesa accumulata nel mese confrontata con il mese tipico">
+        ${griglia}
+        <path d="${fascia}" class="rf"/>
+        <path d="${linea(r.tipico)}" class="rt"/>
+        ${r.precedente ? `<path d="${linea(r.precedente)}" class="rpr"/>` : ''}
+        ${oggi}${proiez}
+        <path d="${linea(r.cumulato)}" class="rc ${sopra ? 'sopra' : ''}"/>
+        <circle cx="${xs.toFixed(1)}" cy="${ys.toFixed(1)}" r="4" class="rcd ${sopra ? 'sopra' : ''}"/>
+        <line class="rsel" x1="0" x2="0" y1="${G.T}" y2="${G.H - G.B}"/>
+        ${ticks}
+      </svg>
+      <div class="ritmo-tip"></div>
+    </div>
+    <div class="ritmo-leg">
+      <span><i class="lc ${sopra ? 'sopra' : ''}"></i>${nomeM}</span>
+      <span><i class="lt"></i>di solito</span>
+      ${r.precedente ? `<span><i class="lpr"></i>${nomePrec.toLowerCase()}</span>` : ''}
     </div>
   </div>`;
 };
 
-// interattività: tocco/trascinamento sul grafico mostra mese + spesa
-const _agganciaSparkline = (root) => {
-  agganciaSparkline(root.querySelector('.spark'), fmtEUR);
+// Tocco o trascinamento sul grafico: linea sul giorno e riquadro con speso fino a lì,
+// speso quel giorno e il solito a quel punto del mese.
+const _agganciaRitmo = (card, r, mese) => {
+  const svg = card && card.querySelector('.ritmo-svg');
+  if (!svg) return;
+  const tip = card.querySelector('.ritmo-tip'), sel = svg.querySelector('.rsel');
+  const { x } = _scala(r);
+  const mostra = (ev) => {
+    const box = svg.getBoundingClientRect();
+    const vx = (ev.clientX - box.left) / box.width * G.W;
+    const d = Math.max(1, Math.min(r.giorni, Math.round((vx - G.L) / (G.W - G.L - G.R) * (r.giorni - 1)) + 1));
+    const px = x(d);
+    sel.setAttribute('x1', px); sel.setAttribute('x2', px); sel.classList.add('on');
+    const nel = d <= r.giorno;
+    const tot = nel ? r.cumulato[d - 1] : null;
+    const delGiorno = nel ? tot - (d > 1 ? r.cumulato[d - 2] : 0) : null;
+    tip.innerHTML = `<b>${d}/${mese}</b>`
+      + (nel ? `<span>finora <b class="num">${fmtEUR0(tot)}</b>${delGiorno > 0 ? ` · quel giorno ${fmtEUR0(delGiorno)}` : ''}</span>` : '')
+      + `<span>di solito <b class="num">${fmtEUR0(r.tipico[d - 1])}</b></span>`;
+    tip.style.left = `${Math.min(78, Math.max(22, px / G.W * 100))}%`;
+    tip.classList.add('on');
+  };
+  const nascondi = () => { tip.classList.remove('on'); sel.classList.remove('on'); };
+  svg.addEventListener('pointerdown', (e) => { mostra(e); svg.setPointerCapture?.(e.pointerId); });
+  svg.addEventListener('pointermove', (e) => { if (e.buttons || e.pointerType === 'touch') mostra(e); });
+  svg.addEventListener('pointerup', () => setTimeout(nascondi, 1800));
+  svg.addEventListener('pointercancel', nascondi);
 };
 
 // esportati per il drill-down (condivide il periodo corrente)
