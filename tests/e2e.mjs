@@ -297,17 +297,22 @@ try {
     const euro = (t) => Number((t || '').replace(/[^\d,]/g, '').replace(',', '.'));
 
     const { p, ctx, err } = await apriAl('2026-06-18');
+    // Dalla 3.46 la card spese torna com'era fino alla 3.44: pulsante in alto a destra,
+    // grafico chiuso all'apertura, barretta sotto. Il pulsante apre il grafico nuovo.
+    const visibile = (sel) => p.evaluate((s) => { const e = document.querySelector(s); return !!e && e.offsetParent !== null; }, sel);
+    ok('il pulsante del grafico e\' nella card delle spese', await p.evaluate(() => !!document.querySelector('.hero-spese #spark-toggle')));
+    ok('all\'apertura il grafico e\' chiuso', !(await visibile('.ritmo-card')));
+    ok('la barretta "dove sto col mese" c\'e\'', await visibile('.pace'));
+    await p.click('#spark-toggle');
+    ok('premendo il pulsante compare il grafico nuovo', await visibile('.ritmo-card'));
+    ok('il vecchio grafico degli ultimi 6 mesi non torna', !(await p.$('.spark-card')));
     const info = await p.evaluate(() => ({
-      card: !!document.querySelector('.ritmo-card'),
-      vecchi: !!document.querySelector('#spark-toggle, .pace, #spark-wrap'),
       tit: document.querySelector('.ritmo-tit')?.innerText || '',
       sub: document.querySelector('.ritmo-sub')?.innerText || '',
       totale: document.querySelector('.big-spese')?.innerText || '',
       badge: document.querySelector('.hero-spese .delta')?.className || '',
       sopra: document.querySelector('.ritmo-svg .rc')?.classList.contains('sopra'),
     }));
-    ok('il grafico del ritmo e\' visibile senza toccare niente', info.card);
-    ok('vecchio grafico, pulsante e barretta sono spariti', !info.vecchi);
     ok('la frase dice come chiude il mese', /chiudi giugno intorno a/.test(info.tit), info.tit);
     const finora = euro((info.sub.match(/finora ([^,]+)/) || [])[1]);
     ok('"finora" coincide col totale del riquadro', Math.round(finora) === Math.round(euro(info.totale)), `${finora} vs ${info.totale}`);
@@ -316,15 +321,19 @@ try {
     await p.mouse.click(box.x + box.width * 0.4, box.y + box.height / 2);
     const tip = await p.locator('.ritmo-tip').innerText();
     ok('toccando il grafico compare il giorno', /\d+\/06/.test(tip) && /di solito/.test(tip), tip.replace(/\n/g, ' '));
+    await p.click('#spark-toggle');
+    ok('ripremendo il pulsante il grafico si richiude', !(await visibile('.ritmo-card')));
+    await p.click('#spark-toggle');
     await p.click('#prev');
     await p.waitForTimeout(100);
+    ok('cambiando mese il grafico resta aperto', await visibile('.ritmo-card'));
     ok('un mese passato mostra il riepilogo', /maggio chiuso a/i.test(await p.locator('.ritmo-tit').innerText()));
     ok('nessun errore JavaScript', err.length === 0, err.join(' | '));
     await ctx.close();
 
     const inizio = await apriAl('2026-06-02');
     ok('nei primi giorni la percentuale tace ma il grafico c\'e\'',
-      !(await inizio.p.$('.hero-spese .delta')) && !!(await inizio.p.$('.ritmo-card')));
+      !(await inizio.p.$('.hero-spese .delta')) && !!(await inizio.p.$('#spark-wrap .ritmo-card')));
     await inizio.ctx.close();
   }
 } catch (e) {
