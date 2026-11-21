@@ -149,17 +149,29 @@ suite Playwright.
 4. **Migrazione dei dati basata su fingerprint (impronta).** I dati di app che
    arrivano col codice (seed) devono raggiungere anche i dispositivi che li hanno
    già seminati. Un flag "già fatto" in `meta` NON basta: l'aggiornamento non
-   arriverebbe mai. Schema da seguire (vedi `seedStipendi.js` e
-   `seedConsumiMensili.js`):
+   arriverebbe mai. Schema da seguire (vedi `seedStipendi.js`, `seedBollette.js`
+   e `seedConsumiMensili.js`):
    - calcolare un'impronta del contenuto atteso (es. numero record + somme dei campi
      chiave) che cambia da sola quando cambiano i dati seed;
    - a ogni avvio confrontarla con l'impronta dei dati presenti; se differisce,
      riallineare con un unico `dbBulkPut` e solo DOPO eliminare i record obsoleti
      (mai uno stato con lo store vuoto);
-   - i record corretti a mano dall'utente (`manuale: true`) escono da entrambi i lati
-     del confronto e non vengono mai sovrascritti;
+   - i record corretti a mano dall'utente (`manuale: true`, o `origine: 'manuale'`
+     per le bollette) escono da entrambi i lati del confronto e non vengono mai
+     sovrascritti;
+   - i record del seed cancellati dall'utente vanno ricordati (lista in `meta`, vedi
+     `registraBollettaCancellata`), altrimenti il seed li fa ricomparire;
    - salvare l'impronta in `meta`; tenere la decisione in una funzione pura
      (come `pianoSeed`) e coprirla con test in `tests/unit.mjs`.
+
+   **Prima chiedersi di chi è il dato.** L'impronta vale solo per i dati che
+   restano *dell'app* (buste paga, bollette, consumi precaricati). NON va usata per
+   i dati che dopo il primo caricamento sono diventati *dell'utente*, che li
+   modifica, cancella e riclassifica: lo storico movimenti (`seed.js`), gli strumenti
+   di investimento e la classificazione bisogni/desideri. Lì l'impronta riporterebbe
+   in vita record cancellati e annullerebbe le correzioni. Per loro: flag "una
+   tantum" per la sistemazione iniziale e, se un giorno serve correggere un dato,
+   una **correzione mirata** (per id, una volta sola, con il suo flag e il suo test).
    Per cambi di schema IndexedDB: incrementare `DB_VERSION` e aggiungere lo store
    in `STORES` (l'upgrade è additivo) e, se serve, in `refreshAll()`/`state` e nel
    backup/export.

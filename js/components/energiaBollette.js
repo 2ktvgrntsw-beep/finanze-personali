@@ -5,11 +5,10 @@ import { state } from '../core/store.js';
 import { fmtEUR, escapeHtml, round2 } from '../core/utils.js';
 import { navigate, currentRoute } from '../core/router.js';
 import { toast } from '../core/utils.js';
-import { safeWrite, dbAdd, dbDelete } from '../core/db.js';
-import { refreshAll } from '../core/store.js';
+import { safeWrite } from '../core/db.js';
 import { conferma } from './shared.js';
 import {
-  bollettaById, kpiBolletta, composizioneBolletta, componiBolletta, giorniTra,
+  bollettaById, kpiBolletta, composizioneBolletta, componiBolletta, giorniTra, salvaBolletta, eliminaBolletta,
   fornitoriUsati, bolletteComplete, aggregatoAnno, anniDisponibili, mese3, bolletteOrdinate,
 } from '../services/energiaService.js';
 import { _rigaBollettaHTML } from './energia.js';
@@ -186,11 +185,14 @@ export const renderBollettaForm = async (root) => {
       materia: numF('#f-materia'), trasporto: numF('#f-trasp'),
       oneri: numF('#f-oneri'), accise: numF('#f-accise'), iva: numF('#f-iva'),
       canone: numF('#f-canone'), altri: numF('#f-altri'),
+      // il form non ha questi campi: senza riportarli, modificare una bolletta
+      // precaricata cancellava bonus e nota
+      bonus: esistente?.bonus ?? null, note: esistente?.note ?? null,
     };
     if (dati.kwhTot === 0 && dati.kwhF1 + dati.kwhF2 + dati.kwhF3 === 0) { toast('Inserisci il consumo in kWh'); return; }
 
     const obj = componiBolletta(dati, esistente?.id);
-    const ok = await safeWrite(async () => { await dbAdd('bollette', obj); await refreshAll(); }, esistente ? 'Modifiche non salvate' : 'Bolletta non salvata');
+    const ok = await safeWrite(() => salvaBolletta(obj), esistente ? 'Modifiche non salvate' : 'Bolletta non salvata');
     if (!ok) return;
     toast(esistente ? 'Bolletta aggiornata' : 'Bolletta salvata');
     navigate('energia');
@@ -254,7 +256,7 @@ export const renderBollettaDettaglio = async (root) => {
   root.querySelector('#d-mod').addEventListener('click', () => navigate('bolletta-nuova', { id: b.id }));
   root.querySelector('#d-del').addEventListener('click', async () => {
     if (!(await conferma('Eliminare questa bolletta?', { danger: true, ok: 'Elimina' }))) return;
-    const ok = await safeWrite(async () => { await dbDelete('bollette', b.id); await refreshAll(); }, 'Bolletta non eliminata');
+    const ok = await safeWrite(() => eliminaBolletta(b.id), 'Bolletta non eliminata');
     if (!ok) return;
     toast('Bolletta eliminata'); navigate('energia');
   });

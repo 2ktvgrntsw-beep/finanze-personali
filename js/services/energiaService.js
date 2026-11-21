@@ -4,7 +4,8 @@
 
 import { state, refreshAll } from '../core/store.js';
 import { round2 } from '../core/utils.js';
-import { dbBulkPut } from '../core/db.js';
+import { dbBulkPut, dbAdd, dbDelete } from '../core/db.js';
+import { registraBollettaCancellata } from '../core/seedBollette.js';
 
 // Tutte le bollette ordinate dalla più recente alla più vecchia.
 export const bolletteOrdinate = () => state.bollette.slice().sort((a, b) => (b.al || '').localeCompare(a.al || ''));
@@ -167,12 +168,21 @@ export const componiBolletta = (d, idEsistente) => {
     accise: d.accise != null ? round2(d.accise) : null,
     iva: d.iva != null ? round2(d.iva) : null,
     canone: d.canone != null ? round2(d.canone) : null,
-    bonus: null,
+    bonus: d.bonus != null ? round2(d.bonus) : null,
     altri: d.altri != null ? round2(d.altri) : null,
     completa: true,
     note: d.note || null,
     origine: 'manuale',
   };
+};
+
+// Salvataggio e cancellazione passano di qui, non da dbAdd/dbDelete nel componente:
+// cancellare una bolletta precaricata deve anche impedire al seed di riproporla.
+export const salvaBolletta = async (b) => { await dbAdd('bollette', b); await refreshAll(); };
+export const eliminaBolletta = async (id) => {
+  await dbDelete('bollette', id);
+  await registraBollettaCancellata(id);
+  await refreshAll();
 };
 
 // Elenco fornitori già usati (per l'autocompletamento nel form).

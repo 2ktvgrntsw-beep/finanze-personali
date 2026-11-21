@@ -535,6 +535,57 @@ console.log('\nservice worker: nuovi file in cache');
   for (const f of ['strumentiService.js', 'naturaService.js', 'operazioniInvestimento.js', 'bisogni.js']) ok(`${f} in cache`, sw.includes(f));
 }
 
+console.log('\nbollette precaricate: seed per impronta');
+{
+  const { BOLLETTE_SEED } = await import('../js/core/bolletteSeedData.js');
+  const { pianoSeedBollette, improntaBollette, cancellateIniziali } = await import('../js/core/seedBollette.js');
+  const { componiBolletta } = await import('../js/services/energiaService.js');
+  const copia = () => BOLLETTE_SEED.map(b => ({ ...b }));
+  const campione = BOLLETTE_SEED.find(b => b.canone != null);
+
+  ok('database vuoto: si scrivono tutte le bollette',
+    pianoSeedBollette([], BOLLETTE_SEED).daScrivere.length === BOLLETTE_SEED.length);
+  ok('database uguale al seed: niente da scrivere', pianoSeedBollette(copia(), BOLLETTE_SEED).allineato);
+
+  // correzione ai dati del seed: prima della 3.44 non arrivava (flag gia' acceso)
+  const seedCorretto = copia(); seedCorretto[3] = { ...seedCorretto[3], oneri: (seedCorretto[3].oneri || 0) + 1 };
+  const p1 = pianoSeedBollette(copia(), seedCorretto);
+  ok('una correzione al seed arriva sul telefono', p1.daScrivere.length === 1 && p1.daScrivere[0].id === seedCorretto[3].id,
+    `scritte ${p1.daScrivere.length}`);
+  ok("l'impronta cambia con un solo campo", improntaBollette(seedCorretto) !== improntaBollette(BOLLETTE_SEED));
+  const invertita = BOLLETTE_SEED.map(b => Object.fromEntries(Object.entries(b).reverse()));
+  ok("l'impronta non dipende dall'ordine delle chiavi", improntaBollette(invertita) === improntaBollette(BOLLETTE_SEED));
+
+  // regressione: la bolletta campione corretta a mano col canone svuotato faceva
+  // riscrivere tutte le 50 bollette a ogni avvio, correzione compresa
+  const conModifica = copia().map(b => b.id === campione.id ? { ...b, canone: null, totale: 1, origine: 'manuale' } : b);
+  const p2 = pianoSeedBollette(conModifica, BOLLETTE_SEED);
+  ok('una bolletta corretta a mano non viene riscritta', p2.allineato && !p2.daScrivere.some(b => b.id === campione.id));
+  ok('...anche se e\' la campione col canone svuotato', p2.nManuali === 1);
+
+  const senzaUna = copia().filter(b => b.id !== BOLLETTE_SEED[0].id);
+  ok('una bolletta cancellata dall\'utente non ricompare',
+    pianoSeedBollette(senzaUna, BOLLETTE_SEED, [BOLLETTE_SEED[0].id]).allineato);
+  ok('senza la lista delle cancellate invece tornerebbe',
+    pianoSeedBollette(senzaUna, BOLLETTE_SEED, []).daScrivere.length === 1);
+
+  // backup vecchio ripristinato: bollette senza canone (dati v1), non manuali
+  const v1 = copia().map(b => { const { canone, bonus, altri, ...resto } = b; return resto; });
+  ok('bollette vecchie da un backup ripristinato vengono riallineate',
+    pianoSeedBollette(v1, BOLLETTE_SEED).daScrivere.length === BOLLETTE_SEED.length);
+
+  ok('passaggio dalla 3.43: le bollette del seed gia\' cancellate restano cancellate',
+    JSON.stringify(cancellateIniziali(senzaUna, BOLLETTE_SEED, true)) === JSON.stringify([BOLLETTE_SEED[0].id]));
+  ok('primo avvio assoluto: nessuna cancellata', cancellateIniziali([], BOLLETTE_SEED, false).length === 0);
+
+  // regressione: modificare una bolletta precaricata azzerava bonus e nota
+  const conBonus = BOLLETTE_SEED.find(b => b.bonus != null && b.note);
+  const mod = componiBolletta({ ...conBonus, bonus: conBonus.bonus, note: conBonus.note }, conBonus.id);
+  ok('la modifica conserva il bonus', mod.bonus === conBonus.bonus, `${mod.bonus} vs ${conBonus.bonus}`);
+  ok('la modifica conserva la nota', mod.note === conBonus.note);
+  ok('la modifica marca la bolletta come manuale', mod.origine === 'manuale' && mod.id === conBonus.id);
+}
+
 console.log('\nnessun file orfano');
 {
   // Ogni modulo in js/ deve essere raggiungibile da app.js seguendo gli import.

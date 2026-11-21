@@ -3,7 +3,7 @@
 // l'app dopo un deploy, basta incrementare CACHE_VERSION: il vecchio cache viene
 // eliminato e i file ricaricati.
 
-const CACHE_VERSION = 'finanze-v3.43.0';
+const CACHE_VERSION = 'finanze-v3.44.0';
 
 const ASSETS = [
   './',
