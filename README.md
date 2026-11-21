@@ -31,14 +31,14 @@ numero nuovo, altrimenti i telefoni continuano a servire il codice vecchio dalla
 
 1. Incrementa `APP_VERSION` in `js/core/version.js`
 2. Incrementa `CACHE_VERSION` in `service-worker.js` (stesso numero)
-3. Esegui i test: `node tests/unit.mjs` (il primo test verifica proprio la coerenza versioni)
+3. Esegui i test: `node tests/unit.mjs` (il primo test verifica proprio la coerenza versioni) e `node tests/e2e.mjs`
 4. Carica su GitHub; sull'iPhone chiudi e riapri l'app
 5. Verifica in Impostazioni che compaia il numero nuovo
 
 ## Test
 
 - `node tests/unit.mjs` — logica pura (piani di ammortamento, date, coerenza versioni, asset SW)
-- `python3 tests/e2e.py` — browser reale (avvio, idempotenza doppio avvio, no doppioni, tutte le schermate)
+- `node tests/e2e.mjs` — browser reale con Playwright (asset del service worker, avvio, nessun doppione al secondo avvio, tutte le schermate, funzionamento offline)
 
 ## Struttura
 - `js/core/` — database, stato, router, utility, seed dei dati

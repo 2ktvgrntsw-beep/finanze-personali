@@ -101,22 +101,28 @@ Test di logica pura (versioni, date, fisco, bilancio, ammortamenti, seed, asset 
 node tests/unit.mjs
 ```
 
-Test Playwright (browser reale):
-
-> **Stato attuale: la suite Playwright NON esiste ancora nel repository.**
-> Il README cita `tests/e2e.py`, che non è presente. Va creata come
-> `tests/e2e.mjs` (script Node che usa la libreria `playwright`, già disponibile
-> nell'ambiente con Chromium preinstallato: `require('playwright')` /
-> `chromium.launch()`; non eseguire `playwright install`). Lo script deve avviare
-> da sé un server statico sulla root del repo, aprire l'app e verificare almeno:
-> avvio senza errori in console, idempotenza del doppio avvio (nessun doppione dopo
-> un reload), apertura di tutte le schermate registrate.
-
-Comando previsto, una volta creata la suite:
+Collaudo Playwright nel browser vero (~10 s, nessuna installazione: usa la
+libreria `playwright` e il Chromium già presenti; non eseguire `playwright install`):
 
 ```bash
 node tests/e2e.mjs
 ```
+
+Lo script avvia da sé un server statico sulla radice del repo, apre l'app su un
+profilo pulito (viewport iPhone, fuso Europe/Rome) con internet bloccato e
+verifica:
+- ogni file in `ASSETS` del service worker risponde 200;
+- il primo avvio carica storico, buste paga, bollette, consumi e conti senza
+  errori JavaScript;
+- il secondo avvio non duplica nessun record (seed e migrazioni idempotenti);
+- ogni rotta registrata in `app.js` si apre senza eccezioni, senza schermata
+  vuota e senza `NaN`/`undefined` a video (le schermate di dettaglio ricevono id
+  presi dai dati veri);
+- con il service worker attivo l'app riparte senza rete.
+
+Rotte e asset sono letti dai sorgenti: una nuova schermata registrata in
+`registraRotte()` viene collaudata automaticamente. Se richiede parametri,
+aggiungerli alla tabella `PARAMETRI` in `tests/e2e.mjs`.
 
 Prima di ogni consegna devono passare **entrambi**: `node tests/unit.mjs` e la
 suite Playwright.
@@ -128,6 +134,8 @@ suite Playwright.
    `service-worker.js` (es. `'finanze-v3.43.0'`). Se non cambia `CACHE_VERSION` i
    telefoni continuano a servire il codice vecchio dalla cache e il rilascio
    "non avviene". Il primo test di `tests/unit.mjs` verifica la coerenza.
+   Il bump serve quando cambia qualcosa che arriva sul telefono (file in `ASSETS`);
+   una consegna che tocca solo test o documentazione non lo richiede.
 
 2. **Ogni nuovo file va in `ASSETS`.** Qualsiasi nuovo file servito (JS, CSS, dati,
    icone) va aggiunto all'array `ASSETS` di `service-worker.js`, altrimenti offline
