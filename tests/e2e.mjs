@@ -1,0 +1,238 @@
+// tests/e2e.mjs — Collaudo nel browser vero (Playwright + Chromium).
+// Si esegue con: node tests/e2e.mjs
+//
+// Apre l'app come farebbe una persona, su un profilo pulito, e controlla le cose
+// che i test di logica pura (tests/unit.mjs) non possono vedere:
+//   1. ogni file elencato in ASSETS del service worker esiste davvero (niente 404:
+//      un file mancante rompe l'installazione offline sul telefono);
+//   2. il primo avvio carica i dati senza errori;
+//   3. il secondo avvio non duplica niente (seed e migrazioni idempotenti);
+//   4. ogni schermata registrata in app.js si apre senza errori;
+//   5. dopo il primo avvio l'app riparte anche senza rete (service worker).
+//
+// Nessuna dipendenza da installare: usa la libreria 'playwright' e il Chromium già
+// presenti nell'ambiente. Il server statico lo avvia lo script stesso. Le richieste
+// verso internet (SheetJS da CDN) sono bloccate: il test non dipende dalla rete.
+
+import { createServer } from 'node:http';
+import { readFileSync, existsSync, statSync } from 'node:fs';
+import { join, extname, normalize } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { chromium } = require('playwright');
+
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
+
+let falliti = 0, passati = 0;
+const ok = (nome, cond, extra = '') => {
+  if (cond) { passati++; console.log(`  ok   ${nome}`); }
+  else { falliti++; console.log(`  FAIL ${nome}${extra ? ' — ' + extra : ''}`); }
+};
+
+// ── server statico minimo sulla radice del repository ─────────────────────────
+const MIME = {
+  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png',
+};
+const server = createServer((req, res) => {
+  let p = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+  if (p.endsWith('/')) p += 'index.html';
+  const file = normalize(join(ROOT, p));
+  if (!file.startsWith(ROOT) || !existsSync(file) || !statSync(file).isFile()) {
+    res.writeHead(404); res.end('not found'); return;
+  }
+  res.writeHead(200, { 'Content-Type': MIME[extname(file)] || 'application/octet-stream' });
+  res.end(readFileSync(file));
+});
+await new Promise(r => server.listen(0, '127.0.0.1', r));
+const BASE = `http://127.0.0.1:${server.address().port}/`;
+
+// ── rotte e asset letti dai sorgenti: il test si aggiorna da solo ─────────────
+const appJs = readFileSync(join(ROOT, 'js/app.js'), 'utf8');
+const ROTTE = [...appJs.matchAll(/registerRoute\('([^']+)'/g)].map(m => m[1]);
+const sw = readFileSync(join(ROOT, 'service-worker.js'), 'utf8');
+const ASSETS = [...sw.match(/const ASSETS = \[([\s\S]*?)\];/)[1].matchAll(/'([^']+)'/g)].map(m => m[1]);
+
+// conta i record degli store principali direttamente in IndexedDB
+const contaRecord = (page) => page.evaluate(() => new Promise((res, rej) => {
+  const req = indexedDB.open('FinanzePersonaliDB');
+  req.onerror = () => rej(req.error);
+  req.onsuccess = () => {
+    const db = req.result;
+    const nomi = ['movimenti', 'conti', 'categorie', 'ricorrenti', 'stipendi', 'bollette',
+      'consumiMensili', 'strumenti', 'natura', 'finanziamenti', 'mutuo']
+      .filter(n => db.objectStoreNames.contains(n));
+    const t = db.transaction(nomi);
+    const out = {};
+    for (const n of nomi) { const c = t.objectStore(n).count(); c.onsuccess = () => { out[n] = c.result; }; }
+    t.oncomplete = () => { db.close(); res(out); };
+    t.onerror = () => rej(t.error);
+  };
+}));
+
+const attendiAvvio = async (page) => {
+  await page.waitForSelector('#bottom-nav a', { timeout: 60000 });
+  await page.waitForFunction(() => document.getElementById('app-root').children.length > 0, null, { timeout: 60000 });
+};
+
+const browser = await chromium.launch();
+const context = await browser.newContext({
+  viewport: { width: 390, height: 844 }, locale: 'it-IT', timezoneId: 'Europe/Rome',
+  serviceWorkers: 'allow',
+});
+// niente internet: solo il server locale risponde
+await context.route(url => !url.href.startsWith(BASE), r => r.abort());
+
+const page = await context.newPage();
+const errori = [];
+page.on('pageerror', e => errori.push(`pageerror: ${e.message}`));
+page.on('console', m => {
+  if (m.type() !== 'error') return;
+  const t = m.text();
+  if (/Failed to load resource|net::ERR_FAILED|ERR_INTERNET_DISCONNECTED/.test(t)) return; // CDN bloccato apposta
+  errori.push(`console: ${t}`);
+});
+// toast mostrati all'utente (es. "Movimento non salvato. Riprova.")
+const toastVisibili = () => page.evaluate(() =>
+  [...document.querySelectorAll('.toast')].map(t => t.textContent.trim()).filter(Boolean));
+
+try {
+  console.log('\nservice worker: ogni asset esiste');
+  {
+    const mancanti = [];
+    for (const a of ASSETS) {
+      const r = await page.request.get(new URL(a, BASE).href);
+      if (r.status() !== 200) mancanti.push(`${a} (${r.status()})`);
+    }
+    ok(`${ASSETS.length} asset in ASSETS rispondono 200`, mancanti.length === 0, mancanti.join(', '));
+  }
+
+  console.log('\nprimo avvio');
+  let primo;
+  {
+    const t0 = Date.now();
+    await page.goto(BASE);
+    await attendiAvvio(page);
+    ok(`l'app si avvia (${((Date.now() - t0) / 1000).toFixed(1)} s)`, true);
+    const testo = await page.textContent('#app-root');
+    ok('nessun messaggio "Errore all\'avvio"', !testo.includes("Errore all'avvio"), testo.slice(0, 200));
+    primo = await contaRecord(page);
+    ok('storico movimenti caricato', primo.movimenti > 1000, `movimenti: ${primo.movimenti}`);
+    ok('buste paga caricate', primo.stipendi > 0, `stipendi: ${primo.stipendi}`);
+    ok('bollette caricate', primo.bollette > 0, `bollette: ${primo.bollette}`);
+    ok('consumi mensili caricati', primo.consumiMensili > 0, `consumi: ${primo.consumiMensili}`);
+    ok('conti caricati', primo.conti > 0, `conti: ${primo.conti}`);
+    ok('nessun errore JavaScript al primo avvio', errori.length === 0, errori.join(' | '));
+  }
+
+  console.log('\nsecondo avvio: niente doppioni');
+  {
+    errori.length = 0;
+    await page.reload();
+    await attendiAvvio(page);
+    const secondo = await contaRecord(page);
+    for (const [store, n] of Object.entries(primo)) {
+      ok(`${store}: stesso numero di record (${n})`, secondo[store] === n, `prima ${n}, dopo ${secondo[store]}`);
+    }
+    ok('nessun errore JavaScript al secondo avvio', errori.length === 0, errori.join(' | '));
+  }
+
+  console.log('\nogni schermata si apre');
+  {
+    // Parametri presi dai dati veri, per le schermate di dettaglio che senza un id
+    // mostrerebbero solo "non trovato".
+    const campioni = await page.evaluate(async () => {
+      const { state } = await import('./js/core/store.js');
+      const spesa = state.movimenti.find(m => m.tipo === 'spesa' && m.macro && m.cat);
+      return {
+        spesa: spesa && { id: spesa.id, macro: spesa.macro, cat: spesa.cat, mese: spesa.data.slice(0, 7) },
+        stipendio: state.stipendi[0]?.id,
+        bolletta: state.bollette[0]?.id,
+        strumento: state.strumenti[0]?.id,
+        contoInv: state.conti.find(c => c.tipo === 'investimenti')?.nome,
+        paniere: state.panieri[0]?.id,
+        ricorrente: state.ricorrenti[0]?.id,
+      };
+    });
+    const s = campioni.spesa || {};
+    const PARAMETRI = {
+      drill: [{ macro: s.macro, mese: s.mese }, { macro: s.macro, cat: s.cat, mese: s.mese }],
+      modifica: [{ id: s.id }, ...(campioni.ricorrente ? [{ ric: campioni.ricorrente }] : [])],
+      'stipendio-dettaglio': [{ id: campioni.stipendio }],
+      'stipendio-nuovo': [{}, { id: campioni.stipendio }],
+      'bolletta-dettaglio': [{ id: campioni.bolletta }],
+      'bolletta-nuova': [{}, { id: campioni.bolletta }],
+      'dettaglio-investimento': [
+        ...(campioni.contoInv ? [{ conto: campioni.contoInv }] : []),
+        ...(campioni.strumento ? [{ strumento: campioni.strumento }] : []),
+      ],
+      paniere: campioni.paniere ? [{ id: campioni.paniere }] : [],
+      analisi: [{}, { macro: s.macro }, { macro: s.macro, cat: s.cat }],
+      movimenti: [{}, { periodo: 'anno' }],
+      ricerca: [{}, { q: 'a' }],
+    };
+
+    for (const rotta of ROTTE) {
+      const varianti = PARAMETRI[rotta] ?? [{}];
+      if (!varianti.length) { console.log(`  --   ${rotta}: nessun dato per aprirla, saltata`); continue; }
+      for (const params of varianti) {
+        errori.length = 0;
+        const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v != null)).toString();
+        const hash = `#/${rotta}${q ? '?' + q : ''}`;
+        // render atteso fino in fondo: un'eccezione nel componente arriva qui
+        const esito = await page.evaluate(async (h) => {
+          const { renderCurrent } = await import('./js/core/router.js');
+          history.replaceState(null, '', h);
+          try { await renderCurrent(); } catch (e) { return { errore: e && (e.stack || e.message || String(e)) }; }
+          const root = document.getElementById('app-root');
+          return { figli: root.children.length, testo: root.innerText };
+        }, hash);
+        await page.waitForTimeout(50);   // lascia sfogare eventuali errori asincroni
+        const problemi = [...errori];
+        if (esito.errore) problemi.unshift(esito.errore.split('\n').slice(0, 2).join(' '));
+        else {
+          if (!esito.figli && rotta !== 'paniere') problemi.push('schermata vuota');
+          if (/\bNaN\b|\bundefined\b/.test(esito.testo)) problemi.push('testo con NaN/undefined');
+        }
+        ok(hash, problemi.length === 0, problemi.join(' | '));
+      }
+    }
+    const t = await toastVisibili();
+    ok('nessun avviso di salvataggio fallito', !t.some(x => /non salvat|non riuscit|Riprova/i.test(x)), t.join(' | '));
+  }
+
+  console.log('\nfunziona offline');
+  {
+    await page.goto(BASE + '#/spese');
+    await attendiAvvio(page);
+    const attivo = await page.evaluate(async () => {
+      const reg = await Promise.race([
+        navigator.serviceWorker.ready,
+        new Promise(r => setTimeout(() => r(null), 20000)),
+      ]);
+      return !!(reg && reg.active);
+    });
+    ok('service worker attivo', attivo);
+    if (attivo) {
+      errori.length = 0;
+      await context.setOffline(true);
+      await page.reload();
+      await attendiAvvio(page);
+      const testo = await page.textContent('#app-root');
+      ok("l'app riparte senza rete", !testo.includes("Errore all'avvio"), testo.slice(0, 200));
+      ok('nessun errore JavaScript offline', errori.length === 0, errori.join(' | '));
+      await context.setOffline(false);
+    }
+  }
+} catch (e) {
+  falliti++;
+  console.log(`  FAIL eccezione nel collaudo — ${e.stack || e.message}`);
+} finally {
+  await browser.close();
+  server.close();
+}
+
+console.log(`\n${passati} passati, ${falliti} falliti\n`);
+process.exit(falliti ? 1 : 0);
