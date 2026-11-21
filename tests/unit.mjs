@@ -586,6 +586,57 @@ console.log('\nbollette precaricate: seed per impronta');
   ok('la modifica marca la bolletta come manuale', mod.origine === 'manuale' && mod.id === conBonus.id);
 }
 
+console.log('\nritmo del mese (grafico della pagina Spese)');
+{
+  const { ritmoMese, giornoDentro, giorniDelMese, cumulatoMese } = await import('../js/services/ritmoService.js');
+  const { baselineSpeseMensile } = await import('../js/services/movimentiService.js');
+  // 12 mesi chiusi tutti uguali: mutuo da 1.000 il giorno 1, poi 20 al giorno
+  const movs = [];
+  const spesa = (data, imp, macro = 'Casa') => movs.push({ id: 'r' + movs.length, data, annomese: data.slice(0, 7), tipo: 'spesa', macro, imp, tag: [] });
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(2025, 5 + i, 1), am = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    spesa(`${am}-01`, 1000);
+    for (let g = 2; g <= giorniDelMese(am); g++) spesa(`${am}-${String(g).padStart(2, '0')}`, 20, 'Spesa');
+  }
+  // giugno 2026 fino al 10: mutuo + 20 al giorno, piu' una spesa gia' inserita per il 25
+  spesa('2026-06-01', 1000);
+  for (let g = 2; g <= 10; g++) spesa(`2026-06-${String(g).padStart(2, '0')}`, 20, 'Spesa');
+  spesa('2026-06-25', 200, 'Svago');
+  state.movimenti = movs;
+  state._idxMovByMese = {};
+  for (const m of movs) (state._idxMovByMese[m.annomese] ??= []).push(m);
+
+  const r = ritmoMese('2026-06', '2026-06-10');
+  ok('dodici mesi di riferimento', r.nMesiRif === 12, `${r.nMesiRif}`);
+  ok('a fine mese il tipico coincide col mese tipico del riquadro', r.tipicoFine === baselineSpeseMensile('2026-06'),
+    `${r.tipicoFine} vs ${baselineSpeseMensile('2026-06')}`);
+  // il motivo di tutto: col mutuo il giorno 1, il mese tipico e' gia' alto il giorno 2.
+  // La vecchia quota lineare (mese tipico x 2/30) diceva ~110 EUR e faceva sembrare
+  // ogni inizio mese uno sforamento.
+  ok('il giorno 2 il tipico comprende gia\' il mutuo', ritmoMese('2026-06', '2026-06-02').tipicoAOggi >= 1000);
+  ok('il mese in corso si ferma a oggi (non e\' disegnato come concluso)', r.cumulato.length === 10 && !r.chiuso);
+  const totaleGiugno = movs.filter(m => m.annomese === '2026-06').reduce((s, m) => s + m.imp, 0);
+  ok('le spese con data futura contano a oggi: stesso totale del riquadro', r.speso === totaleGiugno, `${r.speso} vs ${totaleGiugno}`);
+  ok('proiezione = speso + quello che di solito resta da spendere',
+    vicino(r.proiezione, r.speso + r.tipicoFine - r.tipicoAOggi, 0.01), `${r.proiezione}`);
+  ok('la fascia contiene il tipico', r.tipico.every((v, i) => r.p25[i] <= v && v <= r.p75[i]));
+  ok('il mese precedente e\' disponibile per il confronto', Array.isArray(r.precedente) && r.precedente.length === r.giorni);
+
+  const maggio = ritmoMese('2026-05', '2026-06-10');
+  ok('un mese passato e\' chiuso e intero', maggio.chiuso && maggio.cumulato.length === 31 && maggio.proiezione === maggio.speso);
+  ok('un mese futuro non ha giorni', ritmoMese('2026-07', '2026-06-10').giorno === 0);
+  ok('senza storico non c\'e\' niente da confrontare', ritmoMese('2025-06', '2025-06-15').nMesiRif === 0);
+
+  ok('giornoDentro: mese in corso -> giorno di oggi', giornoDentro('2026-06', '2026-06-10') === 10);
+  ok('giornoDentro: mese passato -> ultimo giorno', giornoDentro('2026-02', '2026-06-10') === 28);
+  ok('febbraio bisestile ha 29 giorni', giorniDelMese('2028-02') === 29);
+  // febbraio si confronta alla pari: a fine febbraio il tipico e' il mese tipico intero
+  const feb = ritmoMese('2027-02', '2027-02-28');
+  ok('febbraio confrontato a fine mese con i mesi interi', feb.tipicoAOggi === feb.tipicoFine);
+  ok('cumulato: un valore per giorno', cumulatoMese('2026-05').length === 31);
+  state.movimenti = []; state._idxMovByMese = {};
+}
+
 console.log('\nnessun file orfano');
 {
   // Ogni modulo in js/ deve essere raggiungibile da app.js seguendo gli import.

@@ -81,7 +81,8 @@ Moduli condivisi da riusare prima di scrivere codice nuovo: `core/utils.js`
 (formati e date), `components/shared.js` (UI comune), e le "fonti uniche" dichiarate
 nei service, ad es. `strumentiService.js` (il versato),
 `attribuzioneInvestimenti.js` (attribuzione dei trasferimenti di investimento),
-`naturaService.js` (bisogni/desideri), `bilancioService.js` (tasso di risparmio).
+`naturaService.js` (bisogni/desideri), `bilancioService.js` (tasso di risparmio),
+`ritmoService.js` (ritmo di spesa del mese: grafico e percentuale della pagina Spese).
 
 ## Comandi
 
