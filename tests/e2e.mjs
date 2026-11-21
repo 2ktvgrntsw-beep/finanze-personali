@@ -203,6 +203,54 @@ try {
     ok('nessun avviso di salvataggio fallito', !t.some(x => /non salvat|non riuscit|Riprova/i.test(x)), t.join(' | '));
   }
 
+  console.log('\nbollette: modifiche e cancellazioni sopravvivono al riavvio');
+  {
+    // Fino alla 3.43 il seed riscriveva tutte le bollette e non ricordava quelle
+    // cancellate. Qui si fa come l'utente: si corregge e si cancella, poi si riavvia.
+    const bollette = () => page.evaluate(async () => {
+      const { dbAll } = await import('./js/core/db.js');
+      return Object.fromEntries((await dbAll('bollette')).map(b => [b.id, b]));
+    });
+    const ids = await page.evaluate(async () => {
+      const { BOLLETTE_SEED } = await import('./js/core/bolletteSeedData.js');
+      const { eliminaBolletta, salvaBolletta, bollettaById } = await import('./js/services/energiaService.js');
+      const campione = BOLLETTE_SEED.find(b => b.canone != null);
+      const daCancellare = BOLLETTE_SEED.find(b => b.id !== campione.id);
+      // il caso peggiore di prima: la campione corretta a mano col canone svuotato
+      await salvaBolletta({ ...bollettaById(campione.id), canone: null, totale: 999.99, origine: 'manuale' });
+      await eliminaBolletta(daCancellare.id);
+      const altra = BOLLETTE_SEED.find(b => b.id !== campione.id && b.id !== daCancellare.id);
+      return { campione: campione.id, cancellata: daCancellare.id, altra: altra.id, nSeed: BOLLETTE_SEED.length };
+    });
+    errori.length = 0;
+    await page.reload();
+    await attendiAvvio(page);
+    let b = await bollette();
+    ok('la bolletta corretta a mano resta corretta', b[ids.campione]?.totale === 999.99, `totale ${b[ids.campione]?.totale}`);
+    ok('la bolletta cancellata non ricompare', !b[ids.cancellata]);
+
+    // Telefono fermo alla 3.43: niente lista delle cancellate, vecchio flag acceso, e
+    // una bolletta del seed cancellata con la versione vecchia (senza registrarla).
+    await page.evaluate(async ({ altra }) => {
+      const { dbDelete, dbAdd } = await import('./js/core/db.js');
+      await dbDelete('meta', 'seed_bollette_cancellate');
+      await dbDelete('meta', 'seed_bollette_impronta');
+      await dbAdd('meta', { chiave: 'seed_bollette_completato', valore: true });
+      await dbDelete('bollette', altra);
+    }, ids);
+    await page.reload();
+    await attendiAvvio(page);
+    b = await bollette();
+    ok('aggiornando dalla 3.43 le bollette gia\' cancellate restano cancellate', !b[ids.altra] && !b[ids.cancellata]);
+    ok('...e la correzione a mano resta', b[ids.campione]?.totale === 999.99);
+    const n1 = Object.keys(b).length;
+    await page.reload();
+    await attendiAvvio(page);
+    const n2 = Object.keys(await bollette()).length;
+    ok(`numero di bollette stabile fra un avvio e l'altro (${n1})`, n1 === n2 && n1 === ids.nSeed - 2, `${n1} poi ${n2}`);
+    ok('nessun errore JavaScript', errori.length === 0, errori.join(' | '));
+  }
+
   console.log('\nfunziona offline');
   {
     await page.goto(BASE + '#/spese');
