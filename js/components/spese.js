@@ -6,7 +6,7 @@ import { fmtEUR, fmtEUR0, fmtPct, nomeMese, annomese, todayISO, toISO, escapeHtm
 import { iconaMacro } from '../core/icons.js';
 import { navigate } from '../core/router.js';
 import {
-  totaliPeriodo, aggregaPerLivello, soloSpese,
+  totaliPeriodo, aggregaPerLivello, baselineSpeseMensile, soloSpese,
 } from '../services/movimentiService.js';
 import { calcolaDelta } from './shared.js';
 import { ritmoMese } from '../services/ritmoService.js';
@@ -14,6 +14,7 @@ import { ritmoMese } from '../services/ritmoService.js';
 // stato locale della schermata (periodo selezionato)
 let _periodo = 'mese';                 // 'settimana' | 'mese' | 'anno'
 let _meseCorrente = annomese(todayISO());
+let _graficoAperto = false;            // grafico del ritmo: nascosto di default, si apre col pulsante nella card (come fino alla 3.44)
 
 const mesePrec = (am) => { const [a, m] = am.split('-').map(Number); const d = new Date(a, m - 2, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
 const meseSucc = (am) => { const [a, m] = am.split('-').map(Number); const d = new Date(a, m, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
@@ -61,6 +62,24 @@ export const renderSpese = async (root) => {
     if (d) deltaHTML = `<div class="delta ${d.classe} num">${meseInCorso ? d.testo.replace('mese tipico', 'ritmo abituale') : d.testo}</div>`;
   }
 
+  // barra "dove sto col mese": solo il filo con la tacca, niente testi (compatta)
+  let paceHTML = '';
+  if (meseInCorso) {
+    const giorniMese = new Date(parseInt(anno), parseInt(mese), 0).getDate();
+    const pctTempo = Math.round(giorno / giorniMese * 100);
+    const media = baselineSpeseMensile(_meseCorrente);
+    const pctSpeso = media > 0 ? Math.round(tot.spese / media * 100) : 0;
+    // La barra NON si ferma al 100%. Tapparla li' voleva dire spegnere l'informazione
+    // proprio nel mese in cui stai sforando: adesso oltre il mese tipico continua a
+    // crescere (fino a 200%, poi satura) e cambia colore, cosi' si vede di quanto.
+    const oltre = pctSpeso > 100;
+    const largh = Math.min(pctSpeso, 200) / 2;   // 200% = barra piena
+    paceHTML = `
+      <div class="pace pace-slim ${oltre ? 'over' : ''}" title="Speso ${pctSpeso}% del mese tipico · giorno ${giorno}/${giorniMese}">
+        <div class="track"><span class="fill" style="width:${oltre ? largh : pctSpeso / 2}%"></span><span class="marker" style="left:${pctTempo / 2}%"></span></div>
+      </div>`;
+  }
+
   // lista categorie a barre
   const righe = aggregaPerLivello(movs, 'macro');
   const maxTot = righe.length ? righe[0].totale : 1;
@@ -87,6 +106,7 @@ export const renderSpese = async (root) => {
       </div>` : `<div class="month-nav"><div class="m">${labelPeriodo}</div></div>`}
 
     <div class="hero-spese">
+      ${ritmo ? '<button class="spark-toggle" id="spark-toggle" title="Ritmo del mese" aria-label="Mostra il ritmo del mese" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M4 18l5-6 4 4 6-8"/><path d="M3 21h18"/></svg></button>' : ''}
       <div class="cell-spese-main" data-tot="spesa" style="cursor:pointer">
         <div class="cap">${_periodo === 'anno' ? 'Spese ' + anno : _periodo === 'mese' ? 'Spese di ' + nomeMese(parseInt(mese) - 1).toLowerCase() : 'Spese'}</div>
         <div class="big-spese num">${fmtEUR(tot.spese)}</div>
@@ -99,7 +119,9 @@ export const renderSpese = async (root) => {
       </div>
     </div>
 
-    ${ritmo ? _ritmoCard(ritmo, nomeMese(parseInt(mese) - 1), nomeMese((parseInt(mese) + 10) % 12)) : ''}
+    ${ritmo ? `<div class="spark-wrap ${_graficoAperto ? 'open' : ''}" id="spark-wrap">${_ritmoCard(ritmo, nomeMese(parseInt(mese) - 1), nomeMese((parseInt(mese) + 10) % 12))}</div>` : ''}
+
+    ${paceHTML}
 
 
     <div class="section-lbl"><span>Per categoria</span></div>
@@ -148,6 +170,23 @@ export const renderSpese = async (root) => {
 
   // grafico del ritmo: tocco/trascinamento mostra il giorno
   if (ritmo) _agganciaRitmo(root.querySelector('.ritmo-card'), ritmo, mese);
+
+  // pulsante nella card spese: apre/chiude il grafico del ritmo
+  const sparkToggle = root.querySelector('#spark-toggle');
+  const sparkWrap = root.querySelector('#spark-wrap');
+  if (sparkToggle && sparkWrap) {
+    const aggiorna = () => {
+      sparkWrap.classList.toggle('open', _graficoAperto);
+      sparkToggle.classList.toggle('on', _graficoAperto);
+      sparkToggle.setAttribute('aria-expanded', String(_graficoAperto));
+    };
+    aggiorna();
+    sparkToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      _graficoAperto = !_graficoAperto;
+      aggiorna();
+    });
+  }
 };
 
 // ═══ RITMO DEL MESE ═══

@@ -1115,8 +1115,23 @@ input[type=date].sheet-input{-webkit-appearance:none;appearance:none}
 .rio-frecce button:active:not(:disabled){background:var(--surface-3)}
 
 
-/* ═══ COCKPIT — riquadro spese ═══ */
+/* ═══ COCKPIT — grafico spese a scomparsa (toggle con icona) ═══ */
 .hero-spese{position:relative;background:linear-gradient(160deg,var(--surface-2) 0%,var(--surface) 100%);border:1px solid var(--line);border-radius:20px;padding:18px 20px 16px;margin:8px 0 4px;overflow:hidden}
+
+.spark-toggle{position:absolute;top:14px;right:14px;z-index:5;width:34px;height:34px;border-radius:10px;
+  background:var(--surface-3);border:1px solid var(--line);color:var(--txt-2);display:grid;place-items:center;cursor:pointer;padding:0}
+
+.spark-toggle svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
+.spark-toggle.on{background:rgba(46,155,255,.16);border-color:rgba(46,155,255,.45);color:var(--blue-2)}
+
+.spark-toggle:active{transform:scale(.94)}
+
+/* wrap collassabile */
+
+.spark-wrap{display:none}
+
+.spark-wrap.open{display:block;animation:sparkIn .22s ease}
 
 @keyframes sparkIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
 
@@ -1615,3 +1630,15 @@ input:focus, input:focus-visible, select:focus, select:focus-visible, textarea:f
 .ritmo-leg i.lc.sopra{border-color:var(--warn)}
 .ritmo-leg i.lt{border-top:6px solid rgba(139,150,171,.3)}
 .ritmo-leg i.lpr{border-top:1.5px dashed var(--violet-2)}
+
+/* ═══ Barra "dove sto col mese" (ripristinata nella 3.46, com'era fino alla 3.44) ═══ */
+.pace{margin-top:12px;background:var(--surface);border-radius:var(--r-md);padding:14px 16px;border:1px solid rgba(38,38,47,.6)}
+.pace .track{height:8px;background:var(--surface-3);border-radius:100px;overflow:hidden;position:relative}
+.pace .track>.fill{display:block;height:100%;border-radius:100px;background:linear-gradient(90deg,var(--accent),var(--accent-2));transition:width .5s ease}
+.pace .track>.marker{position:absolute;top:-3px;height:14px;width:2px;background:var(--txt);border-radius:2px}
+.pace.pace-slim{padding:6px 2px 2px}
+.pace.pace-slim .track{height:5px}
+/* La scala arriva al 200% del mese tipico, non al 100%: oltre il 100% il riempimento
+   vira sul rosso pieno — e' l'unico momento in cui quella barra ha qualcosa da dire. */
+.pace.over .track>.fill{background:linear-gradient(90deg,var(--accent-2),var(--down,#FF3B5C))}
+.pace.over .track{box-shadow:inset 0 0 0 1px rgba(255,59,92,.35)}
