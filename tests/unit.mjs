@@ -637,6 +637,51 @@ console.log('\nritmo del mese (grafico della pagina Spese)');
   state.movimenti = []; state._idxMovByMese = {};
 }
 
+console.log('\nritmo dell\'anno e una tantum');
+{
+  const { ritmoAnno, ritmoMese, giorniDel, giornoDentro } = await import('../js/services/ritmoService.js');
+  const { baselineSpeseMensile, eUnaTantum, TAG_UNA_TANTUM } = await import('../js/services/movimentiService.js');
+  const { TAG_UNA_TANTUM: tagBilancio } = await import('../js/services/bilancioService.js');
+  // dati da aprile 2016 (primo anno a meta'), poi 100 EUR il 1° di ogni mese fino a giugno 2026;
+  // nel luglio 2023 un saldo auto da 18.000 marcato una tantum
+  const movs = [];
+  const spesa = (data, imp, tag = []) => movs.push({ id: 'a' + movs.length, data, annomese: data.slice(0, 7), tipo: 'spesa', imp, tag });
+  for (let a = 2016; a <= 2026; a++) for (let m = 1; m <= 12; m++) {
+    const am = `${a}-${String(m).padStart(2, '0')}`;
+    if (am < '2016-04' || am > '2026-06') continue;
+    spesa(`${am}-01`, a === 2016 ? 40 : 100);
+  }
+  spesa('2023-07-24', 18000, [TAG_UNA_TANTUM]);
+  state.movimenti = movs;
+  state._idxMovByMese = {};
+  for (const m of movs) (state._idxMovByMese[m.annomese] ??= []).push(m);
+
+  ok('una sola regola per le una tantum (Bilancio e grafico)', tagBilancio === TAG_UNA_TANTUM && eUnaTantum({ tag: ['Una Tantum'] }));
+  ok('anno bisestile: 366 giorni', giorniDel('2024') === 366 && giorniDel('2023') === 365);
+  ok('giorno dell\'anno: 1° marzo 2024 e\' il 61°', giornoDentro('2024', '2024-03-01') === 61);
+
+  const r26 = ritmoAnno('2026', '2026-06-18');
+  ok('anno tipico: ultimi 5 anni chiusi', r26.nRif === 5, `${r26.nRif}`);
+  ok('anno tipico senza il saldo una tantum', r26.tipicoFine === 1200, `${r26.tipicoFine}`);
+  ok('anno in corso fermo a oggi', r26.cumulato.length === giornoDentro('2026', '2026-06-18') && !r26.chiuso);
+  ok('proiezione d\'anno = speso + il solito che resta', vicino(r26.proiezione, r26.speso + r26.tipicoFine - r26.tipicoAOggi, 0.01));
+
+  const r23 = ritmoAnno('2023', '2026-06-18');
+  ok('il 2023 chiude con TUTTO lo speso, saldo compreso (come il riquadro)', r23.speso === 19200 && r23.chiuso, `${r23.speso}`);
+  ok('...e dice quanto era una tantum', r23.unaTantum === 18000);
+  ok('l\'anno precedente tratteggiato non ha il salto del saldo', ritmoAnno('2024', '2026-06-18').precedente.at(-1) === 1200);
+
+  // il primo anno di dati parte ad aprile: e' un anno a meta' e non fa da riferimento
+  const r21 = ritmoAnno('2021', '2026-06-18');
+  ok('il primo anno a meta\' non fa da riferimento', r21.nRif === 4 && r21.tipicoFine === 1200, `${r21.nRif} anni, ${r21.tipicoFine}`);
+
+  // mese tipico: la stessa regola, e il riquadro resta allineato al grafico
+  const m23 = ritmoMese('2023-08', '2026-06-18');
+  ok('mese tipico senza una tantum', m23.tipicoFine === 100 && baselineSpeseMensile('2023-08') === 100,
+    `${m23.tipicoFine} / ${baselineSpeseMensile('2023-08')}`);
+  state.movimenti = []; state._idxMovByMese = {};
+}
+
 console.log('\nnessun file orfano');
 {
   // Ogni modulo in js/ deve essere raggiungibile da app.js seguendo gli import.

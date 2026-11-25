@@ -321,6 +321,21 @@ try {
     await p.mouse.click(box.x + box.width * 0.4, box.y + box.height / 2);
     const tip = await p.locator('.ritmo-tip').innerText();
     ok('toccando il grafico compare il giorno', /\d+\/06/.test(tip) && /di solito/.test(tip), tip.replace(/\n/g, ' '));
+    // regressione 3.48: fino alla 3.47 un timer chiudeva il riquadro dopo 1,8 s
+    const tipAperto = () => p.evaluate(() => document.querySelector('.ritmo-tip').classList.contains('on'));
+    await p.waitForTimeout(2500);
+    ok('il riquadro resta aperto finche\' non ritocchi', await tipAperto());
+    // trascinando il dito il riquadro segue il giorno, e resta aperto
+    await p.mouse.move(box.x + box.width * 0.4, box.y + box.height / 2);
+    await p.mouse.down();
+    await p.mouse.move(box.x + box.width * 0.7, box.y + box.height / 2, { steps: 5 });
+    await p.mouse.up();
+    const tip2 = await p.locator('.ritmo-tip').innerText();
+    ok('trascinando il riquadro segue il dito e resta aperto', (await tipAperto()) && tip2 !== tip, `${tip.split('\n')[0]} -> ${tip2.split('\n')[0]}`);
+    await p.mouse.click(box.x + box.width * 0.5, box.y + box.height / 2);
+    ok('ritoccando il grafico il riquadro scompare', !(await tipAperto()));
+    await p.mouse.click(box.x + box.width * 0.5, box.y + box.height / 2);
+    ok('e un altro tocco lo fa ricomparire', await tipAperto());
     await p.click('#spark-toggle');
     ok('ripremendo il pulsante il grafico si richiude', !(await visibile('.ritmo-card')));
     await p.click('#spark-toggle');
@@ -328,6 +343,23 @@ try {
     await p.waitForTimeout(100);
     ok('cambiando mese il grafico resta aperto', await visibile('.ritmo-card'));
     ok('un mese passato mostra il riepilogo', /maggio chiuso a/i.test(await p.locator('.ritmo-tit').innerText()));
+    // vista per anno (dalla 3.47): stesso pulsante, stesso grafico, conti sull'anno
+    await p.click('#head-seg button[data-p="anno"]');
+    await p.waitForTimeout(100);
+    ok('anche nella vista per anno c\'e\' il pulsante', !!(await p.$('.hero-spese #spark-toggle')));
+    if (!(await visibile('.ritmo-card'))) await p.click('#spark-toggle');
+    const anno = await p.evaluate(() => ({
+      tit: document.querySelector('.ritmo-tit')?.innerText || '',
+      sub: document.querySelector('.ritmo-sub')?.innerText || '',
+      totale: document.querySelector('.big-spese')?.innerText || '',
+      righe: document.querySelectorAll('.ritmo-svg .rg').length,
+      mesi: document.querySelectorAll('.ritmo-svg .rx').length,
+    }));
+    ok('per anno la frase dice come chiude l\'anno', /chiudi il 2026 intorno a/.test(anno.tit), anno.tit);
+    const finoraAnno = euro((anno.sub.match(/finora ([^,]+)/) || [])[1]);
+    ok('per anno "finora" coincide col totale del riquadro', Math.round(finoraAnno) === Math.round(euro(anno.totale)), `${finoraAnno} vs ${anno.totale}`);
+    ok('griglia leggibile anche sulle decine di migliaia (al massimo 5 righe)', anno.righe <= 5, `${anno.righe} righe`);
+    ok('asse dell\'anno con le iniziali dei 12 mesi', anno.mesi === 12, `${anno.mesi}`);
     ok('nessun errore JavaScript', err.length === 0, err.join(' | '));
     await ctx.close();
 

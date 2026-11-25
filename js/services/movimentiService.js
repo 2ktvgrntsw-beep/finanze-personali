@@ -188,6 +188,12 @@ export const movimentiDiVoce = (movs, filtro = {}) => {
 // e un altro stipendio. Adesso contano gli ultimi 12 mesi CHIUSI: il mese in corso
 // resta fuori, perche' a meta' mese e' sempre "sotto la media" e non vuol dire niente.
 //
+// LE UNA TANTUM NON FANNO IL MESE TIPICO. Un movimento col tag 'una tantum' (lo stesso
+// del Bilancio) e' uscito davvero e resta nei totali, ma il "solito" deve descrivere
+// come vivi, non il mese in cui hai saldato l'auto. Unica fonte della regola: eUnaTantum.
+export const TAG_UNA_TANTUM = 'una tantum';
+export const eUnaTantum = (m) => (m.tag || []).some(t => String(t).toLowerCase() === TAG_UNA_TANTUM);
+
 // MEDIANA, non media. Una spesa una tantum grossa avvelena la media per un anno
 // intero: dopo il saldo dell'auto di luglio 2023, la media a 12 mesi diceva 4.120 EUR
 // al mese contro una mediana di 2.619 — per dodici mesi l'app avrebbe dichiarato ogni
@@ -201,7 +207,7 @@ export const baselineSpeseMensile = (meseCorrente) => {
   for (const m of state.movimenti) {
     if (m.tipo !== 'spesa') continue;
     if (m.annomese >= meseCorrente) continue;       // solo mesi gia' chiusi
-    perMese[m.annomese] = (perMese[m.annomese] || 0) + m.imp;
+    perMese[m.annomese] = (perMese[m.annomese] || 0) + (eUnaTantum(m) ? 0 : m.imp);
   }
   const valori = Object.keys(perMese).sort().slice(-FINESTRA_MESI).map(k => perMese[k]);
   if (!valori.length) return 0;

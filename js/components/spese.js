@@ -9,7 +9,7 @@ import {
   totaliPeriodo, aggregaPerLivello, baselineSpeseMensile, soloSpese,
 } from '../services/movimentiService.js';
 import { calcolaDelta } from './shared.js';
-import { ritmoMese } from '../services/ritmoService.js';
+import { ritmoMese, ritmoAnno } from '../services/ritmoService.js';
 
 // stato locale della schermata (periodo selezionato)
 let _periodo = 'mese';                 // 'settimana' | 'mese' | 'anno'
@@ -52,12 +52,13 @@ export const renderSpese = async (root) => {
   // col mese tipico di sempre (mediana degli ultimi 12 mesi).
   const meseInCorso = _periodo === 'mese' && _meseCorrente === annomese(todayISO());
   const giorno = new Date().getDate();
-  const ritmo = _periodo === 'mese' ? ritmoMese(_meseCorrente) : null;
+  // grafico del ritmo: per il mese e (dalla 3.47) per l'anno; la settimana non ce l'ha
+  const ritmo = _periodo === 'mese' ? ritmoMese(_meseCorrente) : _periodo === 'anno' ? ritmoAnno(anno) : null;
 
   // Nei primissimi giorni il rapporto e' troppo nervoso per dire qualcosa: una spesa
   // sola il giorno 2 vale il 60% del ritmo. Meglio tacere e lasciar parlare il grafico.
   let deltaHTML = '';
-  if (ritmo && ritmo.giorno && !(meseInCorso && giorno < 4)) {
+  if (_periodo === 'mese' && ritmo.giorno && !(meseInCorso && giorno < 4)) {
     const d = calcolaDelta(tot.spese, ritmo.tipicoAOggi);
     if (d) deltaHTML = `<div class="delta ${d.classe} num">${meseInCorso ? d.testo.replace('mese tipico', 'ritmo abituale') : d.testo}</div>`;
   }
@@ -106,7 +107,7 @@ export const renderSpese = async (root) => {
       </div>` : `<div class="month-nav"><div class="m">${labelPeriodo}</div></div>`}
 
     <div class="hero-spese">
-      ${ritmo ? '<button class="spark-toggle" id="spark-toggle" title="Ritmo del mese" aria-label="Mostra il ritmo del mese" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M4 18l5-6 4 4 6-8"/><path d="M3 21h18"/></svg></button>' : ''}
+      ${ritmo ? `<button class="spark-toggle" id="spark-toggle" title="Ritmo ${_periodo === 'anno' ? "dell'anno" : 'del mese'}" aria-label="Mostra il ritmo ${_periodo === 'anno' ? "dell'anno" : 'del mese'}" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M4 18l5-6 4 4 6-8"/><path d="M3 21h18"/></svg></button>` : ''}
       <div class="cell-spese-main" data-tot="spesa" style="cursor:pointer">
         <div class="cap">${_periodo === 'anno' ? 'Spese ' + anno : _periodo === 'mese' ? 'Spese di ' + nomeMese(parseInt(mese) - 1).toLowerCase() : 'Spese'}</div>
         <div class="big-spese num">${fmtEUR(tot.spese)}</div>
@@ -119,7 +120,7 @@ export const renderSpese = async (root) => {
       </div>
     </div>
 
-    ${ritmo ? `<div class="spark-wrap ${_graficoAperto ? 'open' : ''}" id="spark-wrap">${_ritmoCard(ritmo, nomeMese(parseInt(mese) - 1), nomeMese((parseInt(mese) + 10) % 12))}</div>` : ''}
+    ${ritmo ? `<div class="spark-wrap ${_graficoAperto ? 'open' : ''}" id="spark-wrap">${_periodo === 'anno' ? _ritmoCard(ritmo, anno, String(parseInt(anno) - 1)) : _ritmoCard(ritmo, nomeMese(parseInt(mese) - 1), nomeMese((parseInt(mese) + 10) % 12))}</div>` : ''}
 
     ${paceHTML}
 
@@ -169,7 +170,7 @@ export const renderSpese = async (root) => {
   }));
 
   // grafico del ritmo: tocco/trascinamento mostra il giorno
-  if (ritmo) _agganciaRitmo(root.querySelector('.ritmo-card'), ritmo, mese);
+  if (ritmo) _agganciaRitmo(root.querySelector('.ritmo-card'), ritmo);
 
   // pulsante nella card spese: apre/chiude il grafico del ritmo
   const sparkToggle = root.querySelector('#spark-toggle');
@@ -205,19 +206,30 @@ const _scala = (r) => {
   };
 };
 
+// Passo "tondo" della griglia (1, 2 o 5 × 10^n) per avere 3-4 righe a qualunque scala:
+// un mese arriva a qualche migliaio di euro, un anno a decine di migliaia.
+const _passoGriglia = (yMax) => {
+  const grezzo = Math.max(1, yMax / 3.5), pot = 10 ** Math.floor(Math.log10(grezzo)), f = grezzo / pot;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * pot;
+};
+
+// `nome`/`nomePrec`: 'Giugno'/'Maggio' per un mese, '2026'/'2025' per un anno.
 const _ritmoCard = (r, nomeM, nomePrec) => {
-  if (!r.giorno || !r.nMesiRif) return '';   // mese futuro o nessuno storico: niente da confrontare
+  if (!r.giorno || !r.nRif) return '';   // periodo futuro o nessuno storico: niente da confrontare
   const { yMax, x, y } = _scala(r);
   const linea = (arr) => arr.map((v, i) => `${i ? 'L' : 'M'}${x(i + 1).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
   const fascia = linea(r.p75) + ' ' + r.p25.map((v, i) => [i, v]).reverse()
     .map(([i, v]) => `L${x(i + 1).toFixed(1)} ${y(v).toFixed(1)}`).join(' ') + ' Z';
-  const passo = yMax > 4000 ? 2000 : yMax > 2000 ? 1000 : 500;
+  const passo = _passoGriglia(yMax);
   let griglia = '';
   for (let v = 0; v < yMax; v += passo) {
     griglia += `<line x1="${G.L}" x2="${G.W - G.R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="rg"/>`
       + `<text x="${G.L - 6}" y="${(y(v) + 3.5).toFixed(1)}" class="ry">${_k(v)}</text>`;
   }
-  const ticks = [1, 10, 20, r.giorni].map(d => `<text x="${x(d).toFixed(1)}" y="${G.H - 6}" class="rx">${d}</text>`).join('');
+  // asse: giorni 1-10-20-fine per il mese; iniziali dei mesi (al giorno 1 di ciascuno) per l'anno
+  const ticks = r.anno
+    ? _inizioMesi(r.periodo).map((d, i) => `<text x="${x(d).toFixed(1)}" y="${G.H - 6}" class="rx">${'GFMAMGLASOND'[i]}</text>`).join('')
+    : [1, 10, 20, r.giorni].map(d => `<text x="${x(d).toFixed(1)}" y="${G.H - 6}" class="rx">${d}</text>`).join('');
   const xs = x(r.giorno), ys = y(r.speso);
   const sopra = r.speso > r.tipicoAOggi;
   const proiez = r.chiuso ? '' : `<path d="M${xs.toFixed(1)} ${ys.toFixed(1)} L${x(r.giorni).toFixed(1)} ${y(r.proiezione).toFixed(1)}" class="rp"/>`
@@ -225,14 +237,15 @@ const _ritmoCard = (r, nomeM, nomePrec) => {
   const oggi = r.chiuso ? '' : `<line x1="${xs.toFixed(1)}" x2="${xs.toFixed(1)}" y1="${G.T}" y2="${G.H - G.B}" class="ro"/>`;
   const titolo = r.chiuso
     ? `${nomeM} chiuso a <b class="num">${fmtEUR0(r.speso)}</b>`
-    : `A questo ritmo chiudi ${nomeM.toLowerCase()} intorno a <b class="num">${fmtEUR0(Math.round(r.proiezione / 10) * 10)}</b>`;
+    : `A questo ritmo chiudi ${r.anno ? 'il ' + nomeM : nomeM.toLowerCase()} intorno a <b class="num">${fmtEUR0(Math.round(r.proiezione / (r.anno ? 100 : 10)) * (r.anno ? 100 : 10))}</b>`;
   const sotto = `di solito ${fmtEUR0(r.tipicoFine)}`
-    + (r.chiuso ? '' : ` · finora ${fmtEUR0(r.speso)}, di solito a oggi ${fmtEUR0(r.tipicoAOggi)}`);
+    + (r.chiuso ? '' : ` · finora ${fmtEUR0(r.speso)}, di solito a oggi ${fmtEUR0(r.tipicoAOggi)}`)
+    + (r.unaTantum > 0 ? ` · di cui ${fmtEUR0(r.unaTantum)} una tantum` : '');
   return `<div class="card ritmo-card">
     <div class="ritmo-tit">${titolo}</div>
     <div class="ritmo-sub num">${sotto}</div>
     <div class="ritmo-graf">
-      <svg viewBox="0 0 ${G.W} ${G.H}" class="ritmo-svg" role="img" aria-label="Spesa accumulata nel mese confrontata con il mese tipico">
+      <svg viewBox="0 0 ${G.W} ${G.H}" class="ritmo-svg" role="img" aria-label="Spesa accumulata ${r.anno ? "nell'anno" : 'nel mese'} confrontata con il solito">
         ${griglia}
         <path d="${fascia}" class="rf"/>
         <path d="${linea(r.tipico)}" class="rt"/>
@@ -253,9 +266,20 @@ const _ritmoCard = (r, nomeM, nomePrec) => {
   </div>`;
 };
 
+// Giorno dell'anno (1-366) in cui comincia ciascun mese: posizioni delle iniziali sull'asse.
+const _inizioMesi = (anno) => Array.from({ length: 12 }, (_, i) =>
+  Math.round((Date.UTC(Number(anno), i, 1) - Date.UTC(Number(anno), 0, 1)) / 86400000) + 1);
+
+// Etichetta del giorno d del periodo: '13/06' per un mese, '13 giu' per un anno.
+const _etichettaGiorno = (r, d) => {
+  if (!r.anno) return `${d}/${r.periodo.slice(5, 7)}`;
+  const dt = new Date(Date.UTC(Number(r.periodo), 0, d));
+  return `${dt.getUTCDate()} ${nomeMese(dt.getUTCMonth()).slice(0, 3).toLowerCase()}`;
+};
+
 // Tocco o trascinamento sul grafico: linea sul giorno e riquadro con speso fino a lì,
-// speso quel giorno e il solito a quel punto del mese.
-const _agganciaRitmo = (card, r, mese) => {
+// speso quel giorno e il solito a quel punto del periodo.
+const _agganciaRitmo = (card, r) => {
   const svg = card && card.querySelector('.ritmo-svg');
   if (!svg) return;
   const tip = card.querySelector('.ritmo-tip'), sel = svg.querySelector('.rsel');
@@ -269,17 +293,35 @@ const _agganciaRitmo = (card, r, mese) => {
     const nel = d <= r.giorno;
     const tot = nel ? r.cumulato[d - 1] : null;
     const delGiorno = nel ? tot - (d > 1 ? r.cumulato[d - 2] : 0) : null;
-    tip.innerHTML = `<b>${d}/${mese}</b>`
+    tip.innerHTML = `<b>${_etichettaGiorno(r, d)}</b>`
       + (nel ? `<span>finora <b class="num">${fmtEUR0(tot)}</b>${delGiorno > 0 ? ` · quel giorno ${fmtEUR0(delGiorno)}` : ''}</span>` : '')
       + `<span>di solito <b class="num">${fmtEUR0(r.tipico[d - 1])}</b></span>`;
     tip.style.left = `${Math.min(78, Math.max(22, px / G.W * 100))}%`;
     tip.classList.add('on');
   };
   const nascondi = () => { tip.classList.remove('on'); sel.classList.remove('on'); };
-  svg.addEventListener('pointerdown', (e) => { mostra(e); svg.setPointerCapture?.(e.pointerId); });
-  svg.addEventListener('pointermove', (e) => { if (e.buttons || e.pointerType === 'touch') mostra(e); });
-  svg.addEventListener('pointerup', () => setTimeout(nascondi, 1800));
-  svg.addEventListener('pointercancel', nascondi);
+  // Il riquadro resta finché non ritocchi il grafico: tocco = compare, trascinamento =
+  // segue il dito, un altro tocco (senza trascinare) = scompare. Fino alla 3.47 un timer
+  // lo chiudeva 1,8 s dopo aver alzato il dito, e su iPhone anche un accenno di scroll
+  // (pointercancel) lo chiudeva subito: non si faceva in tempo a leggerlo.
+  let premuto = false, eraAperto = false, mosso = false, x0 = 0;
+  svg.addEventListener('pointerdown', (e) => {
+    premuto = true; mosso = false; x0 = e.clientX;
+    eraAperto = tip.classList.contains('on');
+    if (!eraAperto) mostra(e);
+    svg.setPointerCapture?.(e.pointerId);
+  });
+  svg.addEventListener('pointermove', (e) => {
+    if (!premuto) return;
+    if (!mosso && Math.abs(e.clientX - x0) < 6) return;   // tremolio del dito: non è un trascinamento
+    mosso = true;
+    mostra(e);
+  });
+  svg.addEventListener('pointerup', () => {
+    if (premuto && eraAperto && !mosso) nascondi();
+    premuto = false;
+  });
+  svg.addEventListener('pointercancel', () => { premuto = false; });   // la pagina scorre: il riquadro resta
 };
 
 // esportati per il drill-down (condivide il periodo corrente)
