@@ -321,6 +321,21 @@ try {
     await p.mouse.click(box.x + box.width * 0.4, box.y + box.height / 2);
     const tip = await p.locator('.ritmo-tip').innerText();
     ok('toccando il grafico compare il giorno', /\d+\/06/.test(tip) && /di solito/.test(tip), tip.replace(/\n/g, ' '));
+    // regressione 3.48: fino alla 3.47 un timer chiudeva il riquadro dopo 1,8 s
+    const tipAperto = () => p.evaluate(() => document.querySelector('.ritmo-tip').classList.contains('on'));
+    await p.waitForTimeout(2500);
+    ok('il riquadro resta aperto finche\' non ritocchi', await tipAperto());
+    // trascinando il dito il riquadro segue il giorno, e resta aperto
+    await p.mouse.move(box.x + box.width * 0.4, box.y + box.height / 2);
+    await p.mouse.down();
+    await p.mouse.move(box.x + box.width * 0.7, box.y + box.height / 2, { steps: 5 });
+    await p.mouse.up();
+    const tip2 = await p.locator('.ritmo-tip').innerText();
+    ok('trascinando il riquadro segue il dito e resta aperto', (await tipAperto()) && tip2 !== tip, `${tip.split('\n')[0]} -> ${tip2.split('\n')[0]}`);
+    await p.mouse.click(box.x + box.width * 0.5, box.y + box.height / 2);
+    ok('ritoccando il grafico il riquadro scompare', !(await tipAperto()));
+    await p.mouse.click(box.x + box.width * 0.5, box.y + box.height / 2);
+    ok('e un altro tocco lo fa ricomparire', await tipAperto());
     await p.click('#spark-toggle');
     ok('ripremendo il pulsante il grafico si richiude', !(await visibile('.ritmo-card')));
     await p.click('#spark-toggle');

@@ -300,10 +300,28 @@ const _agganciaRitmo = (card, r) => {
     tip.classList.add('on');
   };
   const nascondi = () => { tip.classList.remove('on'); sel.classList.remove('on'); };
-  svg.addEventListener('pointerdown', (e) => { mostra(e); svg.setPointerCapture?.(e.pointerId); });
-  svg.addEventListener('pointermove', (e) => { if (e.buttons || e.pointerType === 'touch') mostra(e); });
-  svg.addEventListener('pointerup', () => setTimeout(nascondi, 1800));
-  svg.addEventListener('pointercancel', nascondi);
+  // Il riquadro resta finché non ritocchi il grafico: tocco = compare, trascinamento =
+  // segue il dito, un altro tocco (senza trascinare) = scompare. Fino alla 3.47 un timer
+  // lo chiudeva 1,8 s dopo aver alzato il dito, e su iPhone anche un accenno di scroll
+  // (pointercancel) lo chiudeva subito: non si faceva in tempo a leggerlo.
+  let premuto = false, eraAperto = false, mosso = false, x0 = 0;
+  svg.addEventListener('pointerdown', (e) => {
+    premuto = true; mosso = false; x0 = e.clientX;
+    eraAperto = tip.classList.contains('on');
+    if (!eraAperto) mostra(e);
+    svg.setPointerCapture?.(e.pointerId);
+  });
+  svg.addEventListener('pointermove', (e) => {
+    if (!premuto) return;
+    if (!mosso && Math.abs(e.clientX - x0) < 6) return;   // tremolio del dito: non è un trascinamento
+    mosso = true;
+    mostra(e);
+  });
+  svg.addEventListener('pointerup', () => {
+    if (premuto && eraAperto && !mosso) nascondi();
+    premuto = false;
+  });
+  svg.addEventListener('pointercancel', () => { premuto = false; });   // la pagina scorre: il riquadro resta
 };
 
 // esportati per il drill-down (condivide il periodo corrente)
