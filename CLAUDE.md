@@ -82,7 +82,9 @@ Moduli condivisi da riusare prima di scrivere codice nuovo: `core/utils.js`
 nei service, ad es. `strumentiService.js` (il versato),
 `attribuzioneInvestimenti.js` (attribuzione dei trasferimenti di investimento),
 `naturaService.js` (bisogni/desideri), `bilancioService.js` (tasso di risparmio),
-`ritmoService.js` (ritmo di spesa del mese: grafico e percentuale della pagina Spese).
+`ritmoService.js` (ritmo di spesa del mese e dell'anno: grafico e percentuale della
+pagina Spese), `eUnaTantum` in `movimentiService.js` (unica regola per le spese/entrate
+straordinarie col tag 'una tantum': restano nei totali, escono dal "solito").
 
 ## Comandi
 

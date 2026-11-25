@@ -328,6 +328,23 @@ try {
     await p.waitForTimeout(100);
     ok('cambiando mese il grafico resta aperto', await visibile('.ritmo-card'));
     ok('un mese passato mostra il riepilogo', /maggio chiuso a/i.test(await p.locator('.ritmo-tit').innerText()));
+    // vista per anno (dalla 3.47): stesso pulsante, stesso grafico, conti sull'anno
+    await p.click('#head-seg button[data-p="anno"]');
+    await p.waitForTimeout(100);
+    ok('anche nella vista per anno c\'e\' il pulsante', !!(await p.$('.hero-spese #spark-toggle')));
+    if (!(await visibile('.ritmo-card'))) await p.click('#spark-toggle');
+    const anno = await p.evaluate(() => ({
+      tit: document.querySelector('.ritmo-tit')?.innerText || '',
+      sub: document.querySelector('.ritmo-sub')?.innerText || '',
+      totale: document.querySelector('.big-spese')?.innerText || '',
+      righe: document.querySelectorAll('.ritmo-svg .rg').length,
+      mesi: document.querySelectorAll('.ritmo-svg .rx').length,
+    }));
+    ok('per anno la frase dice come chiude l\'anno', /chiudi il 2026 intorno a/.test(anno.tit), anno.tit);
+    const finoraAnno = euro((anno.sub.match(/finora ([^,]+)/) || [])[1]);
+    ok('per anno "finora" coincide col totale del riquadro', Math.round(finoraAnno) === Math.round(euro(anno.totale)), `${finoraAnno} vs ${anno.totale}`);
+    ok('griglia leggibile anche sulle decine di migliaia (al massimo 5 righe)', anno.righe <= 5, `${anno.righe} righe`);
+    ok('asse dell\'anno con le iniziali dei 12 mesi', anno.mesi === 12, `${anno.mesi}`);
     ok('nessun errore JavaScript', err.length === 0, err.join(' | '));
     await ctx.close();
 

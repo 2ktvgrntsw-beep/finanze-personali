@@ -22,6 +22,7 @@ import { state, contoByNome } from '../core/store.js';
 import { round2, todayISO } from '../core/utils.js';
 import { calcolaPiano } from './prestitiService.js';
 import { naturaDi, vociTra } from './naturaService.js';
+import { TAG_UNA_TANTUM, eUnaTantum } from './movimentiService.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LA RATA DEL MUTUO NON E' UNA SPESA SOLA: sono due cose incollate.
@@ -52,7 +53,7 @@ import { naturaDi, vociTra } from './naturaService.js';
 // esattamente quelli del piano.)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const TAG_UNA_TANTUM = 'una tantum';
+export { TAG_UNA_TANTUM };   // la regola vive in movimentiService (eUnaTantum)
 export const SOGLIA_CANDIDATO = 2000;
 
 // RISCONTRO STIPENDI. Si confronta solo lo stipendio vero (Entrate › Stipendio)
@@ -67,7 +68,7 @@ const _eStipendioDaBusta = (m) => m.cat === 'Stipendio' && !_NON_NEL_NETTO.test(
 
 const _anno = (m) => m.data.slice(0, 4);
 const _mese = (m) => Number(m.data.slice(5, 7));
-const _isUnaTantum = (m) => (m.tag || []).some(t => String(t).toLowerCase() === TAG_UNA_TANTUM);
+const _isUnaTantum = eUnaTantum;
 
 // Un trasferimento è "accantonato" solo se atterra su un conto di risparmio o
 // investimento: spostare soldi fra due conti correnti non è risparmiare.
