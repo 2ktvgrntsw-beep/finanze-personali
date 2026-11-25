@@ -163,7 +163,10 @@ export const sincronizzaRicorrenzaPrestito = async (prestito, tipo) => {
     sub: prestito.sub || (tipo === 'mutuo' ? 'Rata Mutuo' : ''),
     conto: prestito.conto || '',
     contoDest: '',
-    tag: [],
+    // i tag sono dell'utente, non del prestito: la ricorrenza viene ricostruita a ogni
+    // avvio e fino alla 3.48 li azzerava (tag: []), cancellando in silenzio un tag messo
+    // sulla rata del mutuo o di un finanziamento
+    tag: esistente && Array.isArray(esistente.tag) ? esistente.tag : [],
     desc: prestito.descMovimento || '',
     modalita: 'fisso', soglia: null, isRegola: false,
     attiva: true,

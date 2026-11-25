@@ -9,6 +9,7 @@ import { esportaBackup, importaBackup } from '../services/excelService.js';
 import { registraBackupExcelFatto, giorniDaUltimoBackupExcel, esportaJSON, importaJSON } from '../services/backupService.js';
 import { DICHIARAZIONI } from '../core/dichiarazioni.js';
 import { applicaTagBulk, cercaMovimenti } from '../services/movimentiService.js';
+import { elencoTag } from '../services/tagService.js';
 import { STORE_NAMES } from '../core/db.js';
 import { dbClear } from '../core/db.js';
 import { apriSheet, conferma } from './shared.js';
@@ -19,7 +20,7 @@ export const renderImpostazioni = async (root) => {
 
   const nMov = state.movimenti.length;
   const nConti = state.conti.length;
-  const nTag = state.tag.length;
+  const nTag = elencoTag().length;   // anche i tag usati solo nei movimenti, non solo l'anagrafica
 
   const giorniBackup = await giorniDaUltimoBackupExcel();
   const promemoriaBackup = giorniBackup === null
@@ -41,7 +42,8 @@ export const renderImpostazioni = async (root) => {
 
     <div class="section-lbl"><span>Tag</span></div>
     <div class="card">
-      <p class="meta" style="margin-bottom:14px">Applica un tag in blocco a più movimenti passati (es. tutte le spese di un viaggio).</p>
+      <p class="meta" style="margin-bottom:14px">Rinomina, unisci o elimina i tag: la modifica arriva su tutti i movimenti che li hanno. Oppure applica un tag in blocco a più movimenti passati (es. tutte le spese di un viaggio).</p>
+      <button class="btn btn-primary" id="gestisci-tag" style="margin-bottom:10px">Gestisci tag${nTag ? ` (${nTag})` : ''}</button>
       <button class="btn btn-secondary" id="bulk-tag">Applica tag in blocco</button>
     </div>
 
@@ -118,6 +120,7 @@ export const renderImpostazioni = async (root) => {
   });
 
   // bulk tag
+  root.querySelector('#gestisci-tag').addEventListener('click', () => navigate('tag'));
   root.querySelector('#bulk-tag').addEventListener('click', () => _bulkTag(root));
 
   // navigazione

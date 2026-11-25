@@ -682,6 +682,54 @@ console.log('\nritmo dell\'anno e una tantum');
   state.movimenti = []; state._idxMovByMese = {};
 }
 
+console.log('\ngestione dei tag');
+{
+  const { pianoTag, controllaRinomina, elencoTag, normalizzaTag, eTagUnaTantum } = await import('../js/services/tagService.js');
+  const movs = [
+    { id: 'm1', data: '2025-07-01', tag: ['Sicilia', 'mare'] },
+    { id: 'm2', data: '2025-07-03', tag: ['Sicilia'] },
+    { id: 'm3', data: '2025-08-10', tag: ['mare'] },
+    { id: 'm4', data: '2025-09-01', tag: [] },
+    { id: 'm5', data: '2025-09-02' },
+  ];
+  // rinomina: tutti i movimenti col tag, e solo quelli
+  const r1 = pianoTag(movs, 'Sicilia', 'Sicilia 2025');
+  ok('rinomina: riscrive solo i movimenti col tag', r1.map(m => m.id).join() === 'm1,m2');
+  ok('rinomina: il nome nuovo prende il posto del vecchio', JSON.stringify(r1[0].tag) === '["Sicilia 2025","mare"]');
+  ok('rinomina: gli altri campi restano', r1[0].data === '2025-07-01' && r1[0].id === 'm1');
+  ok('rinomina: i record originali non vengono toccati', movs[0].tag[0] === 'Sicilia');
+  // unione: chi li aveva entrambi ne tiene uno solo
+  const r2 = pianoTag(movs, 'mare', 'Sicilia');
+  ok('unione: niente doppioni sul movimento che li aveva entrambi', JSON.stringify(r2.find(m => m.id === 'm1').tag) === '["Sicilia"]');
+  ok('unione: il movimento che aveva solo il vecchio prende il nuovo', JSON.stringify(r2.find(m => m.id === 'm3').tag) === '["Sicilia"]');
+  // eliminazione: il tag sparisce, il movimento resta
+  const r3 = pianoTag(movs, 'Sicilia', null);
+  ok('eliminazione: il tag sparisce dai movimenti', JSON.stringify(r3.map(m => m.tag)) === '[["mare"],[]]');
+  ok('movimenti senza tag o senza campo tag: ignorati', pianoTag(movs, 'assente', 'x').length === 0);
+
+  ok('nome vuoto rifiutato', !!controllaRinomina('mare', '   '));
+  ok('nome con virgola rifiutato (separa i tag in inserimento)', !!controllaRinomina('mare', 'mare, sole'));
+  ok('stesso nome rifiutato', !!controllaRinomina('mare', ' mare '));
+  ok('cambio di sole maiuscole permesso', controllaRinomina('mare', 'Mare') === null);
+  ok('"una tantum" non si rinomina', !!controllaRinomina('una tantum', 'straordinari') && !!controllaRinomina('Una Tantum', 'x'));
+  ok('rinominare un tag IN "una tantum" e\' permesso (l\'interfaccia chiede conferma)', controllaRinomina('auto', 'una tantum') === null);
+  ok('spazi ripuliti', normalizzaTag('  viaggio   Roma ') === 'viaggio Roma' && eTagUnaTantum(' UNA TANTUM '));
+
+  // elenco: da movimenti, ricorrenze e anagrafica, con i conteggi
+  state.movimenti = movs;
+  state.ricorrenti = [{ id: 'r1', tag: ['abbonamenti'] }, { id: 'r2', tag: ['mare'] }];
+  state.tag = [{ id: 't1', nome: 'mai usato' }, { id: 't2', nome: 'mare' }];
+  const el = elencoTag();
+  const di = (n) => el.find(t => t.nome === n);
+  ok('elenco: tag dei movimenti con conteggio e ultimo uso', di('mare').movimenti === 2 && di('mare').ultimo === '2025-08-10');
+  ok('elenco: conta anche le ricorrenze', di('mare').ricorrenze === 1 && di('abbonamenti').ricorrenze === 1 && di('abbonamenti').movimenti === 0);
+  ok('elenco: include l\'anagrafica anche se mai usato', !!di('mai usato'));
+  ok('elenco: nessun doppione fra anagrafica e movimenti', el.filter(t => t.nome === 'mare').length === 1);
+  ok('elenco: ordinato per uso', el[0].movimenti >= el[el.length - 1].movimenti);
+  ok('ricorrenze: il piano vale anche per loro', pianoTag(state.ricorrenti, 'mare', 'estate')[0].tag[0] === 'estate');
+  state.movimenti = []; state.ricorrenti = []; state.tag = [];
+}
+
 console.log('\nnessun file orfano');
 {
   // Ogni modulo in js/ deve essere raggiungibile da app.js seguendo gli import.

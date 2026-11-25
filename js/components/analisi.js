@@ -26,6 +26,15 @@ let _tagQuery = '';       // testo digitato nella barra tag
 let _tagAnno = '';        // anno selezionato nel grafico a barre dell'analisi tag
 const _norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
+// Apre l'analisi per tag con un tag già selezionato (dalla gestione dei tag).
+export const apriAnalisiTag = (nome) => {
+  _tab = 'tag';
+  _tagSel = new Set([nome]);
+  _tagQuery = '';
+  _tagAnno = '';
+  navigate('analisi');
+};
+
 export const renderAnalisi = async (root, params = {}) => {
   // Il drill di categoria viaggia nell'HASH: così il breadcrumb sta nell'header
   // e lo swipe-back dal bordo di iOS funziona.

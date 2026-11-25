@@ -85,6 +85,9 @@ nei service, ad es. `strumentiService.js` (il versato),
 `ritmoService.js` (ritmo di spesa del mese e dell'anno: grafico e percentuale della
 pagina Spese), `eUnaTantum` in `movimentiService.js` (unica regola per le spese/entrate
 straordinarie col tag 'una tantum': restano nei totali, escono dal "solito").
+`tagService.js` (tag: salvati per NOME su ogni movimento e ricorrenza, lo store 'tag'
+è solo anagrafica; rinomina/unione/eliminazione passano da qui e riscrivono tutti i
+record che li portano; 'una tantum' non si rinomina).
 
 ## Comandi
 
