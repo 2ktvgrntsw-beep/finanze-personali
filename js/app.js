@@ -32,6 +32,7 @@ import { renderFinanziamenti } from './components/finanziamenti.js';
 import { renderInvestimenti } from './components/investimenti.js';
 import { renderDettaglioInvestimento } from './components/dettaglioInvestimento.js';
 import { renderCategorie } from './components/categorie.js';
+import { renderTag } from './components/tag.js';
 import { renderImpostazioni } from './components/impostazioni.js';
 import { renderEnergia, renderEnergiaAnno } from './components/energia.js';
 import { renderStipendi, renderStipendiAnno, renderStipendioDettaglio, renderStipendiStorico, renderStipendiFondo } from './components/stipendi.js';
@@ -71,6 +72,7 @@ const registraRotte = () => {
   registerRoute('investimenti', renderInvestimenti);
   registerRoute('dettaglio-investimento', renderDettaglioInvestimento);
   registerRoute('categorie', renderCategorie);
+  registerRoute('tag', renderTag);
   registerRoute('impostazioni', wrap(renderImpostazioni, 'Impostazioni'));
   registerRoute('energia', renderEnergia);
   registerRoute('energia-anno', renderEnergiaAnno);

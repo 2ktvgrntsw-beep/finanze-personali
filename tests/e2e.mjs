@@ -251,6 +251,97 @@ try {
     ok('nessun errore JavaScript', errori.length === 0, errori.join(' | '));
   }
 
+  console.log('\ngestione dei tag: rinomina, unione ed eliminazione arrivano sui movimenti');
+  {
+    errori.length = 0;
+    // preparazione: 3 spese col tag "Sicilia", una di queste anche "mare", una ricorrenza "Sicilia"
+    const ids = await page.evaluate(async () => {
+      const { state, refreshAll } = await import('./js/core/store.js');
+      const { applicaTagBulk } = await import('./js/services/movimentiService.js');
+      const { dbAdd } = await import('./js/core/db.js');
+      const scelti = state.movimenti.filter(m => m.tipo === 'spesa').slice(0, 3).map(m => m.id);
+      await applicaTagBulk(scelti, 'Sicilia');
+      await applicaTagBulk([scelti[0]], 'mare');
+      const r = state.ricorrenti[0];
+      if (r) { await dbAdd('ricorrenti', { ...r, tag: ['Sicilia'] }); await refreshAll(); }
+      return { scelti, ric: r ? r.id : null };
+    });
+    const leggi = () => page.evaluate(async (ids) => {
+      const { dbAll } = await import('./js/core/db.js');
+      const movs = await dbAll('movimenti');
+      const ric = (await dbAll('ricorrenti')).find(r => r.id === ids.ric);
+      return {
+        tagDi: Object.fromEntries(movs.filter(m => ids.scelti.includes(m.id)).map(m => [m.id, m.tag])),
+        nMov: movs.length,
+        tutti: [...new Set(movs.flatMap(m => m.tag || []))],
+        ric: ric ? ric.tag : null,
+      };
+    }, ids);
+    const nPrima = (await leggi()).nMov;
+    const apriTag = async (nome) => {
+      await page.locator('[data-tag]', { hasText: nome }).first().click();
+      await page.waitForSelector('.sheet');
+    };
+
+    await page.goto(BASE + '#/impostazioni');
+    await attendiAvvio(page);
+    await page.click('#gestisci-tag');
+    await page.waitForSelector('[data-tag]');
+    const riga = await page.locator('[data-tag="Sicilia"]').innerText();
+    ok('la schermata Tag elenca il tag con movimenti e ricorrenze', /3 movimenti/.test(riga) && (!ids.ric || /1 ricorrenza/.test(riga)), riga.replace(/\n/g, ' '));
+
+    // rinomina
+    await apriTag('Sicilia');
+    await page.fill('#t-nome', 'Sicilia 2025');
+    await page.click('#t-rinomina');
+    await page.waitForSelector('[data-tag="Sicilia 2025"]');
+    await page.reload();
+    await attendiAvvio(page);
+    let s = await leggi();
+    ok('rinomina: tutti i movimenti hanno il nome nuovo', ids.scelti.every(id => s.tagDi[id].includes('Sicilia 2025')));
+    ok('rinomina: il nome vecchio non e\' rimasto da nessuna parte', !s.tutti.includes('Sicilia'));
+    // la prima ricorrenza e' quella della rata del mutuo, ricostruita a ogni avvio:
+    // fino alla 3.48 il riavvio le azzerava i tag
+    ok('rinomina: anche la ricorrenza (e quindi i movimenti futuri), anche dopo un riavvio', !ids.ric || JSON.stringify(s.ric) === '["Sicilia 2025"]', JSON.stringify(s.ric));
+
+    // unione: "mare" dentro "Sicilia 2025"
+    await page.waitForSelector('[data-tag="mare"]');
+    await apriTag('mare');
+    await page.fill('#t-nome', 'Sicilia 2025');
+    await page.click('#t-rinomina');
+    await page.click('#cf-si');   // "esiste gia': unire?"
+    await page.waitForFunction(() => !document.querySelector('[data-tag="mare"]'));
+    s = await leggi();
+    ok('unione: il movimento che li aveva entrambi ne tiene uno solo', JSON.stringify(s.tagDi[ids.scelti[0]]) === '["Sicilia 2025"]', JSON.stringify(s.tagDi[ids.scelti[0]]));
+
+    // eliminazione
+    await apriTag('Sicilia 2025');
+    await page.click('#t-elimina');
+    await page.click('#cf-si');
+    await page.waitForFunction(() => !document.querySelector('[data-tag="Sicilia 2025"]'));
+    s = await leggi();
+    ok('eliminazione: il tag sparisce dai movimenti', ids.scelti.every(id => !(s.tagDi[id] || []).length) && !s.tutti.includes('Sicilia 2025'));
+    ok('eliminazione: i movimenti restano tutti', s.nMov === nPrima, `${nPrima} -> ${s.nMov}`);
+    ok('eliminazione: tolto anche dalla ricorrenza', !ids.ric || JSON.stringify(s.ric) === '[]');
+
+    // "una tantum" e' protetto; dal tag si arriva all'analisi
+    await page.evaluate(async (id) => {
+      const { applicaTagBulk } = await import('./js/services/movimentiService.js');
+      await applicaTagBulk([id], 'una tantum');
+    }, ids.scelti[1]);
+    await page.reload();   // siamo gia' su #/tag: goto sullo stesso indirizzo non ridisegna
+    await attendiAvvio(page);
+    await page.waitForSelector('[data-tag="una tantum"]');
+    await apriTag('una tantum');
+    ok('"una tantum" non ha il campo per rinominarlo', !(await page.$('#t-nome')) && !!(await page.$('#t-elimina')));
+    await page.click('#t-analisi');
+    await page.waitForFunction(() => location.hash.startsWith('#/analisi'));
+    await page.waitForTimeout(150);
+    ok('"Vedi in Analisi" apre l\'analisi per tag con il tag scelto',
+      await page.evaluate(() => !!document.querySelector('#head-seg [data-t="tag"].on') && document.getElementById('app-root').innerText.includes('una tantum')));
+    ok('nessun errore JavaScript', errori.length === 0, errori.join(' | '));
+  }
+
   console.log('\nfunziona offline');
   {
     await page.goto(BASE + '#/spese');
